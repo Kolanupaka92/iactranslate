@@ -16,4 +16,5 @@ dist/
 out-*/
 *.zip
 tests/
+web/
 .DS_Store

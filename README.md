@@ -80,6 +80,22 @@ GET    /projects/{id}/download   → Terraform project ZIP
 DELETE /projects/{id}            → delete project + workspace
 ```
 
+## Web UI
+
+A Next.js app under `web/` gives the full workflow in the browser: create project →
+upload export → (optionally) compare clouds → generate → download ZIP. Includes a
+one-click sample inventory for demos.
+
+```bash
+# terminal 1 — API with CORS for the frontend
+IACTRANSLATE_CORS_ORIGINS=http://localhost:3000 uvicorn iactranslate.api.main:app
+
+# terminal 2 — frontend
+cd web && npm install && npm run dev   # http://localhost:3000
+```
+
+Point the frontend at a non-default API with `NEXT_PUBLIC_API_URL`.
+
 ## Deploy (Docker)
 
 ```bash
