@@ -7,13 +7,27 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+from typing import Dict, Optional
 
 from .normalize import normalize
-from .parsers import parse
 from .pipeline import run_pipeline
 from .recommend import recommend
+from .sources import UnknownSourceError, list_sources, resolve_source
 from .targets import UnknownTargetError, list_targets
 from .validation import PlanValidationError
+
+
+def _parse_column_map(raw: Optional[str]) -> Optional[Dict[str, str]]:
+    """Parse a "canon=Header,canon2=Header 2" string into a mapping dict."""
+    if not raw:
+        return None
+    mapping: Dict[str, str] = {}
+    for pair in raw.split(","):
+        if "=" not in pair:
+            continue
+        canon, header = pair.split("=", 1)
+        mapping[canon.strip()] = header.strip()
+    return mapping or None
 
 
 def _cmd_translate(args: argparse.Namespace) -> int:
@@ -25,10 +39,12 @@ def _cmd_translate(args: argparse.Namespace) -> int:
             project_name=project_name,
             out_dir=args.out,
             target=args.target,
+            source=args.source,
+            column_map=_parse_column_map(args.map),
             region=args.region,
             make_zip=args.zip,
         )
-    except UnknownTargetError as e:
+    except (UnknownTargetError, UnknownSourceError) as e:
         print(f"error: {e}", file=sys.stderr)
         return 2
     except FileNotFoundError:
@@ -54,12 +70,16 @@ def _cmd_translate(args: argparse.Namespace) -> int:
 
 def _cmd_recommend(args: argparse.Namespace) -> int:
     try:
-        vms = normalize(parse(args.input))
+        src = resolve_source(args.input, args.source)
+        vms = normalize(src.parse(args.input, column_map=_parse_column_map(args.map)))
+    except UnknownSourceError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
     except FileNotFoundError:
         print(f"error: input file not found: {args.input}", file=sys.stderr)
         return 2
     if not vms:
-        print(f"error: no virtual machines found in {args.input}", file=sys.stderr)
+        print(f"error: no workloads found in {args.input}", file=sys.stderr)
         return 2
 
     rec = recommend(vms)
@@ -86,9 +106,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
+    src_help = f"Discovery source: auto (default) or {', '.join(list_sources())}."
+    map_help = 'Generic-source column map, e.g. "name=Hostname,cpu=Cores,memory_gib=RAM GB,disk_gib=Storage GB,os=OS".'
+
     t = sub.add_parser("translate", help="Translate a discovery export into a Terraform project.")
-    t.add_argument("input", help="Path to an RVTools .xlsx or VMware .csv export.")
+    t.add_argument("input", help="Path to an inventory export (.xlsx/.csv): RVTools, Hyper-V, CMDB, cloud.")
     t.add_argument("--target", default="aws", help=f"Target cloud ({', '.join(list_targets())}).")
+    t.add_argument("--source", default="auto", help=src_help)
+    t.add_argument("--map", default=None, help=map_help)
     t.add_argument("--out", required=True, help="Output project directory.")
     t.add_argument("--region", default=None, help="Target region/location (defaults per cloud).")
     t.add_argument("--name", default=None, help="Project name (defaults to input filename).")
@@ -96,7 +121,9 @@ def build_parser() -> argparse.ArgumentParser:
     t.set_defaults(func=_cmd_translate)
 
     r = sub.add_parser("recommend", help="Compare all clouds and recommend the best fit.")
-    r.add_argument("input", help="Path to an RVTools .xlsx or VMware .csv export.")
+    r.add_argument("input", help="Path to an inventory export (.xlsx/.csv).")
+    r.add_argument("--source", default="auto", help=src_help)
+    r.add_argument("--map", default=None, help=map_help)
     r.set_defaults(func=_cmd_recommend)
     return parser
 

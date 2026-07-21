@@ -18,6 +18,7 @@ def build_migration_plan(
     target: Target,
     region: Optional[str] = None,
     provider: Optional[LLMProvider] = None,
+    source_platform: str = "vmware",
 ) -> MigrationPlan:
     """Run the agent stages and assemble an (un-validated) MigrationPlan."""
     provider = provider or get_provider(target)
@@ -30,7 +31,7 @@ def build_migration_plan(
 
     return MigrationPlan(
         project_name=project_name,
-        source_platform="vmware",
+        source_platform=source_platform,
         target=target.name,
         region=region,
         network=network,

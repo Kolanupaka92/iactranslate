@@ -4,6 +4,7 @@ export const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 export type Target = "aws" | "azure" | "gcp";
+export type Source = "auto" | "vmware" | "hyperv" | "cloud" | "generic";
 
 export interface InstanceRow {
   vm: string;
@@ -87,12 +88,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export function createProject(
   name: string,
   target: Target,
+  source: Source = "auto",
   region?: string,
 ): Promise<ProjectSummary> {
   return request("/projects", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, target, region: region || null }),
+    body: JSON.stringify({ name, target, source, region: region || null }),
   });
 }
 

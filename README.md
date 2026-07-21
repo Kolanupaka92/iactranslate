@@ -1,8 +1,10 @@
 # IaCTranslate
 
-AI-powered infrastructure migration translator: convert exported infrastructure
-discovery reports (RVTools / VMware) into **production-ready Terraform** for AWS —
-without ever connecting to the customer environment.
+AI-powered infrastructure migration translator: convert **any** infrastructure
+inventory — VMware (RVTools), Microsoft Hyper-V, a CMDB / spreadsheet export
+(ServiceNow, Device42, Lansweeper, or hand-rolled), or an existing AWS/Azure
+fleet — into **production-ready Terraform** for AWS, Azure, or GCP, without ever
+connecting to the customer environment.
 
 The value is not "an LLM writes Terraform." It's a **deterministic translation
 layer**:
@@ -16,11 +18,18 @@ instance type). Python + Jinja2 emit the actual `.tf`, so the output is
 reproducible, auditable, and enterprise-safe. Every AI decision is re-checked by
 a validation layer before any Terraform is written.
 
-> **Targets:** VMware → **AWS** (EC2 + VPC), **Azure** (VM + VNet/NSG), and **GCP**
-> (Compute Engine + VPC + firewalls), all via Terraform. Every cloud lives behind a `Target`
-> interface (`src/iactranslate/targets/`) — the parser, normalizer, classification agent,
-> validation, renderer, and packager are cloud-agnostic; only the catalog, tier mappings, and
-> templates differ per cloud. Pulumi and OpenTofu slot in as new targets without touching the pipeline.
+> **Sources (input, `src/iactranslate/sources/`):** `vmware` (RVTools .xlsx + vSphere CSV),
+> `hyperv` (Get-VM export), `generic` (any CMDB/spreadsheet — auto-detects columns or takes an
+> explicit `--map`), `cloud` (existing AWS/Azure fleet; recovers vCPU/mem from the target
+> catalogs). `--source auto` detects the right one. The generic source means **any company's
+> inventory works without a bespoke parser.**
+>
+> **Targets (output, `src/iactranslate/targets/`):** **AWS** (EC2 + VPC), **Azure** (VM +
+> VNet/NSG), **GCP** (Compute Engine + VPC + firewalls), all via Terraform.
+>
+> Both are registries behind interfaces; the parser, normalizer, classifier, validation,
+> renderer, and packager are source- and cloud-agnostic. New sources (mainframe, live agents)
+> and targets (Pulumi, OpenTofu) slot in without touching the pipeline.
 
 ## Install
 
@@ -44,6 +53,14 @@ iactranslate translate tests/fixtures/rvtools_sample.xlsx \
 # GCP (Compute Engine + VPC + firewalls)
 iactranslate translate tests/fixtures/rvtools_sample.xlsx \
   --target gcp --out ./out-gcp --zip --name acme-migration
+
+# Any source — auto-detected (Hyper-V, cloud fleet, CMDB, …)
+iactranslate translate tests/fixtures/hyperv_sample.csv --target azure --out ./out-hv
+
+# A CMDB/spreadsheet with non-standard headers — map them explicitly
+iactranslate translate my-cmdb.csv --source generic \
+  --map "name=Hostname,cpu=Cores,memory_gib=RAM GB,disk_gib=Storage GB,os=OS" \
+  --target aws --out ./out-cmdb
 ```
 
 ## Which cloud? — recommendation

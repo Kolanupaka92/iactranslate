@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from .agents import build_migration_plan
 from .agents.base import LLMProvider
@@ -14,7 +14,7 @@ from .config import MAX_VMS
 from .models import MigrationPlan, NormalizedVM
 from .normalize import normalize
 from .packager import build_project, zip_project
-from .parsers import parse
+from .sources import resolve_source
 from .targets import get_target
 from .validation import assert_valid
 
@@ -32,20 +32,24 @@ def run_pipeline(
     project_name: str,
     out_dir: str,
     target: str = "aws",
+    source: Optional[str] = None,
+    column_map: Optional[Dict[str, str]] = None,
     region: Optional[str] = None,
     provider: Optional[LLMProvider] = None,
     make_zip: bool = False,
 ) -> PipelineResult:
     tgt = get_target(target)  # raises UnknownTargetError for bad target
+    src = resolve_source(input_path, source)  # auto-detect unless named
 
-    vms = normalize(parse(input_path))
+    vms = normalize(src.parse(input_path, column_map=column_map))
     if not vms:
-        raise ValueError(f"No virtual machines found in '{input_path}'")
+        raise ValueError(f"No workloads found in '{input_path}' (source: {src.name})")
     if len(vms) > MAX_VMS:
-        raise ValueError(f"Inventory has {len(vms)} VMs, exceeding the limit of {MAX_VMS}")
+        raise ValueError(f"Inventory has {len(vms)} workloads, exceeding the limit of {MAX_VMS}")
 
     plan = build_migration_plan(
-        vms, project_name=project_name, target=tgt, region=region, provider=provider
+        vms, project_name=project_name, target=tgt, region=region, provider=provider,
+        source_platform=getattr(src, "source_platform", src.name),
     )
     assert_valid(plan, tgt)  # raises PlanValidationError on any issue
 

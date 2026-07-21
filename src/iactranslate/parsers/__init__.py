@@ -1,15 +1,12 @@
-"""Source-format parsers.
-
-Each parser reads a discovery export and returns a list of *raw VM records*
-(plain dicts with best-effort canonical keys). Normalization/units/dedup is the
-job of `normalize.py`, not the parser.
+"""Back-compat shim. The parsing layer now lives under `iactranslate.sources`;
+this module preserves the original `parse` / `detect_format` API.
 """
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Dict, List
 
-from . import rvtools, vmware_csv
+from ..sources import parse as _source_parse
 
 RawVM = Dict[str, object]
 
@@ -19,20 +16,17 @@ class UnsupportedFormatError(ValueError):
 
 
 def detect_format(path: str) -> str:
-    """Return 'rvtools' for .xlsx/.xls, 'vmware_csv' for .csv."""
+    """Legacy format label ('rvtools' for .xlsx, 'vmware_csv' for .csv)."""
     suffix = Path(path).suffix.lower()
     if suffix in {".xlsx", ".xls", ".xlsm"}:
         return "rvtools"
     if suffix == ".csv":
         return "vmware_csv"
     raise UnsupportedFormatError(
-        f"Unsupported input '{path}': expected an RVTools .xlsx or a VMware .csv"
+        f"Unsupported input '{path}': expected an .xlsx or .csv inventory export"
     )
 
 
 def parse(path: str) -> List[RawVM]:
-    """Detect the format and parse `path` into raw VM records."""
-    fmt = detect_format(path)
-    if fmt == "rvtools":
-        return rvtools.parse(path)
-    return vmware_csv.parse(path)
+    """Auto-detect the source and parse into raw VM/host records."""
+    return _source_parse(path)

@@ -1,0 +1,8 @@
+Instance Name,InstanceType,Platform,VolumeSize
+prod-web-01,m5.xlarge,windows,200
+prod-web-02,m5.xlarge,windows,200
+prod-app-01,m5.2xlarge,linux,300
+prod-app-02,m5.2xlarge,linux,300
+prod-db-01,m5.4xlarge,windows,1000
+dev-web-01,m5.large,linux,100
+dev-db-01,m5.xlarge,linux,250

@@ -10,7 +10,7 @@ from typing import Dict, List
 
 import pandas as pd
 
-from ._columns import cell, find_column
+from .._columns import cell, find_column
 
 RawVM = Dict[str, object]
 

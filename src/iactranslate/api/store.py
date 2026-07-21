@@ -24,6 +24,8 @@ class Project:
     id: str
     name: str
     target: str = "aws"
+    source: str = "auto"
+    column_map: Optional[dict] = None
     region: Optional[str] = None
     status: str = "created"  # created -> uploaded -> completed / failed
     workspace: Path = field(default_factory=lambda: Path(tempfile.mkdtemp(prefix="iactranslate_")))
@@ -40,9 +42,19 @@ class ProjectStore:
         self._max = max_projects
         self._lock = threading.Lock()
 
-    def create(self, name: str, target: str = "aws", region: Optional[str] = None) -> Project:
+    def create(
+        self,
+        name: str,
+        target: str = "aws",
+        source: str = "auto",
+        column_map: Optional[dict] = None,
+        region: Optional[str] = None,
+    ) -> Project:
         pid = uuid.uuid4().hex[:12]
-        project = Project(id=pid, name=name, target=target, region=region)
+        project = Project(
+            id=pid, name=name, target=target, source=source,
+            column_map=column_map, region=region,
+        )
         with self._lock:
             self._projects[pid] = project
             self._evict_locked()

@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 import re
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -24,9 +24,9 @@ from starlette.requests import Request
 
 from ..config import MAX_UPLOAD_BYTES, cors_origins
 from ..normalize import normalize
-from ..parsers import parse
 from ..pipeline import run_pipeline
 from ..recommend import recommend
+from ..sources import list_sources, resolve_source
 from ..targets import list_targets
 from ..validation import PlanValidationError
 from .store import Project, ProjectStore
@@ -53,6 +53,8 @@ if _origins:
 class CreateProject(BaseModel):
     name: str
     target: str = "aws"
+    source: str = "auto"
+    column_map: Optional[Dict[str, str]] = None
     region: Optional[str] = None
 
     @field_validator("name")
@@ -76,6 +78,7 @@ def _summary(project: Project) -> dict:
         "id": project.id,
         "name": project.name,
         "target": project.target,
+        "source": project.source,
         "region": project.region,
         "status": project.status,
     }
@@ -93,17 +96,18 @@ def _require_project(pid: str) -> Project:
     return project
 
 
-def _parse_inventory(path: str) -> List:
-    """Parse + normalize an uploaded file, mapping any parser failure to 400."""
+def _parse_inventory(project: Project) -> List:
+    """Parse + normalize the project's upload, mapping any parser failure to 400."""
     try:
-        vms = normalize(parse(path))
+        src = resolve_source(str(project.upload_path), project.source)
+        vms = normalize(src.parse(str(project.upload_path), column_map=project.column_map))
     except HTTPException:
         raise
     except Exception:  # noqa: BLE001 — malformed upload must not 500/leak a traceback
-        logger.warning("failed to parse uploaded inventory at %s", path, exc_info=True)
-        raise HTTPException(400, "could not parse the uploaded file as an RVTools/VMware export") from None
+        logger.warning("failed to parse uploaded inventory for %s", project.id, exc_info=True)
+        raise HTTPException(400, "could not parse the uploaded file as an inventory export") from None
     if not vms:
-        raise HTTPException(400, "no virtual machines found in the uploaded file")
+        raise HTTPException(400, "no workloads found in the uploaded file")
     return vms
 
 
@@ -116,8 +120,13 @@ def health() -> dict:
 def create_project(body: CreateProject) -> dict:
     if body.target not in list_targets():
         raise HTTPException(400, f"target '{body.target}' not supported (available: {', '.join(list_targets())})")
-    project = store.create(name=body.name, target=body.target, region=body.region)
-    logger.info("created project %s (target=%s)", project.id, project.target)
+    if body.source not in ("auto", *list_sources()):
+        raise HTTPException(400, f"source '{body.source}' not supported (available: auto, {', '.join(list_sources())})")
+    project = store.create(
+        name=body.name, target=body.target, source=body.source,
+        column_map=body.column_map, region=body.region,
+    )
+    logger.info("created project %s (target=%s source=%s)", project.id, project.target, project.source)
     return _summary(project)
 
 
@@ -173,6 +182,8 @@ def run(pid: str) -> dict:
             project_name=project.name,
             out_dir=str(out_dir),
             target=project.target,
+            source=project.source,
+            column_map=project.column_map,
             region=project.region,
             make_zip=True,
         )
@@ -206,7 +217,7 @@ def recommend_cloud(pid: str) -> dict:
     if project.upload_path is None:
         raise HTTPException(400, "no file uploaded for this project")
 
-    vms = _parse_inventory(str(project.upload_path))
+    vms = _parse_inventory(project)
     try:
         return recommend(vms).model_dump()
     except ValueError as e:

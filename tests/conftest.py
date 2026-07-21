@@ -8,10 +8,14 @@ FIXTURES = Path(__file__).resolve().parent / "fixtures"
 sys.path.insert(0, str(ROOT / "scripts"))
 
 
+_FIXTURE_FILES = (
+    "rvtools_sample.xlsx", "vmware_sample.csv", "hyperv_sample.csv",
+    "cmdb_sample.csv", "cloud_sample.csv",
+)
+
+
 def _ensure_fixtures() -> None:
-    xlsx = FIXTURES / "rvtools_sample.xlsx"
-    csv = FIXTURES / "vmware_sample.csv"
-    if not xlsx.exists() or not csv.exists():
+    if not all((FIXTURES / f).exists() for f in _FIXTURE_FILES):
         import make_fixtures
 
         make_fixtures.main()
@@ -28,3 +32,18 @@ def rvtools_path() -> str:
 @pytest.fixture
 def vmware_csv_path() -> str:
     return str(FIXTURES / "vmware_sample.csv")
+
+
+@pytest.fixture
+def hyperv_path() -> str:
+    return str(FIXTURES / "hyperv_sample.csv")
+
+
+@pytest.fixture
+def cmdb_path() -> str:
+    return str(FIXTURES / "cmdb_sample.csv")
+
+
+@pytest.fixture
+def cloud_path() -> str:
+    return str(FIXTURES / "cloud_sample.csv")

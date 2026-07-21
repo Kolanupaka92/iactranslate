@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 
 import RecommendTable from "@/components/RecommendTable";
 import RunSummary from "@/components/RunSummary";
+import SourcePicker from "@/components/SourcePicker";
 import TargetPicker from "@/components/TargetPicker";
 import UploadDropzone from "@/components/UploadDropzone";
 import {
@@ -17,6 +18,7 @@ import {
   type ProjectSummary,
   type Recommendation,
   type RunResult,
+  type Source,
   type Target,
 } from "@/lib/api";
 
@@ -53,6 +55,7 @@ function Section({
 export default function Home() {
   const [name, setName] = useState("");
   const [target, setTarget] = useState<Target>("aws");
+  const [source, setSource] = useState<Source>("auto");
   const [project, setProject] = useState<ProjectSummary | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [uploaded, setUploaded] = useState(false);
@@ -68,13 +71,13 @@ export default function Home() {
     setBusy("create");
     setError(null);
     try {
-      setProject(await createProject(name.trim(), target));
+      setProject(await createProject(name.trim(), target, source));
     } catch (e) {
       fail(e);
     } finally {
       setBusy(null);
     }
-  }, [name, target]);
+  }, [name, target, source]);
 
   const handleFile = useCallback(
     async (f: File) => {
@@ -116,7 +119,7 @@ export default function Home() {
       setBusy("switch");
       setError(null);
       try {
-        const fresh = await createProject(project.name, t);
+        const fresh = await createProject(project.name, t, source);
         await uploadFile(fresh.id, file);
         void deleteProject(project.id).catch(() => {});
         setProject(fresh);
@@ -128,7 +131,7 @@ export default function Home() {
         setBusy(null);
       }
     },
-    [project, file],
+    [project, file, source],
   );
 
   const handleRun = useCallback(async () => {
@@ -162,8 +165,9 @@ export default function Home() {
       <header className="mb-8">
         <h1 className="text-2xl font-bold">IaCTranslate</h1>
         <p className="mt-1 text-sm opacity-70">
-          Convert a VMware discovery export into production-ready Terraform for
-          AWS, Azure, or GCP — in minutes, entirely from an inventory file.
+          Convert any infrastructure inventory — VMware, Hyper-V, a CMDB export,
+          or an existing cloud fleet — into production-ready Terraform for AWS,
+          Azure, or GCP, in minutes.
         </p>
       </header>
 
@@ -188,6 +192,7 @@ export default function Home() {
               className="w-full rounded-lg border border-neutral-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-emerald-600 dark:border-neutral-700"
             />
             <TargetPicker value={target} onChange={setTarget} />
+            <SourcePicker value={source} onChange={setSource} />
             <button
               type="button"
               onClick={handleCreate}

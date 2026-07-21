@@ -1,0 +1,8 @@
+Host Name,CPU Cores,RAM (GB),Storage (GB),Operating System,Location,IP Address
+prod-web-01,4,16,200,Microsoft Windows Server 2022 (64-bit),DC1,10.10.20.11
+prod-web-02,4,16,200,Microsoft Windows Server 2022 (64-bit),DC1,10.10.20.12
+prod-app-01,8,32,300,Red Hat Enterprise Linux 9 (64-bit),DC1,10.10.30.21
+prod-app-02,8,32,300,Red Hat Enterprise Linux 9 (64-bit),DC1,10.10.30.22
+prod-db-01,16,64,1000,Microsoft Windows Server 2019 (64-bit),DC1,10.10.40.31
+dev-web-01,2,8,100,Ubuntu Linux (64-bit),DC1,10.20.20.11
+dev-db-01,4,16,250,Ubuntu Linux (64-bit),DC1,10.20.40.31

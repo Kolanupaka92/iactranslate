@@ -65,7 +65,7 @@ export default function UploadDropzone({
           {fileName ? `Uploaded: ${fileName}` : "Drop your discovery export here"}
         </p>
         <p className="mt-1 text-sm opacity-70">
-          RVTools .xlsx or VMware .csv — max {MAX_MB} MB. Click to browse.
+          Any inventory export (.xlsx / .csv) — max {MAX_MB} MB. Click to browse.
         </p>
         <input
           ref={inputRef}

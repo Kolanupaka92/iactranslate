@@ -1,0 +1,8 @@
+VMName,State,ProcessorCount,MemoryStartup,OperatingSystem,DiskSizeGB
+prod-web-01,Running,4,17179869184,Microsoft Windows Server 2022 (64-bit),200
+prod-web-02,Running,4,17179869184,Microsoft Windows Server 2022 (64-bit),200
+prod-app-01,Running,8,34359738368,Red Hat Enterprise Linux 9 (64-bit),300
+prod-app-02,Running,8,34359738368,Red Hat Enterprise Linux 9 (64-bit),300
+prod-db-01,Running,16,68719476736,Microsoft Windows Server 2019 (64-bit),1000
+dev-web-01,Running,2,8589934592,Ubuntu Linux (64-bit),100
+dev-db-01,Off,4,17179869184,Ubuntu Linux (64-bit),250

@@ -84,13 +84,82 @@ def build_csv(path: Path) -> None:
     pd.DataFrame(rows).to_csv(path, index=False)
 
 
+GIB_BYTES = 1024 ** 3
+
+# AWS instance type per VM (specs match the estate; cloud source recovers vCPU/mem).
+_CLOUD_TYPE = {
+    ("dev-web-01"): "m5.large",       # 2/8
+    ("prod-web-01"): "m5.xlarge",     # 4/16
+    ("prod-web-02"): "m5.xlarge",
+    ("dev-db-01"): "m5.xlarge",
+    ("prod-app-01"): "m5.2xlarge",    # 8/32
+    ("prod-app-02"): "m5.2xlarge",
+    ("prod-db-01"): "m5.4xlarge",     # 16/64
+}
+
+
+def build_hyperv(path: Path) -> None:
+    rows = []
+    for (vm, cpu, mem, disk, net, os_, power, dns, ip, cluster, dc) in VMS:
+        rows.append(
+            {
+                "VMName": vm,
+                "State": "Running" if power == "poweredOn" else "Off",
+                "ProcessorCount": cpu,
+                "MemoryStartup": mem * GIB_BYTES,   # PowerShell reports bytes
+                "OperatingSystem": os_,
+                "DiskSizeGB": disk,
+            }
+        )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(rows).to_csv(path, index=False)
+
+
+def build_cmdb(path: Path) -> None:
+    # Deliberately non-VMware headers — proves the generic source auto-detects.
+    rows = []
+    for (vm, cpu, mem, disk, net, os_, power, dns, ip, cluster, dc) in VMS:
+        rows.append(
+            {
+                "Host Name": vm,
+                "CPU Cores": cpu,
+                "RAM (GB)": mem,
+                "Storage (GB)": disk,
+                "Operating System": os_,
+                "Location": dc,
+                "IP Address": ip,
+            }
+        )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(rows).to_csv(path, index=False)
+
+
+def build_cloud(path: Path) -> None:
+    rows = []
+    for (vm, cpu, mem, disk, net, os_, power, dns, ip, cluster, dc) in VMS:
+        rows.append(
+            {
+                "Instance Name": vm,
+                "InstanceType": _CLOUD_TYPE[vm],
+                "Platform": "windows" if "Windows" in os_ else "linux",
+                "VolumeSize": disk,
+            }
+        )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(rows).to_csv(path, index=False)
+
+
 def main() -> None:
-    xlsx = FIXTURES / "rvtools_sample.xlsx"
-    csv = FIXTURES / "vmware_sample.csv"
-    build_rvtools(xlsx)
-    build_csv(csv)
-    print(f"Wrote {xlsx}")
-    print(f"Wrote {csv}")
+    builders = {
+        "rvtools_sample.xlsx": build_rvtools,
+        "vmware_sample.csv": build_csv,
+        "hyperv_sample.csv": build_hyperv,
+        "cmdb_sample.csv": build_cmdb,
+        "cloud_sample.csv": build_cloud,
+    }
+    for name, builder in builders.items():
+        builder(FIXTURES / name)
+        print(f"Wrote {FIXTURES / name}")
 
 
 if __name__ == "__main__":
