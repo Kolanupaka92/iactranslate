@@ -18,6 +18,10 @@ instance type). Python + Jinja2 emit the actual `.tf`, so the output is
 reproducible, auditable, and enterprise-safe. Every AI decision is re-checked by
 a validation layer before any Terraform is written.
 
+> 📖 **New here?** Read the [Knowledge-Transfer & Operations Guide](docs/KT.md) —
+> architecture, step-by-step functionality, how-tos, config reference, extension
+> guides, and troubleshooting.
+
 > **Sources (input, `src/iactranslate/sources/`):** `vmware` (RVTools .xlsx + vSphere CSV),
 > `hyperv` (Get-VM export), `generic` (any CMDB/spreadsheet — auto-detects columns or takes an
 > explicit `--map`), `cloud` (existing AWS/Azure fleet; recovers vCPU/mem from the target
