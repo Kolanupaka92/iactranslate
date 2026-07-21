@@ -1,0 +1,56 @@
+from fastapi.testclient import TestClient
+
+from iactranslate.api.main import app
+from iactranslate.models import NormalizedVM
+from iactranslate.normalize import normalize
+from iactranslate.parsers import parse
+from iactranslate.recommend import recommend
+from iactranslate.targets import list_targets
+
+
+def test_recommend_scores_all_clouds(rvtools_path):
+    vms = normalize(parse(rvtools_path))
+    rec = recommend(vms)
+    assert {s.cloud for s in rec.ranked} == set(list_targets())
+    # Ranked best-first; the winner matches `recommended`.
+    assert rec.ranked[0].cloud == rec.recommended
+    assert all(
+        rec.ranked[i].weighted_score >= rec.ranked[i + 1].weighted_score
+        for i in range(len(rec.ranked) - 1)
+    )
+    # Every cloud has a rationale and a real cost.
+    for s in rec.ranked:
+        assert s.reasons
+        assert s.total_monthly_cost_usd > 0
+        assert 0.0 <= s.cost_score <= 1.0
+
+
+def test_cheapest_cloud_gets_cost_score_one(rvtools_path):
+    vms = normalize(parse(rvtools_path))
+    rec = recommend(vms)
+    cheapest = min(rec.ranked, key=lambda s: s.total_monthly_cost_usd)
+    assert cheapest.cost_score == 1.0
+
+
+def test_windows_heavy_estate_favors_azure_os_score():
+    # An all-Windows estate should give Azure the top OS-affinity score.
+    vms = [
+        NormalizedVM(vm_name=f"win-{i}", cpu=4, memory_gib=16, os="Windows Server 2022")
+        for i in range(4)
+    ]
+    rec = recommend(vms)
+    by_cloud = {s.cloud: s for s in rec.ranked}
+    assert by_cloud["azure"].os_score > by_cloud["gcp"].os_score
+    assert by_cloud["azure"].windows_vms == 4
+
+
+def test_api_recommend_flow(rvtools_path):
+    client = TestClient(app)
+    pid = client.post("/projects", json={"name": "rec", "target": "aws"}).json()["id"]
+    with open(rvtools_path, "rb") as f:
+        client.post(f"/projects/{pid}/upload", files={"file": ("rvtools_sample.xlsx", f)})
+    r = client.post(f"/projects/{pid}/recommend")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["recommended"] in list_targets()
+    assert len(body["ranked"]) == len(list_targets())

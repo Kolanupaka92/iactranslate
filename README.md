@@ -46,6 +46,20 @@ iactranslate translate tests/fixtures/rvtools_sample.xlsx \
   --target gcp --out ./out-gcp --zip --name acme-migration
 ```
 
+## Which cloud? — recommendation
+
+Don't know which cloud to migrate to? Compare all three on the same inventory:
+
+```bash
+iactranslate recommend tests/fixtures/rvtools_sample.xlsx
+```
+
+A deterministic, auditable scorer ranks AWS/Azure/GCP on **cost** (projected
+monthly spend), **fit** (how tightly instances match the source vCPU/memory), and
+**OS affinity** (Windows→Azure, Linux→GCP, mixed→AWS), with plain-English rationale
+per cloud and explicit weights. No AI is in this loop — the score is inspectable
+and defensible. Also available at `POST /projects/{id}/recommend`.
+
 Produces a full Terraform project (`main.tf`, `networking.tf`, `compute.tf`,
 `security.tf`, `storage.tf`, `variables.tf`, `outputs.tf`, …), a
 `documentation/migration-summary.md`, and an optional `out.zip`.

@@ -8,7 +8,10 @@ import argparse
 import sys
 from pathlib import Path
 
+from .normalize import normalize
+from .parsers import parse
 from .pipeline import run_pipeline
+from .recommend import recommend
 from .targets import UnknownTargetError, list_targets
 from .validation import PlanValidationError
 
@@ -49,6 +52,33 @@ def _cmd_translate(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_recommend(args: argparse.Namespace) -> int:
+    try:
+        vms = normalize(parse(args.input))
+    except FileNotFoundError:
+        print(f"error: input file not found: {args.input}", file=sys.stderr)
+        return 2
+    if not vms:
+        print(f"error: no virtual machines found in {args.input}", file=sys.stderr)
+        return 2
+
+    rec = recommend(vms)
+    print(f"Recommended cloud: {rec.recommended.upper()}\n")
+    print(f"{'CLOUD':6}  {'SCORE':>6}  {'COST/MO':>11}  {'COST':>5}  {'FIT':>5}  {'OS':>5}")
+    print("-" * 48)
+    for s in rec.ranked:
+        print(f"{s.cloud.upper():6}  {s.weighted_score:>6.2f}  "
+              f"${s.total_monthly_cost_usd:>10,.2f}  {s.cost_score:>5.2f}  "
+              f"{s.fit_score:>5.2f}  {s.os_score:>5.2f}")
+    print()
+    for s in rec.ranked:
+        print(f"{s.cloud.upper()}:")
+        for reason in s.reasons:
+            print(f"  - {reason}")
+    print(f"\n{rec.summary}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="iactranslate",
@@ -64,6 +94,10 @@ def build_parser() -> argparse.ArgumentParser:
     t.add_argument("--name", default=None, help="Project name (defaults to input filename).")
     t.add_argument("--zip", action="store_true", help="Also write a <out>.zip archive.")
     t.set_defaults(func=_cmd_translate)
+
+    r = sub.add_parser("recommend", help="Compare all clouds and recommend the best fit.")
+    r.add_argument("input", help="Path to an RVTools .xlsx or VMware .csv export.")
+    r.set_defaults(func=_cmd_recommend)
     return parser
 
 

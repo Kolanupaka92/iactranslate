@@ -16,7 +16,10 @@ from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
+from ..normalize import normalize
+from ..parsers import parse
 from ..pipeline import run_pipeline
+from ..recommend import recommend
 from ..targets import list_targets
 from ..validation import PlanValidationError
 from .store import Project, ProjectStore
@@ -125,6 +128,20 @@ def run(pid: str) -> dict:
         ],
     }
     return _summary(project)
+
+
+@app.post("/projects/{pid}/recommend")
+def recommend_cloud(pid: str) -> dict:
+    project = store.get(pid)
+    if project is None:
+        raise HTTPException(404, "project not found")
+    if project.upload_path is None:
+        raise HTTPException(400, "no file uploaded for this project")
+
+    vms = normalize(parse(str(project.upload_path)))
+    if not vms:
+        raise HTTPException(400, "no virtual machines found in the uploaded file")
+    return recommend(vms).model_dump()
 
 
 @app.get("/projects/{pid}/download")
