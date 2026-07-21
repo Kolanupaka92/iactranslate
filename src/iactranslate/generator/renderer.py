@@ -5,6 +5,7 @@ a mapping of {filename: content} which the packager writes to disk / zips.
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Dict, List
 
@@ -12,6 +13,14 @@ from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 from ..models import ComputePlan, MigrationPlan, SubnetTier
 from ..targets.base import Target
+
+
+def _rfc1035_slug(value: str) -> str:
+    """Lower-case, hyphenated, RFC1035-safe name (for GCP resource names)."""
+    slug = re.sub(r"[^a-z0-9-]+", "-", value.lower()).strip("-")
+    if not slug or not slug[0].isalpha():
+        slug = f"n-{slug}" if slug else "resource"
+    return slug[:60].rstrip("-")
 
 
 def _env(template_dir: Path) -> Environment:
@@ -74,9 +83,11 @@ def build_files(plan: MigrationPlan, target: Target) -> Dict[str, str]:
         "compute": plan.compute,
         "region": plan.region,
         "project": plan.project_name,
+        "project_slug": _rfc1035_slug(plan.project_name),
         "image_keys": _image_keys(plan.compute),
         "subnet_of": subnet_of,
         "sg_resource": sg_resource,
+        "vm_slug": {c.vm_name: _rfc1035_slug(c.vm_name) for c in plan.compute},
         "volumes": _data_volumes(plan.compute),
         "SubnetTier": SubnetTier,
     }

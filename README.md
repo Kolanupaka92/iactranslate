@@ -16,11 +16,11 @@ instance type). Python + Jinja2 emit the actual `.tf`, so the output is
 reproducible, auditable, and enterprise-safe. Every AI decision is re-checked by
 a validation layer before any Terraform is written.
 
-> **Targets:** VMware → **AWS** (EC2 + VPC) and **Azure** (VM + VNet/NSG), both via
-> Terraform. Every cloud lives behind a `Target` interface (`src/iactranslate/targets/`) —
-> the parser, normalizer, classification agent, validation, renderer, and packager are
-> cloud-agnostic; only the catalog, tier mappings, and templates differ per cloud. GCP,
-> Pulumi, and OpenTofu slot in as new targets without touching the pipeline.
+> **Targets:** VMware → **AWS** (EC2 + VPC), **Azure** (VM + VNet/NSG), and **GCP**
+> (Compute Engine + VPC + firewalls), all via Terraform. Every cloud lives behind a `Target`
+> interface (`src/iactranslate/targets/`) — the parser, normalizer, classification agent,
+> validation, renderer, and packager are cloud-agnostic; only the catalog, tier mappings, and
+> templates differ per cloud. Pulumi and OpenTofu slot in as new targets without touching the pipeline.
 
 ## Install
 
@@ -40,6 +40,10 @@ iactranslate translate tests/fixtures/rvtools_sample.xlsx \
 # Azure (VM + VNet/NSG)
 iactranslate translate tests/fixtures/rvtools_sample.xlsx \
   --target azure --out ./out-azure --zip --name acme-migration
+
+# GCP (Compute Engine + VPC + firewalls)
+iactranslate translate tests/fixtures/rvtools_sample.xlsx \
+  --target gcp --out ./out-gcp --zip --name acme-migration
 ```
 
 Produces a full Terraform project (`main.tf`, `networking.tf`, `compute.tf`,

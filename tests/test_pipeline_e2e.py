@@ -66,5 +66,5 @@ def test_api_full_flow(rvtools_path, tmp_path):
 
 def test_api_unsupported_target():
     client = TestClient(app)
-    r = client.post("/projects", json={"name": "x", "target": "gcp"})
+    r = client.post("/projects", json={"name": "x", "target": "oracle"})
     assert r.status_code == 400

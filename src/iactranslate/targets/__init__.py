@@ -6,16 +6,14 @@ from typing import Dict, List
 from .aws import AwsTarget
 from .base import InstanceSpec, Target, smallest_fit  # noqa: F401
 
+from .azure import AzureTarget
+from .gcp import GcpTarget
+
 _REGISTRY: Dict[str, Target] = {
     AwsTarget.name: AwsTarget(),
+    AzureTarget.name: AzureTarget(),
+    GcpTarget.name: GcpTarget(),
 }
-
-try:  # Azure is registered once its package is present.
-    from .azure import AzureTarget
-
-    _REGISTRY[AzureTarget.name] = AzureTarget()
-except ImportError:
-    pass
 
 
 class UnknownTargetError(ValueError):
