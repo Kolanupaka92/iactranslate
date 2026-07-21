@@ -1,0 +1,8 @@
+VM,CPUs,Memory GiB,Disk GiB,Network,OS,Powerstate,DNS Name,Primary IP Address,Cluster,Datacenter
+prod-web-01,4,16,200,VLAN20,Microsoft Windows Server 2022 (64-bit),poweredOn,prod-web-01.corp.local,10.10.20.11,PROD-CLUSTER,DC1
+prod-web-02,4,16,200,VLAN20,Microsoft Windows Server 2022 (64-bit),poweredOn,prod-web-02.corp.local,10.10.20.12,PROD-CLUSTER,DC1
+prod-app-01,8,32,300,VLAN30,Red Hat Enterprise Linux 9 (64-bit),poweredOn,prod-app-01.corp.local,10.10.30.21,PROD-CLUSTER,DC1
+prod-app-02,8,32,300,VLAN30,Red Hat Enterprise Linux 9 (64-bit),poweredOn,prod-app-02.corp.local,10.10.30.22,PROD-CLUSTER,DC1
+prod-db-01,16,64,1000,VLAN40,Microsoft Windows Server 2019 (64-bit),poweredOn,prod-db-01.corp.local,10.10.40.31,PROD-CLUSTER,DC1
+dev-web-01,2,8,100,VLAN120,Ubuntu Linux (64-bit),poweredOn,dev-web-01.corp.local,10.20.20.11,DEV-CLUSTER,DC1
+dev-db-01,4,16,250,VLAN140,Ubuntu Linux (64-bit),poweredOff,dev-db-01.corp.local,10.20.40.31,DEV-CLUSTER,DC1

@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+
+# Env / secrets
+.env
+.env.local
+
+# Generated output
+/out/
+*.zip
+!tests/fixtures/*.zip
+
+# OS
+.DS_Store

@@ -1,0 +1,188 @@
+"""Typed schema contract passed between every stage of the pipeline.
+
+Everything from `normalize` onward flows through these Pydantic models, so a
+failure at any stage is localized, serializable, and testable.
+"""
+from __future__ import annotations
+
+import re
+from enum import Enum
+from typing import Dict, List, Optional
+
+from pydantic import BaseModel, Field, field_validator
+
+# --------------------------------------------------------------------------- #
+# Enums
+# --------------------------------------------------------------------------- #
+
+
+class Tier(str, Enum):
+    """Application tier a VM belongs to."""
+
+    WEB = "web"
+    APP = "app"
+    DATABASE = "database"
+    CACHE = "cache"
+    OTHER = "other"
+
+
+class Environment(str, Enum):
+    PRODUCTION = "production"
+    STAGING = "staging"
+    DEVELOPMENT = "development"
+    TEST = "test"
+    UNKNOWN = "unknown"
+
+
+class SubnetTier(str, Enum):
+    PUBLIC = "public"
+    PRIVATE = "private"
+
+
+# --------------------------------------------------------------------------- #
+# Stage 1: normalized inventory
+# --------------------------------------------------------------------------- #
+
+
+def terraform_safe_name(value: str) -> str:
+    """Coerce an arbitrary string into a valid Terraform resource label.
+
+    Terraform identifiers must match [a-zA-Z_][a-zA-Z0-9_-]* — we lower-case,
+    replace runs of non-alphanumerics with a single underscore, and ensure the
+    first character is a letter or underscore.
+    """
+    slug = re.sub(r"[^a-zA-Z0-9]+", "_", value.strip().lower()).strip("_")
+    if not slug:
+        slug = "resource"
+    if not re.match(r"[a-zA-Z_]", slug[0]):
+        slug = f"r_{slug}"
+    return slug
+
+
+class NormalizedVM(BaseModel):
+    """A single virtual machine, normalized across source formats.
+
+    Units are canonical: `cpu` in vCPU count, all memory/disk in GiB.
+    """
+
+    vm_name: str
+    cpu: int = Field(ge=1, description="vCPU count")
+    memory_gib: float = Field(gt=0, description="RAM in GiB")
+    disks_gib: List[float] = Field(default_factory=list, description="Per-disk sizes in GiB")
+    network: Optional[str] = Field(default=None, description="VLAN / port group")
+    os: Optional[str] = None
+    power_state: Optional[str] = None
+    ip_addresses: List[str] = Field(default_factory=list)
+    hostname: Optional[str] = None
+    cluster: Optional[str] = None
+    datacenter: Optional[str] = None
+    tags: Dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("vm_name")
+    @classmethod
+    def _strip_name(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("vm_name must not be empty")
+        return v
+
+    @property
+    def total_disk_gib(self) -> float:
+        return round(sum(self.disks_gib), 2)
+
+    @property
+    def resource_name(self) -> str:
+        return terraform_safe_name(self.vm_name)
+
+
+# --------------------------------------------------------------------------- #
+# Stage 2: agent outputs
+# --------------------------------------------------------------------------- #
+
+
+class AppGroup(BaseModel):
+    """A logical application: a set of VMs grouped by tier and environment."""
+
+    name: str
+    environment: Environment = Environment.UNKNOWN
+    # vm_name -> tier
+    members: Dict[str, Tier] = Field(default_factory=dict)
+
+
+class ComputePlan(BaseModel):
+    """Target compute definition for one source VM."""
+
+    vm_name: str
+    resource_name: str
+    instance_type: str
+    ami_key: str = Field(description="Logical AMI selector, e.g. 'windows-2022' / 'linux'")
+    vcpu: int
+    memory_gib: float
+    root_volume_gib: int = Field(ge=8)
+    extra_volumes_gib: List[int] = Field(default_factory=list)
+    subnet_tier: SubnetTier = SubnetTier.PRIVATE
+    security_group: str = "app-sg"
+    tier: Tier = Tier.OTHER
+    environment: Environment = Environment.UNKNOWN
+    estimated_monthly_cost_usd: float = 0.0
+
+    @field_validator("resource_name")
+    @classmethod
+    def _valid_resource_name(cls, v: str) -> str:
+        if not re.match(r"^[a-zA-Z_][a-zA-Z0-9_-]*$", v):
+            raise ValueError(f"invalid terraform resource name: {v!r}")
+        return v
+
+
+class IngressRule(BaseModel):
+    description: str
+    protocol: str = "tcp"
+    from_port: int
+    to_port: int
+    cidr_blocks: List[str] = Field(default_factory=lambda: ["0.0.0.0/0"])
+
+
+class SecurityGroup(BaseModel):
+    name: str
+    resource_name: str
+    description: str = ""
+    ingress: List[IngressRule] = Field(default_factory=list)
+
+
+class Subnet(BaseModel):
+    name: str
+    resource_name: str
+    cidr: str
+    tier: SubnetTier
+    availability_zone_index: int = 0
+
+
+class NetworkPlan(BaseModel):
+    vpc_cidr: str = "10.0.0.0/16"
+    subnets: List[Subnet] = Field(default_factory=list)
+    security_groups: List[SecurityGroup] = Field(default_factory=list)
+    internet_gateway: bool = True
+    nat_gateway: bool = True
+
+
+# --------------------------------------------------------------------------- #
+# Stage 3: the validated plan the generator consumes
+# --------------------------------------------------------------------------- #
+
+
+class MigrationPlan(BaseModel):
+    project_name: str
+    source_platform: str = "vmware"
+    target: str = "aws"
+    region: str = "us-east-1"
+    network: NetworkPlan
+    compute: List[ComputePlan]
+    app_groups: List[AppGroup] = Field(default_factory=list)
+
+    @property
+    def total_estimated_monthly_cost_usd(self) -> float:
+        return round(sum(c.estimated_monthly_cost_usd for c in self.compute), 2)
+
+    @property
+    def vm_count(self) -> int:
+        return len(self.compute)

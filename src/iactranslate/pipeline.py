@@ -1,0 +1,48 @@
+"""End-to-end pipeline: discovery export -> validated Terraform project.
+
+    parse -> normalize -> agents(classify/rightsize/network) -> validate -> render -> package
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+from typing import List, Optional
+
+from .agents import build_migration_plan
+from .agents.base import LLMProvider
+from .models import MigrationPlan, NormalizedVM
+from .normalize import normalize
+from .packager import build_project, zip_project
+from .parsers import parse
+from .validation import assert_valid
+
+
+@dataclass
+class PipelineResult:
+    plan: MigrationPlan
+    vms: List[NormalizedVM]
+    project_dir: Path
+    zip_path: Optional[Path]
+
+
+def run_pipeline(
+    input_path: str,
+    project_name: str,
+    out_dir: str,
+    region: str = "us-east-1",
+    provider: Optional[LLMProvider] = None,
+    make_zip: bool = False,
+) -> PipelineResult:
+    vms = normalize(parse(input_path))
+    if not vms:
+        raise ValueError(f"No virtual machines found in '{input_path}'")
+
+    plan = build_migration_plan(vms, project_name=project_name, region=region, provider=provider)
+    assert_valid(plan)  # raises PlanValidationError on any issue
+
+    project_dir = build_project(plan, out_dir)
+    zip_path = None
+    if make_zip:
+        zip_path = zip_project(project_dir, Path(out_dir).with_suffix(".zip"))
+
+    return PipelineResult(plan=plan, vms=vms, project_dir=project_dir, zip_path=zip_path)
