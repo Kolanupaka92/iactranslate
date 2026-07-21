@@ -11,8 +11,8 @@ import ipaddress
 import re
 from typing import List
 
-from ..catalog import instance_exists
 from ..models import MigrationPlan
+from ..targets.base import Target
 
 _TF_NAME_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_-]*$")
 
@@ -29,7 +29,7 @@ def _network(value: str):
     return ipaddress.ip_network(value, strict=False)
 
 
-def validate_plan(plan: MigrationPlan) -> List[str]:
+def validate_plan(plan: MigrationPlan, target: Target) -> List[str]:
     """Return a list of issue strings. Empty list means the plan is valid."""
     issues: List[str] = []
 
@@ -39,8 +39,8 @@ def validate_plan(plan: MigrationPlan) -> List[str]:
     # --- Compute: catalog membership, naming, duplicate resource names ---------
     seen_names: dict[str, str] = {}
     for c in plan.compute:
-        if not instance_exists(c.instance_type):
-            issues.append(f"{c.vm_name}: instance type '{c.instance_type}' is not in the AWS catalog")
+        if not target.instance_exists(c.instance_type):
+            issues.append(f"{c.vm_name}: instance type '{c.instance_type}' is not in the {target.name} catalog")
         if not _TF_NAME_RE.match(c.resource_name):
             issues.append(f"{c.vm_name}: invalid terraform resource name '{c.resource_name}'")
         if c.resource_name in seen_names:
@@ -97,7 +97,7 @@ def validate_plan(plan: MigrationPlan) -> List[str]:
     return issues
 
 
-def assert_valid(plan: MigrationPlan) -> None:
-    issues = validate_plan(plan)
+def assert_valid(plan: MigrationPlan, target: Target) -> None:
+    issues = validate_plan(plan, target)
     if issues:
         raise PlanValidationError(issues)

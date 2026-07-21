@@ -7,6 +7,7 @@ from typing import Dict
 
 from .generator import build_files
 from .models import MigrationPlan
+from .targets.base import Target
 
 
 def migration_summary(plan: MigrationPlan) -> str:
@@ -51,12 +52,12 @@ def migration_summary(plan: MigrationPlan) -> str:
     return "\n".join(lines) + "\n"
 
 
-def build_project(plan: MigrationPlan, out_dir: str | Path) -> Path:
+def build_project(plan: MigrationPlan, out_dir: str | Path, target: Target) -> Path:
     """Write the full project tree to `out_dir` and return its path."""
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
 
-    files: Dict[str, str] = build_files(plan)
+    files: Dict[str, str] = build_files(plan, target)
     for filename, content in files.items():
         (out / filename).write_text(content)
 

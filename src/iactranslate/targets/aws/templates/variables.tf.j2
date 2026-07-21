@@ -19,7 +19,7 @@ variable "ami_ids" {
   EOT
   type = map(string)
   default = {
-{% for key in ami_keys %}
+{% for key in image_keys %}
     "{{ key }}" = "ami-REPLACE_ME"
 {% endfor %}
   }

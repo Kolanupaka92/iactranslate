@@ -4,8 +4,8 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from iactranslate.api.main import app
-from iactranslate.catalog import instance_exists
 from iactranslate.pipeline import run_pipeline
+from iactranslate.targets import get_target
 from iactranslate.validation import validate_plan
 
 
@@ -19,9 +19,10 @@ def test_pipeline_produces_valid_project(rvtools_path, tmp_path):
     )
 
     # Plan is valid and every instance type is real.
-    assert validate_plan(result.plan) == []
+    aws = get_target("aws")
+    assert validate_plan(result.plan, aws) == []
     for c in result.plan.compute:
-        assert instance_exists(c.instance_type)
+        assert aws.instance_exists(c.instance_type)
 
     # Full project tree written.
     for name in ("main.tf", "compute.tf", "networking.tf", "README.md"):

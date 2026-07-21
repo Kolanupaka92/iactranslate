@@ -115,7 +115,7 @@ class ComputePlan(BaseModel):
     vm_name: str
     resource_name: str
     instance_type: str
-    ami_key: str = Field(description="Logical AMI selector, e.g. 'windows-2022' / 'linux'")
+    image_key: str = Field(description="Logical OS image selector, e.g. 'windows-2022' / 'ubuntu-22.04'")
     vcpu: int
     memory_gib: float
     root_volume_gib: int = Field(ge=8)

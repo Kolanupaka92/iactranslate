@@ -16,9 +16,11 @@ instance type). Python + Jinja2 emit the actual `.tf`, so the output is
 reproducible, auditable, and enterprise-safe. Every AI decision is re-checked by
 a validation layer before any Terraform is written.
 
-> **MVP scope:** VMware → AWS (EC2 + VPC networking). The provider interface,
-> template registry, and `--target` flag are structured so additional
-> clouds/formats (Azure, GCP, Pulumi, OpenTofu) slot in later.
+> **Targets:** VMware → **AWS** (EC2 + VPC) and **Azure** (VM + VNet/NSG), both via
+> Terraform. Every cloud lives behind a `Target` interface (`src/iactranslate/targets/`) —
+> the parser, normalizer, classification agent, validation, renderer, and packager are
+> cloud-agnostic; only the catalog, tier mappings, and templates differ per cloud. GCP,
+> Pulumi, and OpenTofu slot in as new targets without touching the pipeline.
 
 ## Install
 
@@ -31,8 +33,13 @@ python scripts/make_fixtures.py   # sample RVTools .xlsx + VMware .csv for testi
 ## CLI
 
 ```bash
+# AWS (EC2 + VPC)
 iactranslate translate tests/fixtures/rvtools_sample.xlsx \
-  --target aws --out ./out --zip --name acme-migration
+  --target aws --out ./out-aws --zip --name acme-migration
+
+# Azure (VM + VNet/NSG)
+iactranslate translate tests/fixtures/rvtools_sample.xlsx \
+  --target azure --out ./out-azure --zip --name acme-migration
 ```
 
 Produces a full Terraform project (`main.tf`, `networking.tf`, `compute.tf`,

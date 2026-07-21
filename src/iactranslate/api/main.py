@@ -10,12 +10,14 @@ Flow:
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Optional
 
 from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from ..pipeline import run_pipeline
+from ..targets import list_targets
 from ..validation import PlanValidationError
 from .store import Project, ProjectStore
 
@@ -28,7 +30,7 @@ _ALLOWED_SUFFIXES = {".xlsx", ".xls", ".xlsm", ".csv"}
 class CreateProject(BaseModel):
     name: str
     target: str = "aws"
-    region: str = "us-east-1"
+    region: Optional[str] = None
 
 
 def _summary(project: Project) -> dict:
@@ -53,8 +55,8 @@ def health() -> dict:
 
 @app.post("/projects", status_code=201)
 def create_project(body: CreateProject) -> dict:
-    if body.target != "aws":
-        raise HTTPException(400, f"target '{body.target}' not supported (MVP: aws)")
+    if body.target not in list_targets():
+        raise HTTPException(400, f"target '{body.target}' not supported (available: {', '.join(list_targets())})")
     project = store.create(name=body.name, target=body.target, region=body.region)
     return _summary(project)
 
@@ -98,6 +100,7 @@ def run(pid: str) -> dict:
             input_path=str(project.upload_path),
             project_name=project.name,
             out_dir=str(out_dir),
+            target=project.target,
             region=project.region,
             make_zip=True,
         )

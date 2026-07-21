@@ -2,6 +2,9 @@ from iactranslate.agents import build_migration_plan
 from iactranslate.generator import build_files
 from iactranslate.normalize import normalize
 from iactranslate.parsers import parse
+from iactranslate.targets import get_target
+
+AWS = get_target("aws")
 
 EXPECTED_FILES = {
     "versions.tf", "provider.tf", "variables.tf", "terraform.tfvars",
@@ -12,8 +15,8 @@ EXPECTED_FILES = {
 
 def _files(rvtools_path):
     vms = normalize(parse(rvtools_path))
-    plan = build_migration_plan(vms, project_name="gen-test")
-    return build_files(plan), plan
+    plan = build_migration_plan(vms, project_name="gen-test", target=AWS)
+    return build_files(plan, AWS), plan
 
 
 def test_all_expected_files_present(rvtools_path):
@@ -49,5 +52,5 @@ def test_security_groups_rendered(rvtools_path):
 def test_ami_map_has_placeholder_per_os(rvtools_path):
     files, plan = _files(rvtools_path)
     variables = files["variables.tf"]
-    for key in {c.ami_key for c in plan.compute}:
+    for key in {c.image_key for c in plan.compute}:
         assert f'"{key}" = "ami-REPLACE_ME"' in variables

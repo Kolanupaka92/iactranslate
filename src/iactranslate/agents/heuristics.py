@@ -42,24 +42,3 @@ def detect_tier(vm: NormalizedVM) -> Tier:
         if any(t in text for t in tokens):
             return tier
     return Tier.OTHER
-
-
-def detect_ami_key(os_string: str | None) -> str:
-    if not os_string:
-        return "amazon-linux-2"
-    s = os_string.lower()
-    if "windows" in s:
-        if "2019" in s:
-            return "windows-2019"
-        if "2016" in s:
-            return "windows-2016"
-        return "windows-2022"
-    if "red hat" in s or "rhel" in s:
-        return "rhel-9"
-    if "ubuntu" in s:
-        return "ubuntu-22.04"
-    if "suse" in s or "sles" in s:
-        return "sles-15"
-    if "centos" in s:
-        return "centos-7"
-    return "amazon-linux-2"

@@ -23,7 +23,7 @@ class RightsizeSuggestion(BaseModel):
     """A provider's compute recommendation for a single VM."""
 
     instance_type: str
-    ami_key: str
+    image_key: str
 
 
 @runtime_checkable

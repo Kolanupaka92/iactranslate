@@ -9,14 +9,11 @@ import sys
 from pathlib import Path
 
 from .pipeline import run_pipeline
+from .targets import UnknownTargetError, list_targets
 from .validation import PlanValidationError
 
 
 def _cmd_translate(args: argparse.Namespace) -> int:
-    if args.target != "aws":
-        print(f"error: target '{args.target}' is not supported yet (MVP supports: aws)", file=sys.stderr)
-        return 2
-
     project_name = args.name or Path(args.input).stem
 
     try:
@@ -24,9 +21,13 @@ def _cmd_translate(args: argparse.Namespace) -> int:
             input_path=args.input,
             project_name=project_name,
             out_dir=args.out,
+            target=args.target,
             region=args.region,
             make_zip=args.zip,
         )
+    except UnknownTargetError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
     except FileNotFoundError:
         print(f"error: input file not found: {args.input}", file=sys.stderr)
         return 2
@@ -57,9 +58,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     t = sub.add_parser("translate", help="Translate a discovery export into a Terraform project.")
     t.add_argument("input", help="Path to an RVTools .xlsx or VMware .csv export.")
-    t.add_argument("--target", default="aws", help="Target IaC/cloud (MVP: aws).")
+    t.add_argument("--target", default="aws", help=f"Target cloud ({', '.join(list_targets())}).")
     t.add_argument("--out", required=True, help="Output project directory.")
-    t.add_argument("--region", default="us-east-1", help="Target AWS region.")
+    t.add_argument("--region", default=None, help="Target region/location (defaults per cloud).")
     t.add_argument("--name", default=None, help="Project name (defaults to input filename).")
     t.add_argument("--zip", action="store_true", help="Also write a <out>.zip archive.")
     t.set_defaults(func=_cmd_translate)

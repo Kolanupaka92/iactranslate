@@ -11,28 +11,12 @@ from typing import Dict, List
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 from ..models import ComputePlan, MigrationPlan, SubnetTier
-
-TEMPLATE_DIR = Path(__file__).parent / "templates"
-
-# template file (.j2) -> output filename
-_TEMPLATES = {
-    "versions.tf.j2": "versions.tf",
-    "provider.tf.j2": "provider.tf",
-    "variables.tf.j2": "variables.tf",
-    "terraform.tfvars.j2": "terraform.tfvars",
-    "networking.tf.j2": "networking.tf",
-    "security.tf.j2": "security.tf",
-    "compute.tf.j2": "compute.tf",
-    "storage.tf.j2": "storage.tf",
-    "outputs.tf.j2": "outputs.tf",
-    "main.tf.j2": "main.tf",
-    "README.md.j2": "README.md",
-}
+from ..targets.base import Target
 
 
-def _env() -> Environment:
+def _env(template_dir: Path) -> Environment:
     return Environment(
-        loader=FileSystemLoader(str(TEMPLATE_DIR)),
+        loader=FileSystemLoader(str(template_dir)),
         trim_blocks=True,
         lstrip_blocks=True,
         undefined=StrictUndefined,
@@ -56,8 +40,8 @@ def _assign_subnets(plan: MigrationPlan) -> Dict[str, str]:
     return mapping
 
 
-def _ami_keys(compute: List[ComputePlan]) -> List[str]:
-    return sorted({c.ami_key for c in compute})
+def _image_keys(compute: List[ComputePlan]) -> List[str]:
+    return sorted({c.image_key for c in compute})
 
 
 def _data_volumes(compute: List[ComputePlan]) -> List[dict]:
@@ -73,13 +57,15 @@ def _data_volumes(compute: List[ComputePlan]) -> List[dict]:
                     "vm_name": c.vm_name,
                     "size": size,
                     "device": device,
+                    "lun": i,
+                    "is_windows": c.image_key.startswith("windows"),
                 }
             )
     return volumes
 
 
-def build_files(plan: MigrationPlan) -> Dict[str, str]:
-    env = _env()
+def build_files(plan: MigrationPlan, target: Target) -> Dict[str, str]:
+    env = _env(target.template_dir)
     subnet_of = _assign_subnets(plan)
     sg_resource = {sg.name: sg.resource_name for sg in plan.network.security_groups}
     context = {
@@ -88,13 +74,13 @@ def build_files(plan: MigrationPlan) -> Dict[str, str]:
         "compute": plan.compute,
         "region": plan.region,
         "project": plan.project_name,
-        "ami_keys": _ami_keys(plan.compute),
+        "image_keys": _image_keys(plan.compute),
         "subnet_of": subnet_of,
         "sg_resource": sg_resource,
         "volumes": _data_volumes(plan.compute),
         "SubnetTier": SubnetTier,
     }
     out: Dict[str, str] = {}
-    for template_name, filename in _TEMPLATES.items():
+    for template_name, filename in target.template_map.items():
         out[filename] = env.get_template(template_name).render(**context)
     return out
