@@ -49,6 +49,33 @@ jobs:
       - name: Run tests
         run: pytest -q
 
+  terraform-validate:
+    # Prove the generated Terraform is genuinely valid against the real
+    # AWS / azurerm / google providers — not just shape-checked.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_wrapper: false
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+      - name: Generate test fixtures
+        run: python scripts/make_fixtures.py
+      - name: Validate generated Terraform (aws/azure/gcp)
+        env:
+          IACTRANSLATE_E2E_TOFU: "1"
+          TF_PLUGIN_CACHE_DIR: /tmp/tf-plugin-cache
+        run: |
+          mkdir -p /tmp/tf-plugin-cache
+          pytest tests/test_e2e.py::test_generated_terraform_validates -q
+
   web:
     runs-on: ubuntu-latest
     defaults:
