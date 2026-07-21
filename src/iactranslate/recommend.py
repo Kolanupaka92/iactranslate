@@ -19,6 +19,7 @@ from typing import Dict, List, Optional
 from pydantic import BaseModel, Field
 
 from .agents import build_migration_plan
+from .config import MAX_VMS
 from .models import NormalizedVM
 from .targets import get_target, list_targets
 
@@ -76,6 +77,8 @@ def _os_affinity(cloud: str, windows_fraction: float) -> float:
 
 
 def recommend(vms: List[NormalizedVM], targets: Optional[List[str]] = None) -> Recommendation:
+    if len(vms) > MAX_VMS:
+        raise ValueError(f"Inventory has {len(vms)} VMs, exceeding the limit of {MAX_VMS}")
     names = targets or list_targets()
     total = len(vms)
     windows = sum(1 for v in vms if _is_windows(v))

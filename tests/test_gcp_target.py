@@ -2,8 +2,8 @@ import zipfile
 
 from fastapi.testclient import TestClient
 
-from iactranslate.api.main import app
 from iactranslate.agents import build_migration_plan
+from iactranslate.api.main import app
 from iactranslate.generator import build_files
 from iactranslate.normalize import normalize
 from iactranslate.parsers import parse

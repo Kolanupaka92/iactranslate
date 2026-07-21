@@ -2,7 +2,6 @@ from iactranslate.agents.providers.rule_engine import RuleEngineProvider
 from iactranslate.agents.rightsizing import build_compute_plans
 from iactranslate.models import Environment, NormalizedVM, Tier
 from iactranslate.targets import get_target
-from iactranslate.targets.base import smallest_fit
 
 AWS = get_target("aws")
 

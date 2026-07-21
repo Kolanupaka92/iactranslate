@@ -10,6 +10,7 @@ from typing import List, Optional
 
 from .agents import build_migration_plan
 from .agents.base import LLMProvider
+from .config import MAX_VMS
 from .models import MigrationPlan, NormalizedVM
 from .normalize import normalize
 from .packager import build_project, zip_project
@@ -40,6 +41,8 @@ def run_pipeline(
     vms = normalize(parse(input_path))
     if not vms:
         raise ValueError(f"No virtual machines found in '{input_path}'")
+    if len(vms) > MAX_VMS:
+        raise ValueError(f"Inventory has {len(vms)} VMs, exceeding the limit of {MAX_VMS}")
 
     plan = build_migration_plan(
         vms, project_name=project_name, target=tgt, region=region, provider=provider

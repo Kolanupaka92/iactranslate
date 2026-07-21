@@ -26,6 +26,7 @@ dev = [
     "pytest>=8.0",
     "httpx>=0.27",
     "anthropic>=0.39",
+    "ruff>=0.6",
 ]
 
 [project.scripts]
@@ -40,3 +41,13 @@ iactranslate = ["targets/*/templates/*.j2"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+
+[tool.ruff]
+line-length = 120
+target-version = "py39"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "B"]
+# B008: FastAPI uses callables (Depends/UploadFile) as arg defaults by design.
+ignore = ["B008"]

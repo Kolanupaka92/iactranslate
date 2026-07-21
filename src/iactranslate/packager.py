@@ -30,7 +30,12 @@ def migration_summary(plan: MigrationPlan) -> str:
             lines.append(f"- `{vm_name}` — {tier.value}")
         lines.append("")
 
-    lines += ["## Compute mapping", "", "| Source VM | Instance | vCPU | Mem (GiB) | Root (GiB) | Data vols | $/mo |", "|---|---|---:|---:|---:|---|---:|"]
+    lines += [
+        "## Compute mapping",
+        "",
+        "| Source VM | Instance | vCPU | Mem (GiB) | Root (GiB) | Data vols | $/mo |",
+        "|---|---|---:|---:|---:|---|---:|",
+    ]
     for c in plan.compute:
         vols = ", ".join(str(v) for v in c.extra_volumes_gib) or "-"
         lines.append(
@@ -44,8 +49,8 @@ def migration_summary(plan: MigrationPlan) -> str:
         "## Network",
         "",
         f"- **VPC CIDR:** {net.vpc_cidr}",
-        f"- **Subnets:** " + ", ".join(f"{s.name} ({s.cidr})" for s in net.subnets),
-        f"- **Security groups:** " + ", ".join(s.name for s in net.security_groups),
+        "- **Subnets:** " + ", ".join(f"{s.name} ({s.cidr})" for s in net.subnets),
+        "- **Security groups:** " + ", ".join(s.name for s in net.security_groups),
         f"- **NAT gateway:** {'yes' if net.nat_gateway else 'no'}",
         "",
     ]

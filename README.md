@@ -71,12 +71,38 @@ uvicorn iactranslate.api.main:app --reload
 ```
 
 ```
-POST /projects                 { "name": "...", "target": "aws" }
-POST /projects/{id}/upload     multipart file (.xlsx / .csv)
-POST /projects/{id}/run
-GET  /projects/{id}            status + summary
-GET  /projects/{id}/download   → Terraform project ZIP
+POST   /projects                 { "name": "...", "target": "aws" }
+POST   /projects/{id}/upload     multipart file (.xlsx / .csv)
+POST   /projects/{id}/run
+POST   /projects/{id}/recommend  → cloud recommendation
+GET    /projects/{id}            status + summary
+GET    /projects/{id}/download   → Terraform project ZIP
+DELETE /projects/{id}            → delete project + workspace
 ```
+
+## Deploy (Docker)
+
+```bash
+docker build -t iactranslate .
+docker run -p 8000:8000 iactranslate      # non-root, healthchecked, /health
+```
+
+## Configuration & limits
+
+The API enforces hard limits to bound memory/disk/CPU on attacker-influenced input
+(all env-overridable — see `src/iactranslate/config.py`):
+
+| Env var | Default | Purpose |
+|---|---|---|
+| `IACTRANSLATE_MAX_UPLOAD_MB` | 25 | Reject larger uploads (413) — streamed, never buffered whole. |
+| `IACTRANSLATE_MAX_VMS` | 5000 | Reject oversized inventories (bounds plan/output size). |
+| `IACTRANSLATE_MAX_PROJECTS` | 200 | Cap the in-memory store; oldest projects + temp dirs are evicted. |
+| `IACTRANSLATE_CORS_ORIGINS` | (none) | Comma-separated allowed origins for the planned frontend. |
+
+Other hardening: project names are validated, malformed uploads return `400`
+(never a `500`/traceback), unhandled errors return a generic `500` and are logged
+server-side, and the store is thread-safe. No customer data leaves the machine on
+the default (`rule`) provider.
 
 ## AI providers
 
@@ -97,8 +123,9 @@ layer and catalog guardrail re-check every decision.
 pytest
 ```
 
-Covers parsers, normalization, rightsizing, validation, generation, and a full
-pipeline + API end-to-end flow (24 tests).
+Covers parsers, normalization, rightsizing, validation, generation, all three
+cloud targets, the recommender, and API security/robustness (49 tests). Lint with
+`ruff check src tests`.
 
 ## Terraform validation
 

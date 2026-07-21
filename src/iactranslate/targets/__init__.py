@@ -4,9 +4,8 @@ from __future__ import annotations
 from typing import Dict, List
 
 from .aws import AwsTarget
-from .base import InstanceSpec, Target, smallest_fit  # noqa: F401
-
 from .azure import AzureTarget
+from .base import InstanceSpec, Target, smallest_fit  # noqa: F401
 from .gcp import GcpTarget
 
 _REGISTRY: Dict[str, Target] = {
@@ -26,7 +25,7 @@ def get_target(name: str) -> Target:
     except KeyError:
         raise UnknownTargetError(
             f"unknown target '{name}' (available: {', '.join(sorted(_REGISTRY))})"
-        )
+        ) from None
 
 
 def list_targets() -> List[str]:
