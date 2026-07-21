@@ -172,11 +172,35 @@ documentation/migration-summary.md, modules/`.
 
 ## 6. How-to: run it
 
+### 6.0 Prerequisites — what to install
+
+| Tool | Version | Required for | Install |
+|---|---|---|---|
+| **Python** | 3.9+ (CI tests 3.9 / 3.11 / 3.12) | The core service, CLI, API — **required** | python.org · `pyenv` · `brew install python@3.12` |
+| **pip + venv** | bundled with Python | Installing the package | (comes with Python) |
+| **Node.js + npm** | Node **20+**, npm 10+ | The web UI (`web/`) only | nodejs.org · `nvm install 20` · `brew install node` |
+| **OpenTofu** *or* **Terraform** | 1.5+ | Validating / deploying the generated `.tf`, and the `tofu validate` E2E test | `brew install opentofu` · opentofu.org · terraform.io |
+| **Docker** | any recent | Building/running the container (optional) | docker.com |
+| **gh CLI** | any | GitHub / CI operations (optional) | `brew install gh` |
+
+**Python libraries install automatically** via `pip install -e ".[dev]"` — no manual step.
+They are: `pandas`, `openpyxl` (read .xlsx/.csv), `jinja2` (templates), `fastapi` + `uvicorn`
++ `python-multipart` (API), `pydantic` (models), and the dev/optional extras `pytest`,
+`httpx`, `ruff`, `anthropic`. **No system packages** beyond Python itself are needed for the
+core service; `tofu`/`terraform` and `node` are only for the validation and UI paths above.
+
+Verify your toolchain:
+```bash
+python3 --version     # >= 3.9
+node --version        # >= v20   (only if using the web UI)
+tofu version          # >= 1.5   (only for validating/deploying output)
+```
+
 ### 6.1 Local setup
 ```bash
 cd iactranslate
 python3 -m venv .venv && . .venv/bin/activate
-pip install -e ".[dev]"
+pip install -e ".[dev]"              # installs the package + all Python deps
 python scripts/make_fixtures.py      # writes 5 sample inventories to tests/fixtures/
 ```
 
