@@ -152,9 +152,13 @@ iactranslate/
    name → `List[NormalizedVM]`. Guardrails: empty → error; > `MAX_VMS` → error.
 4. **Classify** (`agents/classifier.py`). Provider groups VMs into applications, detecting
    environment (prod/dev/…) and tier (web/app/database/cache).
-5. **Rightsize** (`agents/rightsizing.py`). Per VM, the provider proposes an instance; the
-   code **re-checks it against the target catalog** (falls back to `smallest_fit` if bogus),
-   computes cost, and derives subnet tier + security group.
+5. **Rightsize** (`agents/rightsizing.py` + `sizing.py`). Per VM, `effective_demand()` decides
+   the requirement: if the source carries **utilization** (CPU/mem %), size to *actual usage*
+   at `IACTRANSLATE_TARGET_UTILIZATION` headroom (right-sizing); otherwise size to raw
+   allocation with 1.2× headroom (unchanged). The provider proposes an instance; the code
+   **re-checks it against the target catalog** (falls back to `smallest_fit`), computes cost,
+   and derives subnet tier + security group. Right-sized rows record the before/after and
+   surface in the migration summary and API (`right_sized_count`).
 6. **Network** (`agents/network.py`, deterministic — never the LLM). Allocates VPC/VNet,
    public+private subnets per AZ, and the security groups the tiers imply.
 7. **Assemble** `MigrationPlan` (with the real `source_platform`).
@@ -306,6 +310,7 @@ All env vars (see `src/iactranslate/config.py`):
 | `IACTRANSLATE_MAX_UPLOAD_MB` | `25` | Upload cap → `413`. Streamed, never buffered whole. |
 | `IACTRANSLATE_MAX_VMS` | `5000` | Inventory size cap → `400`. |
 | `IACTRANSLATE_MAX_PROJECTS` | `200` | In-memory store cap; oldest evicted (temp dirs deleted). |
+| `IACTRANSLATE_TARGET_UTILIZATION` | `0.65` | When a source carries utilization, size instances so they run at ~this utilization (right-sizing). |
 | `IACTRANSLATE_CORS_ORIGINS` | (none) | Comma-separated allowed origins for the frontend. `*` = all (dev only). |
 | `NEXT_PUBLIC_API_URL` | `http://localhost:8000` | Frontend → API base URL (web/). |
 | `IACTRANSLATE_E2E_TOFU` | — | Set `1` to run the real `tofu validate` E2E test. |

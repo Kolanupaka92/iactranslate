@@ -1,0 +1,8 @@
+Host Name,CPU Cores,RAM (GB),Storage (GB),Operating System,Avg CPU %,Avg Memory %
+prod-web-01,4,16,200,Microsoft Windows Server 2022 (64-bit),22,45
+prod-web-02,4,16,200,Microsoft Windows Server 2022 (64-bit),18,40
+prod-app-01,8,32,300,Red Hat Enterprise Linux 9 (64-bit),30,55
+prod-app-02,8,32,300,Red Hat Enterprise Linux 9 (64-bit),25,50
+prod-db-01,16,64,1000,Microsoft Windows Server 2019 (64-bit),15,35
+dev-web-01,2,8,100,Ubuntu Linux (64-bit),8,30
+dev-db-01,4,16,250,Ubuntu Linux (64-bit),10,25

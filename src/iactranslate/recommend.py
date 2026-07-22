@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 from .agents import build_migration_plan
 from .config import MAX_VMS
 from .models import NormalizedVM
+from .sizing import effective_demand
 from .targets import get_target, list_targets
 
 # Scoring weights (sum to 1.0). Cost dominates but sizing fit and OS affinity
@@ -56,9 +57,14 @@ def _is_windows(vm: NormalizedVM) -> bool:
 
 
 def _fit(vms: List[NormalizedVM], compute) -> float:
-    """Ratio of required to provisioned capacity (1.0 = perfect, lower = waste)."""
-    req_cpu = sum(v.cpu for v in vms) or 1
-    req_mem = sum(v.memory_gib for v in vms) or 1.0
+    """Ratio of real demand to provisioned capacity (1.0 = perfect, lower = waste).
+
+    Demand is utilization-based where available, so fit reflects true tightness
+    rather than translated over-provisioning.
+    """
+    demands = [effective_demand(v) for v in vms]
+    req_cpu = sum(d.vcpu for d in demands) or 1.0
+    req_mem = sum(d.memory_gib for d in demands) or 1.0
     got_cpu = sum(c.vcpu for c in compute) or req_cpu
     got_mem = sum(c.memory_gib for c in compute) or req_mem
     cpu_fit = min(1.0, req_cpu / got_cpu)

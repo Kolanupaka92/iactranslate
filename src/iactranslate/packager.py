@@ -12,6 +12,7 @@ from .targets.base import Target
 
 def migration_summary(plan: MigrationPlan) -> str:
     """Human-readable migration report (documentation/migration-summary.md)."""
+    right_sized = [c for c in plan.compute if c.right_sized]
     lines = [
         f"# Migration Summary — {plan.project_name}",
         "",
@@ -19,10 +20,13 @@ def migration_summary(plan: MigrationPlan) -> str:
         f"- **Target:** {plan.target} ({plan.region})",
         f"- **VMs migrated:** {plan.vm_count}",
         f"- **Estimated monthly cost:** ${plan.total_estimated_monthly_cost_usd:.2f} (on-demand, approximate)",
-        "",
-        "## Applications",
-        "",
     ]
+    if right_sized:
+        lines.append(
+            f"- **Right-sized from utilization:** {len(right_sized)} of {plan.vm_count} "
+            "workloads sized to observed usage instead of raw allocation."
+        )
+    lines += ["", "## Applications", ""]
     for group in plan.app_groups:
         lines.append(f"### {group.name} ({group.environment.value})")
         lines.append("")
@@ -33,13 +37,17 @@ def migration_summary(plan: MigrationPlan) -> str:
     lines += [
         "## Compute mapping",
         "",
-        "| Source VM | Instance | vCPU | Mem (GiB) | Root (GiB) | Data vols | $/mo |",
-        "|---|---|---:|---:|---:|---|---:|",
+        "| Source VM | Allocated | Instance (vCPU/GiB) | Root (GiB) | Data vols | $/mo |",
+        "|---|---|---|---:|---|---:|",
     ]
     for c in plan.compute:
         vols = ", ".join(str(v) for v in c.extra_volumes_gib) or "-"
+        if c.right_sized and c.source_vcpu is not None:
+            alloc = f"{c.source_vcpu} vCPU / {c.source_memory_gib:g} GiB ↓"
+        else:
+            alloc = "—"
         lines.append(
-            f"| {c.vm_name} | {c.instance_type} | {c.vcpu} | {c.memory_gib:g} | "
+            f"| {c.vm_name} | {alloc} | {c.instance_type} ({c.vcpu}/{c.memory_gib:g}) | "
             f"{c.root_volume_gib} | {vols} | {c.estimated_monthly_cost_usd:.2f} |"
         )
     lines.append("")

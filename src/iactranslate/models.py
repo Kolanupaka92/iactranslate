@@ -66,9 +66,13 @@ class NormalizedVM(BaseModel):
     """
 
     vm_name: str
-    cpu: int = Field(ge=1, description="vCPU count")
-    memory_gib: float = Field(gt=0, description="RAM in GiB")
+    cpu: int = Field(ge=1, description="Allocated vCPU count")
+    memory_gib: float = Field(gt=0, description="Allocated RAM in GiB")
     disks_gib: List[float] = Field(default_factory=list, description="Per-disk sizes in GiB")
+    # Observed utilization (0-100%), when the source provides it. Enables
+    # right-sizing to actual demand instead of translating over-provisioning 1:1.
+    cpu_util_pct: Optional[float] = Field(default=None, ge=0, le=100)
+    mem_util_pct: Optional[float] = Field(default=None, ge=0, le=100)
     network: Optional[str] = Field(default=None, description="VLAN / port group")
     os: Optional[str] = None
     power_state: Optional[str] = None
@@ -89,6 +93,10 @@ class NormalizedVM(BaseModel):
     @property
     def total_disk_gib(self) -> float:
         return round(sum(self.disks_gib), 2)
+
+    @property
+    def has_utilization(self) -> bool:
+        return self.cpu_util_pct is not None or self.mem_util_pct is not None
 
     @property
     def resource_name(self) -> str:
@@ -125,6 +133,11 @@ class ComputePlan(BaseModel):
     tier: Tier = Tier.OTHER
     environment: Environment = Environment.UNKNOWN
     estimated_monthly_cost_usd: float = 0.0
+    # True when the instance was sized to observed utilization rather than to the
+    # source VM's raw allocation. Records the allocation we shrank from.
+    right_sized: bool = False
+    source_vcpu: Optional[int] = None
+    source_memory_gib: Optional[float] = None
 
     @field_validator("resource_name")
     @classmethod

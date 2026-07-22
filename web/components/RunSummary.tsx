@@ -22,6 +22,13 @@ export default function RunSummary({ result }: { result: RunResult }) {
         </div>
       </div>
 
+      {result.right_sized_count ? (
+        <p className="rounded-lg border border-emerald-600/30 bg-emerald-600/10 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-400">
+          Right-sized {result.right_sized_count} of {result.vm_count} workloads to observed
+          utilization — sized to actual usage, not raw allocation.
+        </p>
+      ) : null}
+
       <div className="overflow-x-auto">
         <table className="w-full min-w-[420px] text-sm">
           <thead>

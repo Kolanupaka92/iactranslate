@@ -8,12 +8,10 @@ from __future__ import annotations
 from typing import Dict, List
 
 from ...models import AppGroup, Environment, NormalizedVM, Tier
+from ...sizing import effective_demand
 from ...targets.base import Target
 from ..base import RightsizeSuggestion
 from ..heuristics import detect_environment, detect_tier
-
-# Leave 20% headroom above observed allocation when picking an instance.
-_HEADROOM = 1.2
 
 
 class RuleEngineProvider:
@@ -44,10 +42,12 @@ class RuleEngineProvider:
     def rightsize(
         self, vm: NormalizedVM, tier: Tier, environment: Environment
     ) -> RightsizeSuggestion:
+        # Size to observed utilization when available, else to raw allocation.
+        d = effective_demand(vm)
         instance = self._target.smallest_fit(
-            vcpu=vm.cpu,
-            memory_gib=vm.memory_gib,
-            headroom=_HEADROOM,
+            vcpu=d.vcpu,
+            memory_gib=d.memory_gib,
+            headroom=d.headroom,
             prefer_family=self._target.family_for_tier(tier),
         )
         return RightsizeSuggestion(

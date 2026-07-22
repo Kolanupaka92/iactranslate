@@ -15,6 +15,7 @@ export interface InstanceRow {
 export interface RunResult {
   vm_count: number;
   estimated_monthly_cost_usd: number;
+  right_sized_count?: number;
   instances: InstanceRow[];
 }
 

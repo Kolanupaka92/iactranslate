@@ -10,7 +10,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 _FIXTURE_FILES = (
     "rvtools_sample.xlsx", "vmware_sample.csv", "hyperv_sample.csv",
-    "cmdb_sample.csv", "cloud_sample.csv",
+    "cmdb_sample.csv", "cmdb_util_sample.csv", "cloud_sample.csv",
 )
 
 
@@ -47,3 +47,8 @@ def cmdb_path() -> str:
 @pytest.fixture
 def cloud_path() -> str:
     return str(FIXTURES / "cloud_sample.csv")
+
+
+@pytest.fixture
+def cmdb_util_path() -> str:
+    return str(FIXTURES / "cmdb_util_sample.csv")

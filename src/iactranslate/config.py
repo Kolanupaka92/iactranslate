@@ -19,6 +19,23 @@ MAX_VMS: int = int(os.getenv("IACTRANSLATE_MAX_VMS", "5000"))
 MAX_PROJECTS: int = int(os.getenv("IACTRANSLATE_MAX_PROJECTS", "200"))
 
 
+def _target_utilization() -> float:
+    """Desired utilization of the *target* instance (0 < u <= 1).
+
+    When source utilization data is present, workloads are sized so the chosen
+    instance runs at ~this utilization (e.g. 0.65 → size to demand / 0.65,
+    leaving ~35% headroom). Default 0.65 is a common right-sizing target.
+    """
+    try:
+        u = float(os.getenv("IACTRANSLATE_TARGET_UTILIZATION", "0.65"))
+    except ValueError:
+        return 0.65
+    return u if 0.1 <= u <= 1.0 else 0.65
+
+
+TARGET_UTILIZATION: float = _target_utilization()
+
+
 def cors_origins() -> List[str]:
     """Allowed CORS origins from IACTRANSLATE_CORS_ORIGINS (comma-separated).
 

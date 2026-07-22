@@ -134,6 +134,35 @@ def build_cmdb(path: Path) -> None:
     pd.DataFrame(rows).to_csv(path, index=False)
 
 
+# Observed utilization per VM (avg CPU %, avg memory %) — deliberately low, as
+# real estates are: right-sizing should shrink these substantially.
+_UTIL = {
+    "prod-web-01": (22, 45), "prod-web-02": (18, 40), "prod-app-01": (30, 55),
+    "prod-app-02": (25, 50), "prod-db-01": (15, 35), "dev-web-01": (8, 30),
+    "dev-db-01": (10, 25),
+}
+
+
+def build_cmdb_util(path: Path) -> None:
+    # A CMDB/monitoring export that includes utilization columns.
+    rows = []
+    for (vm, cpu, mem, disk, net, os_, power, dns, ip, cluster, dc) in VMS:
+        cpu_u, mem_u = _UTIL[vm]
+        rows.append(
+            {
+                "Host Name": vm,
+                "CPU Cores": cpu,
+                "RAM (GB)": mem,
+                "Storage (GB)": disk,
+                "Operating System": os_,
+                "Avg CPU %": cpu_u,
+                "Avg Memory %": mem_u,
+            }
+        )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(rows).to_csv(path, index=False)
+
+
 def build_cloud(path: Path) -> None:
     rows = []
     for (vm, cpu, mem, disk, net, os_, power, dns, ip, cluster, dc) in VMS:
@@ -155,6 +184,7 @@ def main() -> None:
         "vmware_sample.csv": build_csv,
         "hyperv_sample.csv": build_hyperv,
         "cmdb_sample.csv": build_cmdb,
+        "cmdb_util_sample.csv": build_cmdb_util,
         "cloud_sample.csv": build_cloud,
     }
     for name, builder in builders.items():

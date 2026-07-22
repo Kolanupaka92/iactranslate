@@ -31,6 +31,22 @@ def _to_float(value: object) -> Optional[float]:
         return None
 
 
+def _util_pct(value: object) -> Optional[float]:
+    """Parse a utilization percent (accepts '22', '22%', 0.22 as fraction)."""
+    if value is None:
+        return None
+    text = str(value).strip().rstrip("%").strip()
+    try:
+        v = float(text)
+    except (TypeError, ValueError):
+        return None
+    if 0 < v <= 1:  # a fraction like 0.22 -> 22%
+        v *= 100
+    if 0 <= v <= 100:
+        return round(v, 2)
+    return None
+
+
 def _mib_to_gib(mib: Optional[float]) -> Optional[float]:
     if mib is None:
         return None
@@ -105,6 +121,8 @@ def normalize(records: List[Dict[str, object]]) -> List[NormalizedVM]:
             cpu=_to_int(rec.get("cpus")),
             memory_gib=_memory_gib(rec),
             disks_gib=_disks_gib(rec),
+            cpu_util_pct=_util_pct(rec.get("cpu_util_pct")),
+            mem_util_pct=_util_pct(rec.get("mem_util_pct")),
             network=_clean_str(rec.get("network")),
             os=_clean_str(rec.get("os")),
             power_state=_clean_str(rec.get("powerstate")),

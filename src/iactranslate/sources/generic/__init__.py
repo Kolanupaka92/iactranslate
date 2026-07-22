@@ -27,6 +27,14 @@ _SYNONYMS: Dict[str, List[str]] = {
     "memory_gib": ["memory gib", "memory gb", "ram gb", "ram (gb)", "memory (gb)",
                    "memorygb", "ram", "memory", "mem"],
     "memory_mib": ["memory mib", "memory mb", "ram mib", "ram mb"],
+    # Utilization (matched after allocation so a "Memory %" column can't be
+    # mistaken for allocated memory). Kept specific: % / util / usage / avg.
+    "cpu_util_pct": ["cpu utilization", "cpu util", "avg cpu", "average cpu",
+                     "cpu usage", "cpu percent", "cpu %", "%cpu", "peak cpu"],
+    "mem_util_pct": ["memory utilization", "mem util", "avg memory", "average memory",
+                     "memory usage", "memory percent", "memory %", "mem %", "ram %",
+                     "peak memory"],
+    "mem_used_gib": ["memory used", "used memory", "mem used", "used ram", "ram used"],
     "disk_gib": ["disk gib", "disk gb", "storage gb", "capacity gb", "provisioned gb",
                  "total storage", "storage", "capacity", "disk", "hdd"],
     "disk_mib": ["disk mib", "disk mb", "storage mib"],
@@ -58,14 +66,21 @@ class GenericSource:
         return 0.1
 
     def _auto_map(self, hdrs: List[str]) -> Dict[str, str]:
-        """Best-effort canonical -> actual-header map from headers alone."""
+        """Best-effort canonical -> actual-header map from headers alone.
+
+        A header is claimed by at most one field (first field wins), and fields
+        are tried in _SYNONYMS order — allocation before utilization — so a
+        "Memory %" column can't be swallowed by allocated `memory_gib`.
+        """
         mapping: Dict[str, str] = {}
+        claimed: set = set()
         for canon, syns in _SYNONYMS.items():
             for syn in syns:
-                match = next((h for h in hdrs if h == syn), None) or \
-                        next((h for h in hdrs if syn in h), None)
+                match = next((h for h in hdrs if h == syn and h not in claimed), None) or \
+                        next((h for h in hdrs if syn in h and h not in claimed), None)
                 if match:
                     mapping[canon] = match
+                    claimed.add(match)
                     break
         return mapping
 
@@ -117,5 +132,27 @@ class GenericSource:
                 if dgib is not None:
                     rec["disk_value"] = dgib
                     rec["disk_unit"] = "gib"
+
+            # Utilization — enables right-sizing to actual demand.
+            cpu_u = cell(row, resolved["cpu_util_pct"])
+            if cpu_u is not None:
+                rec["cpu_util_pct"] = cpu_u
+            mem_u = cell(row, resolved["mem_util_pct"])
+            if mem_u is not None:
+                rec["mem_util_pct"] = mem_u
+            else:
+                # Derive a memory-utilization % from "used GB" vs allocation.
+                used = _to_float(cell(row, resolved["mem_used_gib"]))
+                alloc = _to_float(rec.get("memory_value"))
+                if used is not None and alloc:
+                    rec["mem_util_pct"] = round(100.0 * used / alloc, 2)
+
             records.append(rec)
         return records
+
+
+def _to_float(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None

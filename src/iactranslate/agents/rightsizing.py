@@ -11,11 +11,11 @@ import math
 from typing import List, Tuple
 
 from ..models import ComputePlan, Environment, NormalizedVM, Tier
+from ..sizing import effective_demand
 from ..targets.base import Target
 from .base import LLMProvider
 
 _MIN_ROOT_GIB = 30
-_HEADROOM = 1.2
 
 
 def _root_and_extra(vm: NormalizedVM) -> Tuple[int, List[int]]:
@@ -38,12 +38,14 @@ def build_compute_plans(
     for vm in vms:
         tier, environment = tier_env.get(vm.vm_name, (Tier.OTHER, Environment.UNKNOWN))
 
+        demand = effective_demand(vm)
         suggestion = provider.rightsize(vm, tier, environment)
         instance_type = suggestion.instance_type
         # Guardrail: never emit an instance type that isn't in the target catalog.
+        # Fall back to the same demand model the provider should have used.
         if not target.instance_exists(instance_type):
             instance_type = target.smallest_fit(
-                vm.cpu, vm.memory_gib, headroom=_HEADROOM,
+                demand.vcpu, demand.memory_gib, headroom=demand.headroom,
                 prefer_family=target.family_for_tier(tier),
             ).name
 
@@ -66,6 +68,9 @@ def build_compute_plans(
                 tier=tier,
                 environment=environment,
                 estimated_monthly_cost_usd=target.cost_of(instance_type),
+                right_sized=demand.right_sized,
+                source_vcpu=vm.cpu if demand.right_sized else None,
+                source_memory_gib=vm.memory_gib if demand.right_sized else None,
             )
         )
     return plans
