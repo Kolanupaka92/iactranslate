@@ -133,6 +133,7 @@ class ComputePlan(BaseModel):
     tier: Tier = Tier.OTHER
     environment: Environment = Environment.UNKNOWN
     estimated_monthly_cost_usd: float = 0.0
+    price_source: str = "static"  # 'static' (catalog) | 'live' (real market price)
     # True when the instance was sized to observed utilization rather than to the
     # source VM's raw allocation. Records the allocation we shrank from.
     right_sized: bool = False
@@ -199,3 +200,8 @@ class MigrationPlan(BaseModel):
     @property
     def vm_count(self) -> int:
         return len(self.compute)
+
+    @property
+    def pricing_source(self) -> str:
+        """'live' if any instance was priced from a live source, else 'static'."""
+        return "live" if any(c.price_source == "live" for c in self.compute) else "static"

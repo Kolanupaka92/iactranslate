@@ -19,7 +19,8 @@ def migration_summary(plan: MigrationPlan) -> str:
         f"- **Source:** {plan.source_platform}",
         f"- **Target:** {plan.target} ({plan.region})",
         f"- **VMs migrated:** {plan.vm_count}",
-        f"- **Estimated monthly cost:** ${plan.total_estimated_monthly_cost_usd:.2f} (on-demand, approximate)",
+        f"- **Estimated monthly cost:** ${plan.total_estimated_monthly_cost_usd:.2f} "
+        f"({'live market prices' if plan.pricing_source == 'live' else 'curated static rates'}, on-demand)",
     ]
     if right_sized:
         lines.append(

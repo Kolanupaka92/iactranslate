@@ -14,6 +14,7 @@ from .config import MAX_VMS
 from .models import MigrationPlan, NormalizedVM
 from .normalize import normalize
 from .packager import build_project, zip_project
+from .pricing import live_enabled
 from .sources import resolve_source
 from .targets import get_target
 from .validation import assert_valid
@@ -50,6 +51,7 @@ def run_pipeline(
     plan = build_migration_plan(
         vms, project_name=project_name, target=tgt, region=region, provider=provider,
         source_platform=getattr(src, "source_platform", src.name),
+        live_pricing=live_enabled(),
     )
     assert_valid(plan, tgt)  # raises PlanValidationError on any issue
 

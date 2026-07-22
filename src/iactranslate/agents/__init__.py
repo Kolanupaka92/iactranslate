@@ -19,6 +19,7 @@ def build_migration_plan(
     region: Optional[str] = None,
     provider: Optional[LLMProvider] = None,
     source_platform: str = "vmware",
+    live_pricing: bool = False,
 ) -> MigrationPlan:
     """Run the agent stages and assemble an (un-validated) MigrationPlan."""
     provider = provider or get_provider(target)
@@ -26,7 +27,7 @@ def build_migration_plan(
 
     app_groups = classify(vms, provider)
     tier_env = tier_env_index(app_groups)
-    compute = build_compute_plans(vms, provider, tier_env, target)
+    compute = build_compute_plans(vms, provider, tier_env, target, region, live_pricing)
     network = plan_network(compute, target)
 
     return MigrationPlan(

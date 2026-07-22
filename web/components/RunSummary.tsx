@@ -11,7 +11,14 @@ export default function RunSummary({ result }: { result: RunResult }) {
           <div className="mt-1 text-2xl font-semibold tabular-nums">{result.vm_count}</div>
         </div>
         <div className="rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
-          <div className="text-xs uppercase opacity-60">Est. monthly cost</div>
+          <div className="flex items-center justify-between">
+            <div className="text-xs uppercase opacity-60">Est. monthly cost</div>
+            {result.pricing_source === "live" ? (
+              <span className="rounded-full bg-emerald-600/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-emerald-700 dark:text-emerald-400">
+                live prices
+              </span>
+            ) : null}
+          </div>
           <div className="mt-1 text-2xl font-semibold tabular-nums">
             $
             {result.estimated_monthly_cost_usd.toLocaleString(undefined, {

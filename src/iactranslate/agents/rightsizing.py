@@ -11,6 +11,7 @@ import math
 from typing import List, Tuple
 
 from ..models import ComputePlan, Environment, NormalizedVM, Tier
+from ..pricing import monthly_cost
 from ..sizing import effective_demand
 from ..targets.base import Target
 from .base import LLMProvider
@@ -31,8 +32,11 @@ def build_compute_plans(
     provider: LLMProvider,
     tier_env,
     target: Target,
+    region: str = "",
+    live_pricing: bool = False,
 ) -> List[ComputePlan]:
     """`tier_env` maps vm_name -> (Tier, Environment) from classification."""
+    region = region or target.default_region
     plans: List[ComputePlan] = []
 
     for vm in vms:
@@ -52,6 +56,9 @@ def build_compute_plans(
         spec = target.spec_of(instance_type)
         image_key = suggestion.image_key or target.image_key(vm.os)
         root_gib, extra_gib = _root_and_extra(vm)
+        cost, price_source = monthly_cost(
+            target.name, instance_type, region, target.cost_of(instance_type), live_pricing
+        )
 
         plans.append(
             ComputePlan(
@@ -67,7 +74,8 @@ def build_compute_plans(
                 security_group=target.sg_for_tier(tier),
                 tier=tier,
                 environment=environment,
-                estimated_monthly_cost_usd=target.cost_of(instance_type),
+                estimated_monthly_cost_usd=cost,
+                price_source=price_source,
                 right_sized=demand.right_sized,
                 source_vcpu=vm.cpu if demand.right_sized else None,
                 source_memory_gib=vm.memory_gib if demand.right_sized else None,

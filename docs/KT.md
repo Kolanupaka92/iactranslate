@@ -158,7 +158,12 @@ iactranslate/
    allocation with 1.2× headroom (unchanged). The provider proposes an instance; the code
    **re-checks it against the target catalog** (falls back to `smallest_fit`), computes cost,
    and derives subnet tier + security group. Right-sized rows record the before/after and
-   surface in the migration summary and API (`right_sized_count`).
+   surface in the migration summary and API (`right_sized_count`). **Cost** comes from
+   `pricing.monthly_cost()`: static catalog rates by default, or live market prices when
+   `IACTRANSLATE_PRICING=live` (Azure Retail Prices API needs no credentials; AWS uses boto3
+   if creds exist; anything unavailable falls back to static). `pricing_source` (static/live)
+   is surfaced in the summary and API. The **recommender always uses static** rates for a fair
+   apples-to-apples comparison.
 6. **Network** (`agents/network.py`, deterministic — never the LLM). Allocates VPC/VNet,
    public+private subnets per AZ, and the security groups the tiers imply.
 7. **Assemble** `MigrationPlan` (with the real `source_platform`).
@@ -311,6 +316,8 @@ All env vars (see `src/iactranslate/config.py`):
 | `IACTRANSLATE_MAX_VMS` | `5000` | Inventory size cap → `400`. |
 | `IACTRANSLATE_MAX_PROJECTS` | `200` | In-memory store cap; oldest evicted (temp dirs deleted). |
 | `IACTRANSLATE_TARGET_UTILIZATION` | `0.65` | When a source carries utilization, size instances so they run at ~this utilization (right-sizing). |
+| `IACTRANSLATE_PRICING` | `static` | `static` (curated catalog rates, offline) or `live` (real market prices, cached, falls back to static). |
+| `IACTRANSLATE_PRICE_CACHE` | temp file | Path for the on-disk live-price cache (24h TTL). |
 | `IACTRANSLATE_CORS_ORIGINS` | (none) | Comma-separated allowed origins for the frontend. `*` = all (dev only). |
 | `NEXT_PUBLIC_API_URL` | `http://localhost:8000` | Frontend → API base URL (web/). |
 | `IACTRANSLATE_E2E_TOFU` | — | Set `1` to run the real `tofu validate` E2E test. |

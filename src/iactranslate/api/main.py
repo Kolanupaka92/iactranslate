@@ -202,6 +202,7 @@ def run(pid: str) -> dict:
     project.summary = {
         "vm_count": result.plan.vm_count,
         "estimated_monthly_cost_usd": result.plan.total_estimated_monthly_cost_usd,
+        "pricing_source": result.plan.pricing_source,
         "right_sized_count": sum(1 for c in result.plan.compute if c.right_sized),
         "instances": [
             {"vm": c.vm_name, "instance_type": c.instance_type, "tier": c.tier.value}
