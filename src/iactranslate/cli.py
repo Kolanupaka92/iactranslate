@@ -103,6 +103,10 @@ def _cmd_recommend(args: argparse.Namespace) -> int:
         print(f"{s.cloud.upper()}:")
         for reason in s.reasons:
             print(f"  - {reason}")
+    if rec.notes:
+        print("\nNotes:")
+        for note in rec.notes:
+            print(f"  - {note}")
     print(f"\n{rec.summary}")
     return 0
 

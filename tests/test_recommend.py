@@ -44,6 +44,22 @@ def test_windows_heavy_estate_favors_azure_os_score():
     assert by_cloud["azure"].windows_vms == 4
 
 
+def test_recommendation_2_0_fields(rvtools_path):
+    vms = normalize(parse(rvtools_path))
+    rec = recommend(vms)
+    # Decisiveness reflects the margin band.
+    assert rec.decisiveness in {"clear", "moderate", "close"}
+    assert rec.margin >= 0.0
+    if len(rec.ranked) > 1:
+        expected = round(rec.ranked[0].weighted_score - rec.ranked[1].weighted_score, 4)
+        assert abs(rec.margin - expected) < 1e-6
+    # Annualized cost = 12x monthly, per cloud.
+    for s in rec.ranked:
+        assert abs(s.annual_cost_usd - s.total_monthly_cost_usd * 12) < 0.01
+    # At least the cost-spread note is always present.
+    assert rec.notes and any("Annual spend" in n for n in rec.notes)
+
+
 def test_api_recommend_flow(rvtools_path):
     client = TestClient(app)
     pid = client.post("/projects", json={"name": "rec", "target": "aws"}).json()["id"]

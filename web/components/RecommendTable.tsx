@@ -2,6 +2,12 @@
 
 import type { Recommendation, Target } from "@/lib/api";
 
+const DECISIVENESS_STYLE: Record<string, string> = {
+  clear: "bg-emerald-600/15 text-emerald-700 dark:text-emerald-400",
+  moderate: "bg-amber-600/15 text-amber-700 dark:text-amber-400",
+  close: "bg-red-600/15 text-red-700 dark:text-red-400",
+};
+
 function Meter({ value, label }: { value: number; label: string }) {
   return (
     <div className="flex items-center gap-2" title={`${label}: ${value.toFixed(2)}`}>
@@ -27,6 +33,18 @@ export default function RecommendTable({
 }) {
   return (
     <div className="space-y-4">
+      <div className="flex items-center gap-2 text-sm">
+        <span className="opacity-70">Recommended:</span>
+        <span className="font-semibold uppercase">{rec.recommended}</span>
+        <span
+          className={`rounded-full px-2 py-0.5 text-xs font-medium capitalize ${
+            DECISIVENESS_STYLE[rec.decisiveness] ?? ""
+          }`}
+        >
+          {rec.decisiveness} lead · margin {rec.margin.toFixed(2)}
+        </span>
+      </div>
+
       <div className="overflow-x-auto">
         <table className="w-full min-w-[560px] text-sm">
           <thead>
@@ -96,6 +114,14 @@ export default function RecommendTable({
           </details>
         ))}
       </div>
+
+      {rec.notes.length > 0 && (
+        <ul className="ml-5 list-disc space-y-0.5 text-xs opacity-70">
+          {rec.notes.map((n) => (
+            <li key={n}>{n}</li>
+          ))}
+        </ul>
+      )}
 
       <p className="text-xs opacity-60">{rec.summary}</p>
     </div>

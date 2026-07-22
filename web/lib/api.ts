@@ -41,6 +41,7 @@ export interface ProjectSummary {
 export interface CloudScore {
   cloud: Target;
   total_monthly_cost_usd: number;
+  annual_cost_usd: number;
   windows_vms: number;
   linux_vms: number;
   cost_score: number;
@@ -54,6 +55,9 @@ export interface Recommendation {
   recommended: Target;
   summary: string;
   ranked: CloudScore[];
+  decisiveness: "clear" | "moderate" | "close";
+  margin: number;
+  notes: string[];
 }
 
 export type Severity = "critical" | "high" | "medium" | "low" | "info";

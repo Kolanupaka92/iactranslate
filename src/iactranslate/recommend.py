@@ -37,6 +37,7 @@ _AWS_OS_BASELINE = 0.6
 class CloudScore(BaseModel):
     cloud: str
     total_monthly_cost_usd: float
+    annual_cost_usd: float = 0.0
     windows_vms: int
     linux_vms: int
     cost_score: float = Field(description="0-1, higher is cheaper relative to the cheapest cloud")
@@ -50,6 +51,11 @@ class Recommendation(BaseModel):
     recommended: str
     summary: str
     ranked: List[CloudScore]
+    # 2.0: how decisive the call is, the score gap to the runner-up, and
+    # estate-level observations a reviewer should weigh.
+    decisiveness: str = Field(default="clear", description="'clear' | 'moderate' | 'close'")
+    margin: float = Field(default=0.0, description="Winner's weighted-score lead over #2")
+    notes: List[str] = Field(default_factory=list)
 
 
 def _is_windows(vm: NormalizedVM) -> bool:
@@ -141,6 +147,7 @@ def recommend(vms: List[NormalizedVM], targets: Optional[List[str]] = None) -> R
             CloudScore(
                 cloud=name,
                 total_monthly_cost_usd=r["cost"],
+                annual_cost_usd=round(r["cost"] * 12, 2),
                 windows_vms=windows,
                 linux_vms=linux,
                 cost_score=cost_score,
@@ -153,14 +160,48 @@ def recommend(vms: List[NormalizedVM], targets: Optional[List[str]] = None) -> R
 
     scores.sort(key=lambda s: s.weighted_score, reverse=True)
     winner = scores[0]
+
+    # 2.0: decisiveness from the score gap to the runner-up.
+    margin = round(winner.weighted_score - scores[1].weighted_score, 4) if len(scores) > 1 else winner.weighted_score
+    if margin >= 0.10:
+        decisiveness = "clear"
+    elif margin >= 0.03:
+        decisiveness = "moderate"
+    else:
+        decisiveness = "close"
+
+    # 2.0: estate-level notes a reviewer should weigh.
+    priciest = max(scores, key=lambda s: s.total_monthly_cost_usd)
+    annual_spread = round((priciest.total_monthly_cost_usd - cheapest_cost) * 12, 2)
+    notes: List[str] = [
+        f"Annual spend ranges ${cheapest_cost * 12:,.0f} ({lowest_cost_cloud.upper()}) to "
+        f"${priciest.total_monthly_cost_usd * 12:,.0f} ({priciest.cloud.upper()}) — "
+        f"a ${annual_spread:,.0f}/yr difference across clouds.",
+    ]
+    if windows and linux:
+        notes.append(
+            f"Mixed estate: {windows} Windows / {linux} Linux. Windows licensing "
+            "(Azure Hybrid Benefit vs BYOL) can shift the cost comparison."
+        )
+    if decisiveness == "close":
+        notes.append(
+            "Close call — the top two clouds are within the scoring noise; "
+            "adjusting the cost/fit/OS weights could flip the recommendation."
+        )
+
     os_note = (
         f"{windows}/{total} Windows"
         if windows >= linux
         else f"{linux}/{total} Linux"
     )
     summary = (
-        f"Recommended: {winner.cloud.upper()} (score {winner.weighted_score:.2f}). "
+        f"Recommended: {winner.cloud.upper()} (score {winner.weighted_score:.2f}, "
+        f"{decisiveness} lead of {margin:.2f} over #{2 if len(scores) > 1 else 1}). "
         f"Estate is {os_note}; cheapest option is {lowest_cost_cloud.upper()} at "
-        f"${cheapest_cost:.2f}/mo. Weights — cost {W_COST}, fit {W_FIT}, OS {W_OS}."
+        f"${cheapest_cost:.2f}/mo (${cheapest_cost * 12:,.0f}/yr). "
+        f"Weights — cost {W_COST}, fit {W_FIT}, OS {W_OS}."
     )
-    return Recommendation(recommended=winner.cloud, summary=summary, ranked=scores)
+    return Recommendation(
+        recommended=winner.cloud, summary=summary, ranked=scores,
+        decisiveness=decisiveness, margin=margin, notes=notes,
+    )

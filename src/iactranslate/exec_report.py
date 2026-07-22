@@ -65,20 +65,25 @@ def _recommendation_section(rec: Recommendation) -> str:
           <td class="up">{_esc(s.cloud)}{' ★' if s.cloud == rec.recommended else ''}</td>
           <td class="num">{s.weighted_score:.2f}</td>
           <td class="num">{_money(s.total_monthly_cost_usd)}</td>
+          <td class="num">{_money(s.annual_cost_usd)}</td>
           <td class="num">{s.cost_score:.2f}</td>
           <td class="num">{s.fit_score:.2f}</td>
           <td class="num">{s.os_score:.2f}</td>
         </tr>"""
         for s in rec.ranked
     )
+    notes = "".join(f"<li>{_esc(n)}</li>" for n in rec.notes)
+    notes_html = f'<ul class="muted">{notes}</ul>' if notes else ""
     return f"""  <section>
     <h2>Cloud recommendation</h2>
-    <p class="lead">Recommended: <strong class="up">{_esc(rec.recommended)}</strong></p>
+    <p class="lead">Recommended: <strong class="up">{_esc(rec.recommended)}</strong>
+      <span class="muted">({_esc(rec.decisiveness)} lead, margin {rec.margin:.2f})</span></p>
     <div class="scroll"><table>
       <thead><tr><th>Cloud</th><th class="num">Score</th><th class="num">$/mo</th>
-        <th class="num">Cost</th><th class="num">Fit</th><th class="num">OS</th></tr></thead>
+        <th class="num">$/yr</th><th class="num">Cost</th><th class="num">Fit</th><th class="num">OS</th></tr></thead>
       <tbody>{rows}</tbody>
     </table></div>
+    {notes_html}
     <p class="muted">{_esc(rec.summary)}</p>
   </section>"""
 
