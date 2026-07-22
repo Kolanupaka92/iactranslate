@@ -252,6 +252,11 @@ def run(pid: str) -> dict:
             {"policy": v.policy, "message": v.message, "resource": v.resource}
             for v in (result.policy.warnings if result.policy else [])
         ],
+        "trace": (
+            {"total_ms": result.trace.total_ms,
+             "stages": [{"stage": s.stage, "duration_ms": s.duration_ms} for s in result.trace.stages]}
+            if result.trace else None
+        ),
         "instances": [
             {"vm": c.vm_name, "instance_type": c.instance_type, "tier": c.tier.value}
             for c in result.plan.compute

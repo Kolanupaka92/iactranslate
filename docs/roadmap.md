@@ -29,6 +29,8 @@ in CI on `main`.
 - ✅ **Policy engine** — pluggable, read-only org rules (`deny`/`warn`) before rendering
 - ✅ **Capability flags** — targets advertise supported features (`GET /targets`)
 - ✅ **Explainability** — per-decision `reason` + `decisions.json` (why + how sure)
+- ✅ **Infrastructure Graph** — renderer-neutral topology IR (`graph.json`); the diagram renders from it
+- ✅ **Named, timed pipeline stages** — per-stage `pipeline-trace.json` + structured log (observability)
 - ✅ Model schema versioning (`NormalizedVM` / `MigrationPlan`)
 
 **Surfaces & delivery**
@@ -49,21 +51,25 @@ in CI on `main`.
 - ◻ Managed-database re-platforming (RDS / Cloud SQL / Azure SQL) recommendations
 - ◻ Kubernetes workload discovery
 
-**Platform**
-- ◻ PostgreSQL backend (persistence beyond the in-memory store)
-- ◻ Multi-user authentication
-- ◻ Async / queued execution for very large estates
+**Platform / scale** (the [reference architecture](deployment.md#reference-architecture)):
+- ◻ PostgreSQL backend (persistence beyond the in-memory store; the `ProjectStore` is the seam)
+- ◻ Multi-user authentication + per-org multi-tenancy
+- ◻ Async / queued execution + **resumable stages** (builds on the named-stage model)
+- ◻ Durable artifact store (object storage) for every produced file
 - ◻ Cloud Cost Explorer / actual-spend reconciliation
+
+**Renderers via the Infrastructure Graph** (the IR seam now exists):
+- ◻ CloudFormation, Bicep, AWS CDK, Kubernetes back-ends consuming `graph.json`
+- ◻ Migrate the Terraform/Pulumi renderers onto the graph
 
 **Considered, deliberately deferred** (would add value but aren't warranted at the
 current size — tracked so the reasoning is explicit, not forgotten):
 
-- ◻ **Audit event stream** — emit a structured `AuditEvent` per stage. Valuable
-  once runs are long-lived/multi-user; the current pipeline is a sub-second,
-  single-shot, deterministic function, so an audit subsystem would be weight
-  without a consumer yet.
-- ◻ **Event bus** for post-plan fan-out (Slack/email/webhook/telemetry). Deferred
-  for the same reason — worth it when there are external subscribers to notify.
+- ◻ **Audit event stream** — emit a structured `AuditEvent` per stage. The named,
+  timed stages + `pipeline-trace.json` are the substrate; a full audit log is
+  valuable once runs are long-lived/multi-user (persistence-backed), not yet.
+- ◻ **Event bus** for post-plan fan-out (Slack/email/webhook/telemetry). Worth it
+  when there are external subscribers to notify.
 - ◻ **`src/` reorg into `core/ decision/ analysis/ renderers/`** — the decision/
   analysis separation is real and documented; the physical move is churn with
   import-breakage risk that isn't justified yet.

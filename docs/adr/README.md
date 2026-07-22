@@ -18,5 +18,6 @@ Format: [Michael Nygard's ADR template](https://cognitect.com/blog/2011/11/15/do
 | [0008](0008-policy-engine.md) | A policy engine for organization-specific rules | Accepted |
 | [0009](0009-capability-flags.md) | Targets advertise capability flags | Accepted |
 | [0010](0010-infrastructure-graph.md) | An Infrastructure Graph IR between plan and renderers | Accepted |
+| [0011](0011-pipeline-stages.md) | The pipeline runs as named, timed stages | Accepted |
 
 See also the [Architecture & Design](../architecture.md) overview.

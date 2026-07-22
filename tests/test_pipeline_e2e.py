@@ -41,6 +41,8 @@ def test_pipeline_produces_valid_project(rvtools_path, tmp_path):
     assert (out / "documentation" / "architecture.svg").exists()
     assert (out / "documentation" / "architecture.md").exists()
     assert (out / "graph.json").exists()
+    # Per-stage observability trace.
+    assert (out / "pipeline-trace.json").exists()
     # GitOps workflow bundled when requested.
     assert (out / ".github" / "workflows" / "terraform.yml").exists()
     assert (out / ".gitignore").exists()

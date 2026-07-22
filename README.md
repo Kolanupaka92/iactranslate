@@ -102,6 +102,7 @@ scope, and assumptions — is in **[docs/architecture.md](docs/architecture.md)*
 | [Operations Guide](docs/operations-guide.md) | Running, extending, operating, troubleshooting; CLI/API/config reference; performance & security |
 | [Architecture & Design](docs/architecture.md) | Why it's built this way — principles, canonical model, scope, assumptions, "why not …" |
 | [Architecture Decision Records](docs/adr/) | The record of load-bearing decisions |
+| [Deployment & Execution](docs/deployment.md) | Execution model, stages, state machine; single-node + reference architecture for scale |
 | [Roadmap](docs/roadmap.md) | Shipped vs planned |
 
 ## Test & lint
