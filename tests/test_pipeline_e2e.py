@@ -15,6 +15,7 @@ def test_pipeline_produces_valid_project(rvtools_path, tmp_path):
         project_name="e2e",
         out_dir=str(out),
         make_zip=True,
+        gitops=True,
     )
 
     # Plan is valid and every instance type is real.
@@ -37,6 +38,9 @@ def test_pipeline_produces_valid_project(rvtools_path, tmp_path):
     # Architecture diagram (SVG + mermaid doc).
     assert (out / "documentation" / "architecture.svg").exists()
     assert (out / "documentation" / "architecture.md").exists()
+    # GitOps workflow bundled when requested.
+    assert (out / ".github" / "workflows" / "terraform.yml").exists()
+    assert (out / ".gitignore").exists()
 
     # ZIP contains the terraform files.
     assert result.zip_path and result.zip_path.exists()

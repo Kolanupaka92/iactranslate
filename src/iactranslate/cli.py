@@ -51,6 +51,7 @@ def _cmd_translate(args: argparse.Namespace) -> int:
             region=args.region,
             make_zip=args.zip,
             renderer=args.renderer,
+            gitops=args.gitops,
         )
     except (UnknownTargetError, UnknownSourceError, UnknownRendererError) as e:
         print(f"error: {e}", file=sys.stderr)
@@ -257,6 +258,8 @@ def build_parser() -> argparse.ArgumentParser:
     t.add_argument("--name", default=None, help="Project name (defaults to input filename).")
     t.add_argument("--renderer", default="terraform",
                    help=f"IaC output format ({', '.join(list_renderers())}). Pulumi is AWS-only.")
+    t.add_argument("--gitops", action="store_true",
+                   help="Include a GitOps CI/CD workflow (plan on PR, apply on merge) + .gitignore.")
     t.add_argument("--zip", action="store_true", help="Also write a <out>.zip archive.")
     t.set_defaults(func=_cmd_translate)
 

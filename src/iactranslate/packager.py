@@ -10,6 +10,7 @@ from .assessment import assess, to_html, to_json
 from .confidence import score_plan
 from .diagram import architecture_mermaid, architecture_svg
 from .exec_report import build_executive_report
+from .gitops import gitops_files
 from .models import MigrationPlan, NormalizedVM
 from .renderers import render
 from .targets.base import Target
@@ -80,10 +81,12 @@ def build_project(
     target: Target,
     vms: Optional[List[NormalizedVM]] = None,
     renderer: str = "terraform",
+    gitops: bool = False,
 ) -> Path:
     """Write the full project tree to `out_dir` and return its path.
 
-    `renderer` selects the IaC output ('terraform' | 'pulumi'). When `vms` is
+    `renderer` selects the IaC output ('terraform' | 'pulumi'). `gitops` adds a
+    CI/CD workflow (plan on PR, apply on merge) + .gitignore. When `vms` is
     supplied, a pre-migration assessment is written alongside (assessment.json +
     documentation/assessment.html).
     """
@@ -91,8 +94,12 @@ def build_project(
     out.mkdir(parents=True, exist_ok=True)
 
     files: Dict[str, str] = render(renderer, plan, target)
+    if gitops:
+        files.update(gitops_files(plan, renderer))
     for filename, content in files.items():
-        (out / filename).write_text(content)
+        dest = out / filename
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(content)
 
     docs = out / "documentation"
     docs.mkdir(exist_ok=True)
