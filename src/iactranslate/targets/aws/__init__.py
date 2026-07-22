@@ -5,7 +5,16 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from ...models import IngressRule, SubnetTier, Tier
-from ..base import TEMPLATE_MAP, InstanceSpec, smallest_fit
+from ..base import (
+    CAP_BROWNFIELD_IMPORT,
+    CAP_GITOPS,
+    CAP_LIVE_PRICING,
+    CAP_PULUMI,
+    CAP_TERRAFORM,
+    TEMPLATE_MAP,
+    InstanceSpec,
+    smallest_fit,
+)
 from . import mapping
 from .catalog import INSTANCE_CATALOG, index
 
@@ -15,6 +24,9 @@ class AwsTarget:
     default_region = "us-east-1"
     vpc_cidr = mapping.VPC_CIDR
     template_dir = Path(__file__).parent / "templates"
+    capabilities = frozenset(
+        {CAP_TERRAFORM, CAP_PULUMI, CAP_GITOPS, CAP_LIVE_PRICING, CAP_BROWNFIELD_IMPORT}
+    )
     # AWS resolves AMIs with data sources in an extra images.tf, and emits
     # import blocks (imports.tf) for any brownfield resources to adopt.
     template_map: Dict[str, str] = {

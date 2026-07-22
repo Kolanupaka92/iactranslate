@@ -16,6 +16,14 @@ from ..models import IngressRule, SubnetTier, Tier
 
 HOURS_PER_MONTH = 730
 
+# Capability flags a Target advertises, so callers (UI/API/renderers) can enable
+# features declaratively instead of branching on `target.name == "aws"`.
+CAP_TERRAFORM = "terraform"
+CAP_PULUMI = "pulumi"
+CAP_GITOPS = "gitops"
+CAP_LIVE_PRICING = "live_pricing"
+CAP_BROWNFIELD_IMPORT = "brownfield_import"  # emit IaC `import` blocks to adopt an existing fleet
+
 
 @dataclass(frozen=True)
 class InstanceSpec:
@@ -80,6 +88,7 @@ class Target(Protocol):
     template_dir: Path
     template_map: Dict[str, str]
     default_ingress: Dict[str, List[IngressRule]]
+    capabilities: "frozenset[str]"  # advertised features, e.g. CAP_BROWNFIELD_IMPORT
 
     def instance_exists(self, name: str) -> bool: ...
 

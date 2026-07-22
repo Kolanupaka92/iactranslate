@@ -65,6 +65,7 @@ class NormalizedVM(BaseModel):
     Units are canonical: `cpu` in vCPU count, all memory/disk in GiB.
     """
 
+    schema_version: int = Field(default=1, description="Canonical-model version for forward compatibility")
     vm_name: str
     cpu: int = Field(ge=1, description="Allocated vCPU count")
     memory_gib: float = Field(gt=0, description="Allocated RAM in GiB")
@@ -191,6 +192,7 @@ class NetworkPlan(BaseModel):
 
 
 class MigrationPlan(BaseModel):
+    schema_version: int = Field(default=1, description="Canonical-plan version for forward compatibility")
     project_name: str
     source_platform: str = "vmware"
     target: str = "aws"

@@ -82,6 +82,7 @@ def build_project(
     vms: Optional[List[NormalizedVM]] = None,
     renderer: str = "terraform",
     gitops: bool = False,
+    policy_result=None,
 ) -> Path:
     """Write the full project tree to `out_dir` and return its path.
 
@@ -114,6 +115,13 @@ def build_project(
     (out / "confidence.json").write_text(
         json.dumps(confidence.model_dump(mode="json"), indent=2)
     )
+
+    # Policy report — only when policies were evaluated and produced findings
+    # (deny violations abort before packaging; this captures warnings).
+    if policy_result is not None and policy_result.violations:
+        (out / "policy-report.json").write_text(
+            json.dumps(policy_result.model_dump(mode="json"), indent=2)
+        )
 
     # Architecture diagram — SVG (portable) + Mermaid (renders in GitHub/markdown).
     (docs / "architecture.svg").write_text(architecture_svg(plan))

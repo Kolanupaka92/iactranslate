@@ -52,7 +52,7 @@ bespoke parser — so it works for every company, not just VMware shops.
 **Status.** CLI + FastAPI + Next.js web UI. On top of the core translator it ships a full
 migration-platform layer — assessment, confidence scoring, executive reports, architecture
 diagrams, infrastructure diff, brownfield adoption, a Pulumi renderer, and opt-in GitOps.
-~145 tests, 7 green CI jobs (lint, pytest 3.9/3.11/3.12, Docker health, web build, real
+~165 tests, 7 green CI jobs (lint, pytest 3.9/3.11/3.12, Docker health, web build, real
 Terraform validate). Repo: `github.com/Kolanupaka92/iactranslate` (private).
 
 ---
@@ -288,6 +288,24 @@ iactranslate diff old-inventory.csv new-inventory.csv
 iactranslate diff old.csv new.csv --json
 ```
 
+### 6.3d Policy enforcement
+Enforce organization rules on the plan before rendering. `deny` violations abort
+the run; `warn` violations are reported (`policy-report.json`) but don't block.
+
+```bash
+# policy.json — activate + parameterize built-in rules
+# { "no_public_subnets": {}, "allowed_instance_families": {"families": ["t3","m5"]},
+#   "max_vcpu": {"max": 16}, "max_monthly_cost": {"budget_usd": 5000},
+#   "naming_prefix": {"prefix": "acme_", "severity": "warn"}, "require_nat": {} }
+iactranslate translate rvtools.xlsx --target aws --policy policy.json --out ./out
+```
+
+Built-in policies: `no_public_subnets`, `allowed_instance_families`, `max_vcpu`,
+`max_monthly_cost`, `naming_prefix`, `require_nat`. Any policy's `severity` can be
+overridden in its config (`"severity": "warn"|"deny"`). Policies are read-only —
+they never mutate the plan (see [Architecture › Policy engine](architecture.md#policy-engine)).
+Over the API: pass `policy` on project create; `GET /policies` lists the rules.
+
 ### 6.4 API
 ```bash
 uvicorn iactranslate.api.main:app --port 8000            # add --reload for dev
@@ -391,7 +409,9 @@ All env vars (see `src/iactranslate/config.py`):
 | `POST` | `/projects/{id}/assess` | Pre-migration readiness assessment (findings + score) from the uploaded inventory. |
 | `POST` | `/projects/{id}/recommend` | Cloud recommendation (with decisiveness, annualized cost, notes). |
 | `POST` | `/projects/{id}/report` | Executive report HTML. `?include_recommendation=false` to skip the 3-cloud compare. |
-| `GET` | `/projects/{id}` | Status + summary (includes the plan's confidence). |
+| `GET` | `/policies` | Available policy rules (name → description). |
+| `GET` | `/targets` | Targets and their capability flags. |
+| `GET` | `/projects/{id}` | Status + summary (includes the plan's confidence + policy warnings). |
 | `GET` | `/projects/{id}/download` | The Terraform project ZIP. 409 if not generated yet. |
 | `DELETE` | `/projects/{id}` | Deletes the project + its temp workspace. 204. |
 

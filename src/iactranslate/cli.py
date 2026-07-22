@@ -17,6 +17,7 @@ from .diff import diff_inventories
 from .exec_report import build_executive_report
 from .normalize import normalize
 from .pipeline import run_pipeline
+from .policy import PolicyViolationError, UnknownPolicyError, load_policy_config
 from .recommend import recommend
 from .renderers import UnknownRendererError, list_renderers
 from .sources import UnknownSourceError, list_sources, resolve_source
@@ -41,6 +42,12 @@ def _cmd_translate(args: argparse.Namespace) -> int:
     project_name = args.name or Path(args.input).stem
 
     try:
+        policy_config = load_policy_config(args.policy) if args.policy else None
+    except (FileNotFoundError, ValueError) as e:
+        print(f"error: could not load policy config '{args.policy}': {e}", file=sys.stderr)
+        return 2
+
+    try:
         result = run_pipeline(
             input_path=args.input,
             project_name=project_name,
@@ -52,8 +59,9 @@ def _cmd_translate(args: argparse.Namespace) -> int:
             make_zip=args.zip,
             renderer=args.renderer,
             gitops=args.gitops,
+            policy_config=policy_config,
         )
-    except (UnknownTargetError, UnknownSourceError, UnknownRendererError) as e:
+    except (UnknownTargetError, UnknownSourceError, UnknownRendererError, UnknownPolicyError) as e:
         print(f"error: {e}", file=sys.stderr)
         return 2
     except FileNotFoundError:
@@ -61,6 +69,9 @@ def _cmd_translate(args: argparse.Namespace) -> int:
         return 2
     except PlanValidationError as e:
         print(f"error: generated plan failed validation:\n{e}", file=sys.stderr)
+        return 1
+    except PolicyViolationError as e:
+        print(f"error: {e}", file=sys.stderr)
         return 1
     except ValueError as e:
         print(f"error: {e}", file=sys.stderr)
@@ -75,6 +86,10 @@ def _cmd_translate(args: argparse.Namespace) -> int:
     print(f"Confidence: {conf.overall * 100:.0f}% ({conf.level})"
           + (f" — {len(conf.low_confidence())} low-confidence VM(s)"
              if conf.low_confidence() else ""))
+    if result.policy and result.policy.warnings:
+        print(f"Policy:     {len(result.policy.warnings)} warning(s) (see policy-report.json)")
+        for w in result.policy.warnings[:5]:
+            print(f"  ! [{w.policy}] {w.message}")
     print(f"Output:     {result.project_dir}")
     if result.zip_path:
         print(f"ZIP:       {result.zip_path}")
@@ -260,6 +275,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help=f"IaC output format ({', '.join(list_renderers())}). Pulumi is AWS-only.")
     t.add_argument("--gitops", action="store_true",
                    help="Include a GitOps CI/CD workflow (plan on PR, apply on merge) + .gitignore.")
+    t.add_argument("--policy", default=None,
+                   help="Path to a JSON policy config; `deny` violations abort, `warn` are reported.")
     t.add_argument("--zip", action="store_true", help="Also write a <out>.zip archive.")
     t.set_defaults(func=_cmd_translate)
 

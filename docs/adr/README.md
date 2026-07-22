@@ -14,5 +14,8 @@ Format: [Michael Nygard's ADR template](https://cognitect.com/blog/2011/11/15/do
 | [0004](0004-ai-provider-interface.md) | AI behind a provider interface with rule-engine default | Accepted |
 | [0005](0005-jinja-renderer.md) | Templates (Jinja2) emit IaC, not the model or the AI | Accepted |
 | [0006](0006-validation-before-render.md) | Validation is a hard gate before rendering | Accepted |
+| [0007](0007-immutable-plan.md) | The MigrationPlan is immutable after planning | Accepted |
+| [0008](0008-policy-engine.md) | A policy engine for organization-specific rules | Accepted |
+| [0009](0009-capability-flags.md) | Targets advertise capability flags | Accepted |
 
 See also the [Architecture & Design](../architecture.md) overview.

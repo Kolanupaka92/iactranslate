@@ -7,10 +7,14 @@ run and operate it, and the [ADRs](adr/) for the record of individual decisions.
 **Contents**
 1. [Design principles](#design-principles)
 2. [The canonical model (the key idea)](#the-canonical-model)
-3. [Request flow (sequence)](#request-flow)
-4. [Current scope — what is and isn't supported](#current-scope)
-5. [Assumptions](#assumptions)
-6. [Why not … (how we differ)](#why-not)
+3. [Pipeline phases](#pipeline-phases)
+4. [Decision engines vs analysis engines](#decision-vs-analysis)
+5. [The policy engine](#policy-engine)
+6. [Target capability flags](#capability-flags)
+7. [Request flow (sequence)](#request-flow)
+8. [Current scope — what is and isn't supported](#current-scope)
+9. [Assumptions](#assumptions)
+10. [Why not … (how we differ)](#why-not)
 
 ---
 
@@ -86,6 +90,108 @@ rather than an N×M explosion: the pipeline in the middle is written **once**
 against the two canonical types.
 
 ---
+
+## Pipeline phases
+
+Read left-to-right the pipeline is one line; but internally it is four phases
+with different responsibilities. Naming them is how enterprise migration
+platforms are usually described, and it clarifies what may touch what.
+
+```
+Discovery                Planning              Validation            Rendering
+─────────                ────────              ──────────            ─────────
+parse                    classify              validate (structure)  Terraform
+normalize                rightsize             policy (org rules)    Pulumi
+assessment*              network               cost/budget (policy)  reports*
+recommendation*          → MigrationPlan       ─────────────         diagram*
+diff*                    confidence*           (all read-only)       package · GitOps
+```
+
+*Starred stages are **analysis** — they read, never write, the plan (next section).*
+
+- **Discovery** turns raw inventory into `NormalizedVM`s and *understands* the
+  estate (assessment, recommendation, diff).
+- **Planning** makes the structured decisions and freezes them into a
+  `MigrationPlan`.
+- **Validation** is a set of read-only gates (structural validation, then the
+  policy engine); a failure here stops the run before any file is written.
+- **Rendering** turns the validated plan into IaC, docs, and a package.
+
+## Decision vs analysis
+
+Two kinds of engine operate around the plan, and keeping them distinct is what
+keeps the architecture clean:
+
+```mermaid
+flowchart TD
+  subgraph Decision["Decision engines — produce the plan"]
+    C[classify] --> RS[rightsize] --> NET[network] --> REC[recommendation]
+  end
+  REC --> PLAN[["MigrationPlan (immutable)"]]
+  subgraph Analysis["Analysis engines — read-only"]
+    AS[assessment]
+    CF[confidence]
+    DF[diff]
+    ER[executive report]
+    DG[diagram]
+  end
+  PLAN --> AS
+  PLAN --> CF
+  PLAN --> DF
+  PLAN --> ER
+  PLAN --> DG
+```
+
+**Decision engines** build the plan. **Analysis engines** (assessment,
+confidence, diff, executive report, diagram) only *read* it — they never mutate
+it. This is the enforced counterpart of design principle #1: because nothing
+after planning can change the plan, rendering is deterministic and every report
+describes exactly what gets deployed.
+
+**The immutable-plan contract.** Once `build_migration_plan` returns and
+validation passes, the `MigrationPlan` is treated as frozen. Assessment,
+confidence, the policy engine, renderers, reports, and GitOps all take it as
+read-only input. (See [ADR 0007](adr/0007-immutable-plan.md).)
+
+## Policy engine
+
+Enterprise requirements diverge exactly at policy: naming conventions, approved
+instance families, "no public IPs", budget caps, mandatory NAT. Encoding those
+in the core pipeline would make it an organization-specific fork. Instead they
+live in a **policy engine** — a set of pluggable, read-only rules a customer
+activates and parameterizes through configuration.
+
+```mermaid
+flowchart LR
+  P[["MigrationPlan (valid)"]] --> POL{Policy engine}
+  CFG[policy config] --> POL
+  POL -->|deny| STOP[abort — nothing rendered]
+  POL -->|warn| REP[policy-report.json + render]
+  POL -->|clean| REN[render]
+```
+
+- Policies **read** the plan and return violations; they never mutate it (so the
+  immutable-plan contract and determinism hold).
+- `deny` violations abort the run before rendering; `warn` violations are
+  reported (`policy-report.json`) but don't block. Any policy's severity is
+  overridable per config.
+- Built-ins today: `no_public_subnets`, `allowed_instance_families`, `max_vcpu`,
+  `max_monthly_cost`, `naming_prefix`, `require_nat`. Adding one is a small
+  registered function — no pipeline change. (See [ADR 0008](adr/0008-policy-engine.md).)
+
+```jsonc
+// example policy config
+{ "no_public_subnets": {}, "allowed_instance_families": {"families": ["t3","m5"]},
+  "max_monthly_cost": {"budget_usd": 5000}, "naming_prefix": {"prefix": "acme_", "severity": "warn"} }
+```
+
+## Capability flags
+
+A `Target` advertises what it supports as a set of **capability flags**
+(`terraform`, `pulumi`, `gitops`, `live_pricing`, `brownfield_import`) rather
+than callers branching on `target.name == "aws"`. A UI can enable features
+declaratively (`GET /targets` returns each cloud's capabilities), and adding a
+capability to a cloud is a one-line change. (See [ADR 0009](adr/0009-capability-flags.md).)
 
 ## Request flow
 

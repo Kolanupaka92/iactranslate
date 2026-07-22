@@ -3,7 +3,8 @@
 Flow:
     POST   /projects                   -> create a project
     POST   /projects/{id}/upload       -> upload an RVTools/VMware export
-    POST   /projects/{id}/run          -> run the pipeline
+    POST   /projects/{id}/run          -> run the pipeline (422 on policy denial)
+    GET    /policies                   -> available policy rules
     POST   /projects/{id}/assess       -> pre-migration readiness assessment
     POST   /projects/{id}/recommend    -> compare clouds and recommend one
     POST   /projects/{id}/report       -> client-facing executive report (HTML)
@@ -31,6 +32,7 @@ from ..config import MAX_UPLOAD_BYTES, cors_origins
 from ..exec_report import build_executive_report
 from ..normalize import normalize
 from ..pipeline import run_pipeline
+from ..policy import PolicyViolationError, list_policies
 from ..recommend import recommend
 from ..sources import list_sources, resolve_source
 from ..targets import get_target, list_targets
@@ -62,6 +64,7 @@ class CreateProject(BaseModel):
     source: str = "auto"
     column_map: Optional[Dict[str, str]] = None
     region: Optional[str] = None
+    policy: Optional[Dict[str, dict]] = None
 
     @field_validator("name")
     @classmethod
@@ -128,12 +131,34 @@ def create_project(body: CreateProject) -> dict:
         raise HTTPException(400, f"target '{body.target}' not supported (available: {', '.join(list_targets())})")
     if body.source not in ("auto", *list_sources()):
         raise HTTPException(400, f"source '{body.source}' not supported (available: auto, {', '.join(list_sources())})")
+    if body.policy:
+        unknown = set(body.policy) - set(list_policies())
+        if unknown:
+            raise HTTPException(
+                400,
+                f"unknown policies {sorted(unknown)} (available: {', '.join(sorted(list_policies()))})",
+            )
     project = store.create(
         name=body.name, target=body.target, source=body.source,
-        column_map=body.column_map, region=body.region,
+        column_map=body.column_map, region=body.region, policy=body.policy,
     )
     logger.info("created project %s (target=%s source=%s)", project.id, project.target, project.source)
     return _summary(project)
+
+
+@app.get("/policies")
+def policies() -> dict:
+    """Available policy rules (name -> description) for building a policy config."""
+    return list_policies()
+
+
+@app.get("/targets")
+def targets() -> list:
+    """Targets and their advertised capabilities — lets a UI enable features declaratively."""
+    return [
+        {"name": name, "capabilities": sorted(get_target(name).capabilities)}
+        for name in list_targets()
+    ]
 
 
 @app.get("/projects/{pid}")
@@ -192,11 +217,17 @@ def run(pid: str) -> dict:
             column_map=project.column_map,
             region=project.region,
             make_zip=True,
+            policy_config=project.policy,
         )
     except PlanValidationError as e:
         project.status = "failed"
         project.error = "; ".join(e.issues)
         raise HTTPException(422, {"message": "plan failed validation", "issues": e.issues}) from e
+    except PolicyViolationError as e:
+        project.status = "failed"
+        msgs = [f"[{v.policy}] {v.message}" for v in e.violations]
+        project.error = "; ".join(msgs)
+        raise HTTPException(422, {"message": "plan violates policy", "violations": msgs}) from e
     except ValueError as e:
         project.status = "failed"
         project.error = str(e)
@@ -217,6 +248,10 @@ def run(pid: str) -> dict:
             "factor_averages": confidence.factor_averages,
             "low_confidence_count": len(confidence.low_confidence()),
         },
+        "policy_warnings": [
+            {"policy": v.policy, "message": v.message, "resource": v.resource}
+            for v in (result.policy.warnings if result.policy else [])
+        ],
         "instances": [
             {"vm": c.vm_name, "instance_type": c.instance_type, "tier": c.tier.value}
             for c in result.plan.compute

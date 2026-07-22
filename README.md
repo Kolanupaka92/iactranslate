@@ -33,6 +33,9 @@ time — and CI proves the output is valid against the real cloud providers
   risks), **confidence** scoring, an **executive report**, **architecture
   diagrams**, **infrastructure diff**, **brownfield** adoption (import blocks),
   a **Pulumi** renderer, and opt-in **GitOps** CI/CD.
+- **Policy engine.** Enforce org rules — no public subnets, approved instance
+  families, budget caps, naming conventions — as pluggable, read-only policies
+  (`deny` blocks rendering, `warn` reports) before any IaC is written.
 - **Offline & auditable.** Runs with no internet and no API keys; the output is
   reproducible and reviewable.
 
@@ -104,7 +107,7 @@ scope, and assumptions — is in **[docs/architecture.md](docs/architecture.md)*
 ## Test & lint
 
 ```bash
-pytest                 # ~145 tests: parsers, sizing, validation, all 3 clouds, renderers, API
+pytest                 # ~165 tests: parsers, sizing, validation, all 3 clouds, renderers, API
 ruff check src tests
 ```
 

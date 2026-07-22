@@ -14,6 +14,7 @@ from .config import MAX_VMS
 from .models import MigrationPlan, NormalizedVM
 from .normalize import normalize
 from .packager import build_project, zip_project
+from .policy import PolicyResult, PolicyViolationError, evaluate
 from .pricing import live_enabled
 from .sources import resolve_source
 from .targets import get_target
@@ -26,6 +27,7 @@ class PipelineResult:
     vms: List[NormalizedVM]
     project_dir: Path
     zip_path: Optional[Path]
+    policy: Optional[PolicyResult] = None
 
 
 def run_pipeline(
@@ -40,6 +42,7 @@ def run_pipeline(
     make_zip: bool = False,
     renderer: str = "terraform",
     gitops: bool = False,
+    policy_config: Optional[Dict] = None,
 ) -> PipelineResult:
     tgt = get_target(target)  # raises UnknownTargetError for bad target
     src = resolve_source(input_path, source)  # auto-detect unless named
@@ -57,9 +60,20 @@ def run_pipeline(
     )
     assert_valid(plan, tgt)  # raises PlanValidationError on any issue
 
-    project_dir = build_project(plan, out_dir, tgt, vms=vms, renderer=renderer, gitops=gitops)
+    # Policy gate: enforce org rules on the (immutable) plan before rendering.
+    # `deny` violations abort; `warn` violations are recorded and shipped.
+    policy_result = evaluate(plan, tgt, policy_config)
+    if not policy_result.ok:
+        raise PolicyViolationError(policy_result.denials)
+
+    project_dir = build_project(
+        plan, out_dir, tgt, vms=vms, renderer=renderer, gitops=gitops,
+        policy_result=policy_result,
+    )
     zip_path = None
     if make_zip:
         zip_path = zip_project(project_dir, Path(out_dir).with_suffix(".zip"))
 
-    return PipelineResult(plan=plan, vms=vms, project_dir=project_dir, zip_path=zip_path)
+    return PipelineResult(
+        plan=plan, vms=vms, project_dir=project_dir, zip_path=zip_path, policy=policy_result,
+    )
