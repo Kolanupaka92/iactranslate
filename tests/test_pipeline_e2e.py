@@ -37,9 +37,10 @@ def test_pipeline_produces_valid_project(rvtools_path, tmp_path):
     assert (out / "decisions.json").exists()
     # Executive report bundled for the client.
     assert (out / "documentation" / "executive-report.html").exists()
-    # Architecture diagram (SVG + mermaid doc).
+    # Architecture diagram (SVG + mermaid doc) + the topology graph IR.
     assert (out / "documentation" / "architecture.svg").exists()
     assert (out / "documentation" / "architecture.md").exists()
+    assert (out / "graph.json").exists()
     # GitOps workflow bundled when requested.
     assert (out / ".github" / "workflows" / "terraform.yml").exists()
     assert (out / ".gitignore").exists()

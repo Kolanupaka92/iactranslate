@@ -11,6 +11,7 @@ from .confidence import score_plan
 from .diagram import architecture_mermaid, architecture_svg
 from .exec_report import build_executive_report
 from .gitops import gitops_files
+from .graph import build_graph
 from .models import MigrationPlan, NormalizedVM
 from .renderers import render
 from .targets.base import Target
@@ -147,6 +148,11 @@ def build_project(
         (out / "policy-report.json").write_text(
             json.dumps(policy_result.model_dump(mode="json"), indent=2)
         )
+
+    # Infrastructure Graph — the renderer-neutral topology IR (see ADR 0010).
+    (out / "graph.json").write_text(
+        json.dumps(build_graph(plan).model_dump(mode="json"), indent=2)
+    )
 
     # Architecture diagram — SVG (portable) + Mermaid (renders in GitHub/markdown).
     (docs / "architecture.svg").write_text(architecture_svg(plan))

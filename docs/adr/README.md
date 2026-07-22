@@ -17,5 +17,6 @@ Format: [Michael Nygard's ADR template](https://cognitect.com/blog/2011/11/15/do
 | [0007](0007-immutable-plan.md) | The MigrationPlan is immutable after planning | Accepted |
 | [0008](0008-policy-engine.md) | A policy engine for organization-specific rules | Accepted |
 | [0009](0009-capability-flags.md) | Targets advertise capability flags | Accepted |
+| [0010](0010-infrastructure-graph.md) | An Infrastructure Graph IR between plan and renderers | Accepted |
 
 See also the [Architecture & Design](../architecture.md) overview.

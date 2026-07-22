@@ -1,15 +1,13 @@
-"""Architecture diagrams from a MigrationPlan — deterministic, no dependencies.
+"""Architecture diagrams — rendered from the Infrastructure Graph.
 
-Two renderers, both pure functions of the plan:
+The diagram is the graph's natural consumer: `architecture_svg` / `architecture_mermaid`
+walk the topology IR (`graph.build_graph`) rather than re-deriving structure from
+the plan. Both are pure, dependency-free, and deterministic — the same graph
+always yields the same diagram — with arithmetic layout (no layout engine).
 
-- `architecture_svg(plan)` → a self-contained SVG of the target topology
-  (VPC → public/private subnets → instances grouped by tier). Embeds in the
-  executive report and ships as documentation/architecture.svg.
-- `architecture_mermaid(plan)` → a Mermaid `graph` definition for docs/READMEs
-  (GitHub renders it natively).
-
-No AI, no network, no layout engine — positions are computed arithmetically so
-the same plan always yields the same diagram.
+Public functions accept a `MigrationPlan` for convenience (they build the graph
+internally); `*_from_graph` variants take a graph directly, for callers that
+already have one.
 """
 from __future__ import annotations
 
@@ -17,15 +15,16 @@ import html
 from collections import defaultdict
 from typing import Dict, List
 
-from .models import MigrationPlan, SubnetTier, Tier
+from .graph import GraphNode, InfrastructureGraph, NodeKind, build_graph
+from .models import MigrationPlan, Tier
 
 # Tier → fill colour (semantic, not the app accent).
-_TIER_FILL: Dict[Tier, str] = {
-    Tier.WEB: "#2563eb",
-    Tier.APP: "#7c3aed",
-    Tier.DATABASE: "#db2777",
-    Tier.CACHE: "#d97706",
-    Tier.OTHER: "#64748b",
+_TIER_FILL: Dict[str, str] = {
+    Tier.WEB.value: "#2563eb",
+    Tier.APP.value: "#7c3aed",
+    Tier.DATABASE.value: "#db2777",
+    Tier.CACHE.value: "#d97706",
+    Tier.OTHER.value: "#64748b",
 }
 
 # Layout constants (px).
@@ -40,8 +39,16 @@ def _esc(s: object) -> str:
     return html.escape(str(s))
 
 
-def _lane_instances(plan: MigrationPlan, tier: SubnetTier) -> List:
-    return [c for c in plan.compute if c.subnet_tier == tier]
+def _truncate(s: str, n: int) -> str:
+    return s if len(s) <= n else s[: n - 1] + "…"
+
+
+def _instances(graph: InfrastructureGraph) -> List[GraphNode]:
+    return graph.nodes_of(NodeKind.INSTANCE)
+
+
+def _lane(graph: InfrastructureGraph, subnet_tier: str) -> List[GraphNode]:
+    return [n for n in _instances(graph) if n.attributes.get("subnet_tier") == subnet_tier]
 
 
 def _lane_height(n: int) -> int:
@@ -49,48 +56,49 @@ def _lane_height(n: int) -> int:
     return rows * _BOX_H + (rows + 1) * _GAP + 34  # + lane title strip
 
 
-def _draw_lane(x: int, y: int, w: int, title: str, subtitle: str, instances: List) -> str:
+def _draw_lane(x: int, y: int, w: int, title: str, subtitle: str, nodes: List[GraphNode]) -> str:
     parts = [
-        f'<rect x="{x}" y="{y}" width="{w}" height="{_lane_height(len(instances))}" '
+        f'<rect x="{x}" y="{y}" width="{w}" height="{_lane_height(len(nodes))}" '
         f'rx="10" fill="#ffffff" stroke="#cbd5e1" stroke-dasharray="4 3"/>',
         f'<text x="{x + 14}" y="{y + 22}" font-size="13" font-weight="700" fill="#334155">{_esc(title)}</text>',
         f'<text x="{x + w - 14}" y="{y + 22}" font-size="11" fill="#94a3b8" text-anchor="end">{_esc(subtitle)}</text>',
     ]
-    shown = instances[:_MAX_PER_LANE]
-    for i, c in enumerate(shown):
+    for i, node in enumerate(nodes[:_MAX_PER_LANE]):
+        tier = str(node.attributes.get("tier", Tier.OTHER.value))
+        itype = str(node.attributes.get("instance_type", ""))
         col, row = i % _COLS, i // _COLS
         bx = x + _GAP + col * (_BOX_W + _GAP)
         by = y + 34 + _GAP + row * (_BOX_H + _GAP)
-        fill = _TIER_FILL.get(c.tier, _TIER_FILL[Tier.OTHER])
+        fill = _TIER_FILL.get(tier, _TIER_FILL[Tier.OTHER.value])
         parts.append(
             f'<rect x="{bx}" y="{by}" width="{_BOX_W}" height="{_BOX_H}" rx="7" fill="{fill}"/>'
         )
         parts.append(
             f'<text x="{bx + _BOX_W // 2}" y="{by + 19}" font-size="11" font-weight="600" '
-            f'fill="#ffffff" text-anchor="middle">{_esc(_truncate(c.vm_name, 20))}</text>'
+            f'fill="#ffffff" text-anchor="middle">{_esc(_truncate(node.name, 20))}</text>'
         )
         parts.append(
             f'<text x="{bx + _BOX_W // 2}" y="{by + 34}" font-size="10" '
-            f'fill="#e2e8f0" text-anchor="middle">{_esc(c.instance_type)} · {_esc(c.tier.value)}</text>'
+            f'fill="#e2e8f0" text-anchor="middle">{_esc(itype)} · {_esc(tier)}</text>'
         )
-    hidden = len(instances) - len(shown)
+    hidden = len(nodes) - min(len(nodes), _MAX_PER_LANE)
     if hidden > 0:
         parts.append(
-            f'<text x="{x + _GAP}" y="{y + _lane_height(len(instances)) - 12}" '
+            f'<text x="{x + _GAP}" y="{y + _lane_height(len(nodes)) - 12}" '
             f'font-size="11" fill="#94a3b8">+{hidden} more instance(s)</text>'
         )
     return "\n".join(parts)
 
 
-def _truncate(s: str, n: int) -> str:
-    return s if len(s) <= n else s[: n - 1] + "…"
-
-
-def architecture_svg(plan: MigrationPlan) -> str:
-    """Render the plan's topology as a standalone SVG string."""
-    public = _lane_instances(plan, SubnetTier.PUBLIC)
-    private = _lane_instances(plan, SubnetTier.PRIVATE)
-    net = plan.network
+def architecture_svg_from_graph(graph: InfrastructureGraph) -> str:
+    """Render the topology graph as a standalone SVG string."""
+    public = _lane(graph, "public")
+    private = _lane(graph, "private")
+    count = len(_instances(graph))
+    vpc = graph.node("vpc")
+    vpc_cidr = str(vpc.attributes.get("cidr", "")) if vpc else ""
+    has_igw = bool(vpc and vpc.attributes.get("internet_gateway"))
+    has_nat = bool(vpc and vpc.attributes.get("nat_gateway"))
 
     lane_w = _PAD + _COLS * _BOX_W + (_COLS + 1) * _GAP
     width = lane_w + 2 * _PAD
@@ -104,26 +112,26 @@ def architecture_svg(plan: MigrationPlan) -> str:
     vpc_h = (priv_y + priv_h + _PAD) - vpc_y
     height = vpc_y + vpc_h + _PAD
 
-    nat = "NAT gateway" if net.nat_gateway else "no NAT"
-    igw = "Internet gateway" if net.internet_gateway else "no IGW"
+    nat = "NAT gateway" if has_nat else "no NAT"
+    igw = "Internet gateway" if has_igw else "no IGW"
 
-    # Tier legend.
+    # Tier legend — tiers actually present, in canonical order.
+    present = {str(n.attributes.get("tier")) for n in _instances(graph)}
     legend_items = []
-    tiers_present = [t for t in _TIER_FILL if any(c.tier == t for c in plan.compute)]
-    for i, t in enumerate(tiers_present):
+    for i, tier in enumerate([t for t in _TIER_FILL if t in present]):
         lx = _PAD + i * 118
         legend_items.append(
-            f'<rect x="{lx}" y="{height - 26}" width="12" height="12" rx="3" fill="{_TIER_FILL[t]}"/>'
-            f'<text x="{lx + 18}" y="{height - 16}" font-size="11" fill="#64748b">{_esc(t.value)}</text>'
+            f'<rect x="{lx}" y="{height - 26}" width="12" height="12" rx="3" fill="{_TIER_FILL[tier]}"/>'
+            f'<text x="{lx + 18}" y="{height - 16}" font-size="11" fill="#64748b">{_esc(tier)}</text>'
         )
 
     return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" width="{width}" height="{height}" font-family="-apple-system,Segoe UI,Roboto,sans-serif">
   <rect x="0" y="0" width="{width}" height="{height}" fill="#f8fafc"/>
-  <text x="{_PAD}" y="30" font-size="17" font-weight="700" fill="#0f172a">{_esc(plan.project_name)} — {_esc(plan.target.upper())} architecture</text>
-  <text x="{_PAD}" y="50" font-size="12" fill="#64748b">{_esc(plan.region)} · {plan.vm_count} instances · {_esc(igw)} · {_esc(nat)}</text>
+  <text x="{_PAD}" y="30" font-size="17" font-weight="700" fill="#0f172a">{_esc(graph.project)} — {_esc(graph.target.upper())} architecture</text>
+  <text x="{_PAD}" y="50" font-size="12" fill="#64748b">{_esc(graph.region)} · {count} instances · {_esc(igw)} · {_esc(nat)}</text>
 
   <rect x="{vpc_x}" y="{vpc_y}" width="{width - 2 * _PAD}" height="{vpc_h}" rx="12" fill="none" stroke="#334155" stroke-width="1.5"/>
-  <text x="{vpc_x + 14}" y="{vpc_y + 22}" font-size="13" font-weight="700" fill="#334155">VPC {_esc(net.vpc_cidr)}</text>
+  <text x="{vpc_x + 14}" y="{vpc_y + 22}" font-size="13" font-weight="700" fill="#334155">VPC {_esc(vpc_cidr)}</text>
 
 {_draw_lane(lane_x, pub_y, lane_w, "Public subnet", igw, public)}
 {_draw_lane(lane_x, priv_y, lane_w, "Private subnet", nat, private)}
@@ -132,23 +140,27 @@ def architecture_svg(plan: MigrationPlan) -> str:
 </svg>"""
 
 
-def architecture_mermaid(plan: MigrationPlan) -> str:
-    """Render the plan's topology as a Mermaid graph definition."""
-    lines = ["graph TD", f'  subgraph VPC["VPC {plan.network.vpc_cidr}"]']
-    by_lane: Dict[SubnetTier, list] = defaultdict(list)
-    for c in plan.compute:
-        by_lane[c.subnet_tier].append(c)
+def architecture_mermaid_from_graph(graph: InfrastructureGraph) -> str:
+    """Render the topology graph as a Mermaid graph definition."""
+    vpc = graph.node("vpc")
+    vpc_cidr = str(vpc.attributes.get("cidr", "")) if vpc else ""
+    lines = ["graph TD", f'  subgraph VPC["VPC {vpc_cidr}"]']
+    by_lane: Dict[str, list] = defaultdict(list)
+    for n in _instances(graph):
+        by_lane[str(n.attributes.get("subnet_tier"))].append(n)
 
     node_id = 0
-    for lane, label in ((SubnetTier.PUBLIC, "Public subnet"), (SubnetTier.PRIVATE, "Private subnet")):
+    for lane, label in (("public", "Public subnet"), ("private", "Private subnet")):
         insts = by_lane.get(lane, [])
         if not insts:
             continue
-        lines.append(f'    subgraph {lane.value}["{label}"]')
-        for c in insts[:_MAX_PER_LANE]:
+        lines.append(f'    subgraph {lane}["{label}"]')
+        for n in insts[:_MAX_PER_LANE]:
             node_id += 1
-            safe = c.vm_name.replace('"', "'")
-            lines.append(f'      n{node_id}["{safe}<br/>{c.instance_type} · {c.tier.value}"]')
+            safe = n.name.replace('"', "'")
+            itype = n.attributes.get("instance_type", "")
+            tier = n.attributes.get("tier", "")
+            lines.append(f'      n{node_id}["{safe}<br/>{itype} · {tier}"]')
         hidden = len(insts) - min(len(insts), _MAX_PER_LANE)
         if hidden > 0:
             node_id += 1
@@ -156,3 +168,13 @@ def architecture_mermaid(plan: MigrationPlan) -> str:
         lines.append("    end")
     lines.append("  end")
     return "\n".join(lines) + "\n"
+
+
+# --- Convenience wrappers (build the graph from a plan) ----------------------
+
+def architecture_svg(plan: MigrationPlan) -> str:
+    return architecture_svg_from_graph(build_graph(plan))
+
+
+def architecture_mermaid(plan: MigrationPlan) -> str:
+    return architecture_mermaid_from_graph(build_graph(plan))
