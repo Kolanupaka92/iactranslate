@@ -48,6 +48,26 @@ DEFAULT_INGRESS: Dict[str, List[IngressRule]] = {
 }
 
 
+# Public image family per logical key ("<project>/<family>") — accepted directly
+# by google_compute_instance boot_disk.initialize_params.image.
+IMAGE_FAMILIES: Dict[str, str] = {
+    "ubuntu-22.04": "ubuntu-os-cloud/ubuntu-2204-lts",
+    "rhel-9": "rhel-cloud/rhel-9",
+    "sles-15": "suse-cloud/sles-15",
+    "centos-7": "rocky-linux-cloud/rocky-linux-9",  # CentOS 7 is EOL; Rocky is the successor
+    "windows-2022": "windows-cloud/windows-2022",
+    "windows-2019": "windows-cloud/windows-2019",
+    "windows-2016": "windows-cloud/windows-2016",
+    "amazon-linux-2": "debian-cloud/debian-12",  # no Amazon Linux on GCP — Debian fallback
+}
+
+_DEFAULT_IMAGE = IMAGE_FAMILIES["ubuntu-22.04"]
+
+
+def image_reference(image_key: str) -> Dict[str, str]:
+    return {"image": IMAGE_FAMILIES.get(image_key, _DEFAULT_IMAGE)}
+
+
 def image_key(os_string: Optional[str]) -> str:
     """Map a source OS string to a logical image key (rendered to var.image_ids)."""
     if not os_string:

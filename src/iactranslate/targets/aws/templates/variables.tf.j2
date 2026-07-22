@@ -11,16 +11,12 @@ variable "project_name" {
   default     = "{{ project }}"
 }
 
-variable "ami_ids" {
+variable "ami_overrides" {
   description = <<-EOT
-    AMI ID per logical OS key. IaCTranslate cannot know your account's AMIs, so
-    fill these in before `terraform apply` (e.g. from an aws_ami data source or
-    your golden images). Keys correspond to the OS detected on each source VM.
+    Optional. AMIs are resolved automatically by the data sources in images.tf.
+    Override per logical OS key only to pin a specific/golden AMI, e.g.
+    { "ubuntu-22.04" = "ami-0123456789abcdef0" }.
   EOT
-  type = map(string)
-  default = {
-{% for key in image_keys %}
-    "{{ key }}" = "ami-REPLACE_ME"
-{% endfor %}
-  }
+  type    = map(string)
+  default = {}
 }

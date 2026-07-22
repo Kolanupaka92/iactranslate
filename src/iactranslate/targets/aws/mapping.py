@@ -47,6 +47,27 @@ DEFAULT_INGRESS: Dict[str, List[IngressRule]] = {
 }
 
 
+# aws_ami lookup per logical image key: owner account(s) + name-pattern filter.
+# most_recent=true is applied in the template so the freshest matching AMI wins.
+AMI_FILTERS: Dict[str, Dict[str, object]] = {
+    "amazon-linux-2": {"owners": ["amazon"], "name": "amzn2-ami-hvm-*-x86_64-gp2"},
+    "windows-2022": {"owners": ["amazon"], "name": "Windows_Server-2022-English-Full-Base-*"},
+    "windows-2019": {"owners": ["amazon"], "name": "Windows_Server-2019-English-Full-Base-*"},
+    "windows-2016": {"owners": ["amazon"], "name": "Windows_Server-2016-English-Full-Base-*"},
+    "ubuntu-22.04": {"owners": ["099720109477"],
+                     "name": "ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"},
+    "rhel-9": {"owners": ["309956199498"], "name": "RHEL-9.*_HVM-*-x86_64-*"},
+    "sles-15": {"owners": ["013907871322"], "name": "suse-sles-15-sp*-v*-hvm-ssd-x86_64"},
+    "centos-7": {"owners": ["125523088429"], "name": "CentOS Linux 7*x86_64*"},
+}
+
+_DEFAULT_AMI = AMI_FILTERS["amazon-linux-2"]
+
+
+def image_reference(image_key: str) -> Dict[str, object]:
+    return AMI_FILTERS.get(image_key, _DEFAULT_AMI)
+
+
 def image_key(os_string: Optional[str]) -> str:
     """Map a source OS string to a logical AMI key (rendered to var.ami_ids)."""
     if not os_string:

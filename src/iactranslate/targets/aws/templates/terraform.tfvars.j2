@@ -2,9 +2,9 @@
 region       = "{{ region }}"
 project_name = "{{ project }}"
 
-# Fill in real AMI IDs for your account/region before `terraform apply`.
-ami_ids = {
+# AMIs are resolved automatically (see images.tf). Uncomment to pin specific images:
+# ami_overrides = {
 {% for key in image_keys %}
-  "{{ key }}" = "ami-REPLACE_ME"
+#   "{{ key }}" = "ami-0123456789abcdef0"
 {% endfor %}
-}
+# }

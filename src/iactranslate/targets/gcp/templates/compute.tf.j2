@@ -8,7 +8,7 @@ resource "google_compute_instance" "{{ c.resource_name }}" {
 
   boot_disk {
     initialize_params {
-      image = var.image_ids["{{ c.image_key }}"]
+      image = "{{ image_refs[c.image_key].image }}"
       size  = {{ c.root_volume_gib }}
       type  = "pd-balanced"
     }

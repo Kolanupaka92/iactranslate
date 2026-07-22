@@ -46,6 +46,9 @@ class AzureTarget:
     def image_key(self, os: Optional[str]) -> str:
         return mapping.image_key(os)
 
+    def image_reference(self, image_key: str) -> Dict[str, object]:
+        return mapping.image_reference(image_key)
+
     def family_for_tier(self, tier: Tier) -> Optional[str]:
         return mapping.FAMILY_BY_TIER.get(tier)
 

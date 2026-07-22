@@ -4,9 +4,5 @@ region       = "{{ region }}"
 zone         = "{{ region }}-a"
 project_name = "{{ project_slug }}"
 
-# Fill in real boot image references before `terraform apply`.
-image_ids = {
-{% for key in image_keys %}
-  "{{ key }}" = "REPLACE_ME"
-{% endfor %}
-}
+# OS boot images are resolved automatically to public image families (see compute.tf).
+# Only gcp_project above needs your real value before `terraform apply`.

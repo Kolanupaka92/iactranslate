@@ -36,16 +36,5 @@ variable "admin_password" {
   default     = "REPLACE_ME_Str0ng!Pass"
 }
 
-variable "source_image_ids" {
-  description = <<-EOT
-    Managed image / Shared Image Gallery ID per logical OS key. IaCTranslate
-    cannot know your images, so fill these in before `terraform apply`. Keys
-    correspond to the OS detected on each source VM.
-  EOT
-  type = map(string)
-  default = {
-{% for key in image_keys %}
-    "{{ key }}" = "REPLACE_ME"
-{% endfor %}
-  }
-}
+# Images are resolved automatically via source_image_reference (marketplace
+# publisher/offer/sku) in compute.tf — no image IDs to fill in.

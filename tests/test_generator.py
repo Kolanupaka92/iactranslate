@@ -49,8 +49,17 @@ def test_security_groups_rendered(rvtools_path):
         assert f'resource "aws_security_group" "{sg.resource_name}"' in sec
 
 
-def test_ami_map_has_placeholder_per_os(rvtools_path):
+def test_amis_resolve_via_data_sources(rvtools_path):
+    """AWS output resolves AMIs with data sources — no manual placeholders."""
     files, plan = _files(rvtools_path)
-    variables = files["variables.tf"]
+    images = files["images.tf"]
+    compute = files["compute.tf"]
+    # A data source per detected OS, referenced by each instance.
+    from iactranslate.generator.renderer import terraform_safe_name
+
     for key in {c.image_key for c in plan.compute}:
-        assert f'"{key}" = "ami-REPLACE_ME"' in variables
+        assert f'data "aws_ami" "{terraform_safe_name(key)}"' in images
+    assert "data.aws_ami." in compute
+    # Zero-edit: no leftover placeholder tokens anywhere in the project.
+    for name, content in files.items():
+        assert "REPLACE_ME" not in content, f"placeholder left in {name}"

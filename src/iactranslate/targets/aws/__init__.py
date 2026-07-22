@@ -15,7 +15,8 @@ class AwsTarget:
     default_region = "us-east-1"
     vpc_cidr = mapping.VPC_CIDR
     template_dir = Path(__file__).parent / "templates"
-    template_map: Dict[str, str] = TEMPLATE_MAP
+    # AWS resolves AMIs with data sources in an extra images.tf.
+    template_map: Dict[str, str] = {**TEMPLATE_MAP, "images.tf.j2": "images.tf"}
     default_ingress: Dict[str, List[IngressRule]] = mapping.DEFAULT_INGRESS
 
     def __init__(self) -> None:
@@ -45,6 +46,9 @@ class AwsTarget:
 
     def image_key(self, os: Optional[str]) -> str:
         return mapping.image_key(os)
+
+    def image_reference(self, image_key: str) -> Dict[str, object]:
+        return mapping.image_reference(image_key)
 
     def family_for_tier(self, tier: Tier) -> Optional[str]:
         return mapping.FAMILY_BY_TIER.get(tier)

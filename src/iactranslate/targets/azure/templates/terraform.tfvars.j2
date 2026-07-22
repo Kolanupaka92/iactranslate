@@ -4,12 +4,6 @@ project_name        = "{{ project }}"
 resource_group_name = "{{ project }}-rg"
 admin_username      = "azureadmin"
 
-# Fill in real image IDs (managed image / Shared Image Gallery) before apply.
-source_image_ids = {
-{% for key in image_keys %}
-  "{{ key }}" = "REPLACE_ME"
-{% endfor %}
-}
-
+# OS images are resolved automatically (marketplace publisher/offer/sku in compute.tf).
 # Set admin_ssh_public_key (Linux) and admin_password (Windows) securely — do not
 # commit real secrets. Prefer TF_VAR_admin_password / a secrets manager.

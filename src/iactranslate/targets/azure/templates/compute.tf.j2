@@ -54,7 +54,12 @@ resource "azurerm_windows_virtual_machine" "{{ c.resource_name }}" {
     disk_size_gb         = {{ c.root_volume_gib }}
   }
 
-  source_image_id = var.source_image_ids["{{ c.image_key }}"]
+  source_image_reference {
+    publisher = "{{ image_refs[c.image_key].publisher }}"
+    offer     = "{{ image_refs[c.image_key].offer }}"
+    sku       = "{{ image_refs[c.image_key].sku }}"
+    version   = "latest"
+  }
 
   tags = {
     Name        = "{{ c.vm_name }}"
@@ -83,7 +88,12 @@ resource "azurerm_linux_virtual_machine" "{{ c.resource_name }}" {
     disk_size_gb         = {{ c.root_volume_gib }}
   }
 
-  source_image_id = var.source_image_ids["{{ c.image_key }}"]
+  source_image_reference {
+    publisher = "{{ image_refs[c.image_key].publisher }}"
+    offer     = "{{ image_refs[c.image_key].offer }}"
+    sku       = "{{ image_refs[c.image_key].sku }}"
+    version   = "latest"
+  }
 
   tags = {
     Name        = "{{ c.vm_name }}"

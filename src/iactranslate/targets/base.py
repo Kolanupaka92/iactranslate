@@ -99,6 +99,15 @@ class Target(Protocol):
 
     def image_key(self, os: Optional[str]) -> str: ...
 
+    def image_reference(self, image_key: str) -> Dict[str, object]:
+        """Cloud-specific fields to resolve an OS image in Terraform.
+
+        AWS   -> {"owners": [...], "name": "<filter>"}   (an aws_ami data source)
+        Azure -> {"publisher", "offer", "sku"}           (source_image_reference)
+        GCP   -> {"image": "<project>/<family>"}          (a public image family)
+        """
+        ...
+
     def family_for_tier(self, tier: Tier) -> Optional[str]: ...
 
     def subnet_tier_for_tier(self, tier: Tier) -> SubnetTier: ...

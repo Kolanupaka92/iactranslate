@@ -11,7 +11,7 @@ from typing import Dict, List
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
-from ..models import ComputePlan, MigrationPlan, SubnetTier
+from ..models import ComputePlan, MigrationPlan, SubnetTier, terraform_safe_name
 from ..targets.base import Target
 
 
@@ -77,6 +77,12 @@ def build_files(plan: MigrationPlan, target: Target) -> Dict[str, str]:
     env = _env(target.template_dir)
     subnet_of = _assign_subnets(plan)
     sg_resource = {sg.name: sg.resource_name for sg in plan.network.security_groups}
+    # Resolve each used OS image via the target (data source / marketplace ref /
+    # image family) so output deploys with no manual AMI/image editing.
+    image_refs = {
+        key: {**target.image_reference(key), "resource": terraform_safe_name(key)}
+        for key in _image_keys(plan.compute)
+    }
     context = {
         "plan": plan,
         "network": plan.network,
@@ -85,6 +91,7 @@ def build_files(plan: MigrationPlan, target: Target) -> Dict[str, str]:
         "project": plan.project_name,
         "project_slug": _rfc1035_slug(plan.project_name),
         "image_keys": _image_keys(plan.compute),
+        "image_refs": image_refs,
         "subnet_of": subnet_of,
         "sg_resource": sg_resource,
         "vm_slug": {c.vm_name: _rfc1035_slug(c.vm_name) for c in plan.compute},

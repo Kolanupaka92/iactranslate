@@ -48,6 +48,39 @@ DEFAULT_INGRESS: Dict[str, List[IngressRule]] = {
 }
 
 
+# Marketplace image per logical key (publisher / offer / sku); version "latest"
+# is applied in the template. Used in azurerm source_image_reference.
+IMAGE_REFS: Dict[str, Dict[str, str]] = {
+    "ubuntu-22.04": {"publisher": "Canonical", "offer": "0001-com-ubuntu-server-jammy", "sku": "22_04-lts-gen2"},
+    "rhel-9": {"publisher": "RedHat", "offer": "RHEL", "sku": "9-lvm-gen2"},
+    "sles-15": {"publisher": "SUSE", "offer": "sles-15-sp5", "sku": "gen2"},
+    "centos-7": {"publisher": "OpenLogic", "offer": "CentOS", "sku": "7_9-gen2"},
+    "windows-2022": {
+        "publisher": "MicrosoftWindowsServer",
+        "offer": "WindowsServer",
+        "sku": "2022-datacenter-azure-edition",
+    },
+    "windows-2019": {
+        "publisher": "MicrosoftWindowsServer",
+        "offer": "WindowsServer",
+        "sku": "2019-datacenter-gensecond",
+    },
+    "windows-2016": {
+        "publisher": "MicrosoftWindowsServer",
+        "offer": "WindowsServer",
+        "sku": "2016-datacenter-gensecond",
+    },
+    # Amazon Linux has no Azure image — fall back to Ubuntu LTS.
+    "amazon-linux-2": {"publisher": "Canonical", "offer": "0001-com-ubuntu-server-jammy", "sku": "22_04-lts-gen2"},
+}
+
+_DEFAULT_IMAGE = IMAGE_REFS["ubuntu-22.04"]
+
+
+def image_reference(image_key: str) -> Dict[str, str]:
+    return IMAGE_REFS.get(image_key, _DEFAULT_IMAGE)
+
+
 def image_key(os_string: Optional[str]) -> str:
     """Map a source OS string to a logical image key (rendered to var.source_image_ids)."""
     if not os_string:

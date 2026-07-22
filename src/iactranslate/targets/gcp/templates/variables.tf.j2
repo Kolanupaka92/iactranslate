@@ -23,17 +23,4 @@ variable "project_name" {
   default     = "{{ project_slug }}"
 }
 
-variable "image_ids" {
-  description = <<-EOT
-    Boot image per logical OS key. IaCTranslate cannot know your images, so fill
-    these in before `terraform apply` (e.g. a public image like
-    "projects/debian-cloud/global/images/family/debian-12", or your own image).
-    Keys correspond to the OS detected on each source VM.
-  EOT
-  type = map(string)
-  default = {
-{% for key in image_keys %}
-    "{{ key }}" = "REPLACE_ME"
-{% endfor %}
-  }
-}
+# Boot images are resolved automatically to public image families (see compute.tf).
