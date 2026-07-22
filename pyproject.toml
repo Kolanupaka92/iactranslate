@@ -57,3 +57,4 @@ ignore = ["B008"]
 # to satisfy the line limit hurts readability more than it helps.
 "src/iactranslate/assessment/report.py" = ["E501"]
 "src/iactranslate/exec_report.py" = ["E501"]
+"src/iactranslate/diagram.py" = ["E501"]

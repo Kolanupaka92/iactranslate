@@ -8,6 +8,7 @@ from typing import Dict, List, Optional
 
 from .assessment import assess, to_html, to_json
 from .confidence import score_plan
+from .diagram import architecture_mermaid, architecture_svg
 from .exec_report import build_executive_report
 from .generator import build_files
 from .models import MigrationPlan, NormalizedVM
@@ -103,6 +104,14 @@ def build_project(
     confidence = score_plan(plan, vms)
     (out / "confidence.json").write_text(
         json.dumps(confidence.model_dump(mode="json"), indent=2)
+    )
+
+    # Architecture diagram — SVG (portable) + Mermaid (renders in GitHub/markdown).
+    (docs / "architecture.svg").write_text(architecture_svg(plan))
+    (docs / "architecture.md").write_text(
+        f"# Architecture — {plan.project_name}\n\n"
+        f"![architecture](architecture.svg)\n\n"
+        f"```mermaid\n{architecture_mermaid(plan)}```\n"
     )
 
     # Client-facing executive report (chosen-target focus; no 3-cloud compare here).

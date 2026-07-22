@@ -15,6 +15,7 @@ from typing import Dict, List, Optional
 from .assessment import assess
 from .assessment.models import Severity
 from .confidence import score_plan
+from .diagram import architecture_svg
 from .models import MigrationPlan, NormalizedVM
 from .recommend import Recommendation
 
@@ -143,6 +144,7 @@ def build_executive_report(
     )
 
     rec_section = _recommendation_section(recommendation) if recommendation else ""
+    arch_svg = architecture_svg(plan)
 
     return f"""<!doctype html>
 <html lang="en">
@@ -207,6 +209,11 @@ def build_executive_report(
     </table></div>
     <p class="muted">Pricing: {'live market rates' if plan.pricing_source == 'live' else 'curated static rates'}, on-demand.
       {len(right_sized)} of {plan.vm_count} workloads were right-sized to observed utilization.</p>
+  </section>
+
+  <section>
+    <h2>Target architecture</h2>
+    <div class="scroll">{arch_svg}</div>
   </section>
 
 {rec_section}

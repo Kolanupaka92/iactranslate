@@ -34,6 +34,9 @@ def test_pipeline_produces_valid_project(rvtools_path, tmp_path):
     assert (out / "confidence.json").exists()
     # Executive report bundled for the client.
     assert (out / "documentation" / "executive-report.html").exists()
+    # Architecture diagram (SVG + mermaid doc).
+    assert (out / "documentation" / "architecture.svg").exists()
+    assert (out / "documentation" / "architecture.md").exists()
 
     # ZIP contains the terraform files.
     assert result.zip_path and result.zip_path.exists()
