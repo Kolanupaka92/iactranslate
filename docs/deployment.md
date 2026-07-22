@@ -74,20 +74,42 @@ implemented.
 
 ## State machine
 
-A project moves through explicit states (visible in the API and the web UI):
+A project moves through explicit states (visible in the API and the web UI). The
+**async** path (`POST /jobs`) adds `queued` → `running`; the **sync** path
+(`POST /run`) goes straight to `completed`/`failed`:
 
 ```mermaid
 stateDiagram-v2
   [*] --> created
   created --> uploaded: upload inventory
-  uploaded --> completed: run (success)
-  uploaded --> failed: run (validation / policy / bad input)
+  uploaded --> queued: POST /jobs (async)
+  queued --> running: worker picks up
+  running --> completed: success
+  running --> failed: validation / policy / bad input
+  uploaded --> completed: POST /run (sync, success)
+  uploaded --> failed: POST /run (sync, failure)
   failed --> uploaded: re-upload / retry
   completed --> [*]: download + delete
 ```
 
-The transitions are enforced by the API (`Project.status`); `run` is the only
-transition that produces a downloadable project.
+The transitions are enforced by the API (`Project.status`); only a run/job
+produces a downloadable project.
+
+### Async jobs, events & audit (shipped, single-node)
+
+The runtime layer is event-driven and job-based *today* — the interfaces the
+production backends drop into:
+
+- **Event bus** (`api/events.py`) — lifecycle events (`project.*`, `job.*`)
+  published in-process; swap for Redis/Kafka without touching publishers.
+- **Job queue** (`api/jobs.py`) — `POST /projects/{id}/jobs` → `job_id`; the
+  pipeline runs on a worker thread; poll `GET /jobs/{id}`. Swap the
+  `ThreadPoolExecutor` for Celery/Dramatiq + Redis behind the same contract.
+- **Audit trail** (`api/audit.py`) — every action recorded via the bus; query
+  `GET /audit`. In-memory now; the same subscriber writes Postgres in production.
+
+**Not yet durable:** in-memory jobs/audit don't survive a restart — that comes
+with the persistent backend below. See [ADR 0012](adr/0012-async-jobs-event-bus-audit.md).
 
 ## Single-node
 

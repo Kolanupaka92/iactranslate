@@ -19,5 +19,6 @@ Format: [Michael Nygard's ADR template](https://cognitect.com/blog/2011/11/15/do
 | [0009](0009-capability-flags.md) | Targets advertise capability flags | Accepted |
 | [0010](0010-infrastructure-graph.md) | An Infrastructure Graph IR between plan and renderers | Accepted |
 | [0011](0011-pipeline-stages.md) | The pipeline runs as named, timed stages | Accepted |
+| [0012](0012-async-jobs-event-bus-audit.md) | Async jobs, an event bus, and an audit trail | Accepted |
 
 See also the [Architecture & Design](../architecture.md) overview.

@@ -405,7 +405,10 @@ All env vars (see `src/iactranslate/config.py`):
 | `GET` | `/health` | Liveness. `{"status":"ok"}`. |
 | `POST` | `/projects` | `{name, target, source?, column_map?, region?}` → 201 project summary. |
 | `POST` | `/projects/{id}/upload` | multipart `file` (.xlsx/.csv). 413 if too big, 400 if wrong type. |
-| `POST` | `/projects/{id}/run` | Runs the pipeline. 200 summary; 422 on validation issues; 400 on bad input. |
+| `POST` | `/projects/{id}/run` | Runs the pipeline **synchronously**. 200 summary; 422 validation/policy; 400 bad input. |
+| `POST` | `/projects/{id}/jobs` | Runs **asynchronously**; 202 + `job_id`. Poll `/jobs/{id}`. |
+| `GET` | `/jobs/{job_id}` | Job status (queued/running/completed/failed) + project summary when done. |
+| `GET` | `/audit` | Recent audit events (newest first); `?project_id=` to scope. |
 | `POST` | `/projects/{id}/assess` | Pre-migration readiness assessment (findings + score) from the uploaded inventory. |
 | `POST` | `/projects/{id}/recommend` | Cloud recommendation (with decisiveness, annualized cost, notes). |
 | `POST` | `/projects/{id}/report` | Executive report HTML. `?include_recommendation=false` to skip the 3-cloud compare. |

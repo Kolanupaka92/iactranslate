@@ -31,6 +31,8 @@ in CI on `main`.
 - ✅ **Explainability** — per-decision `reason` + `decisions.json` (why + how sure)
 - ✅ **Infrastructure Graph** — renderer-neutral topology IR (`graph.json`); the diagram renders from it
 - ✅ **Named, timed pipeline stages** — per-stage `pipeline-trace.json` + structured log (observability)
+- ✅ **Async jobs + event bus + audit trail** (single-node) — `POST /jobs` → poll → download,
+  event-sourced lifecycle, `GET /audit`; the seam Postgres/Redis/Celery/S3 drop into (ADR 0012)
 - ✅ Model schema versioning (`NormalizedVM` / `MigrationPlan`)
 
 **Surfaces & delivery**
@@ -51,28 +53,32 @@ in CI on `main`.
 - ◻ Managed-database re-platforming (RDS / Cloud SQL / Azure SQL) recommendations
 - ◻ Kubernetes workload discovery
 
-**Platform / scale** (the [reference architecture](deployment.md#reference-architecture)):
-- ◻ PostgreSQL backend (persistence beyond the in-memory store; the `ProjectStore` is the seam)
-- ◻ Multi-user authentication + per-org multi-tenancy
-- ◻ Async / queued execution + **resumable stages** (builds on the named-stage model)
-- ◻ Durable artifact store (object storage) for every produced file
-- ◻ Cloud Cost Explorer / actual-spend reconciliation
+**Enterprise-platform maturity** (the runtime seams — events, jobs, audit, stages,
+capability flags, the `ProjectStore` interface — now exist; these are the durable
+backends and integrations that plug into them, via the
+[reference architecture](deployment.md#reference-architecture)):
+
+| Milestone | Focus | Builds on |
+|---|---|---|
+| v2.1 | PostgreSQL store + object-storage artifact store + **durable** job queue (Redis/Celery) | in-memory store, `JobQueue`, event bus (shipped seams) |
+| v2.2 | Desktop app (Tauri) over the same core engine | CLI/API (shipped) |
+| v2.3 | AuthN (OIDC/SAML) + RBAC + persistent audit | audit trail (shipped in-memory) |
+| v2.4 | Notifications (Slack/Teams/Email) + metrics (Prometheus/Grafana/OTel) | event bus + `pipeline-trace` (shipped) |
+| v2.5 | CI/CD pipeline generation (Jenkins/GitHub/GitLab/Azure DevOps) | GitOps workflow (shipped for GH Actions) |
+| v2.6 | Ticketing (Jira/ServiceNow/Azure DevOps) from the assessment | assessment (shipped) |
+| v3.0 | Multi-tenant SaaS + plugin ecosystem + OPA-compatible policy | policy engine, source/target registries (shipped) |
 
 **Renderers via the Infrastructure Graph** (the IR seam now exists):
 - ◻ CloudFormation, Bicep, AWS CDK, Kubernetes back-ends consuming `graph.json`
 - ◻ Migrate the Terraform/Pulumi renderers onto the graph
 
-**Considered, deliberately deferred** (would add value but aren't warranted at the
-current size — tracked so the reasoning is explicit, not forgotten):
+**Considered, deliberately deferred** (tracked so the reasoning is explicit):
 
-- ◻ **Audit event stream** — emit a structured `AuditEvent` per stage. The named,
-  timed stages + `pipeline-trace.json` are the substrate; a full audit log is
-  valuable once runs are long-lived/multi-user (persistence-backed), not yet.
-- ◻ **Event bus** for post-plan fan-out (Slack/email/webhook/telemetry). Worth it
-  when there are external subscribers to notify.
 - ◻ **`src/` reorg into `core/ decision/ analysis/ renderers/`** — the decision/
   analysis separation is real and documented; the physical move is churn with
   import-breakage risk that isn't justified yet.
+- ◻ **Distributed/resumable stages** — the named-stage model is the substrate;
+  resume-from-failure needs the persistent store + queue from v2.1 first.
 
 ## Not planned (out of scope)
 

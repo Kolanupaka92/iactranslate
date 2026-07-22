@@ -3,7 +3,10 @@
 Flow:
     POST   /projects                   -> create a project
     POST   /projects/{id}/upload       -> upload an RVTools/VMware export
-    POST   /projects/{id}/run          -> run the pipeline (422 on policy denial)
+    POST   /projects/{id}/run          -> run the pipeline synchronously (422 on policy denial)
+    POST   /projects/{id}/jobs         -> run asynchronously; returns a job id (202)
+    GET    /jobs/{job_id}              -> job status (+ project summary when done)
+    GET    /audit                      -> recent audit events (event-sourced)
     GET    /policies                   -> available policy rules
     POST   /projects/{id}/assess       -> pre-migration readiness assessment
     POST   /projects/{id}/recommend    -> compare clouds and recommend one
@@ -37,12 +40,22 @@ from ..recommend import recommend
 from ..sources import list_sources, resolve_source
 from ..targets import get_target, list_targets
 from ..validation import PlanValidationError
+from .audit import AuditLog
+from .events import Event, EventBus, EventType
+from .jobs import JobQueue
 from .store import Project, ProjectStore
 
 logger = logging.getLogger("iactranslate.api")
 
 app = FastAPI(title="IaCTranslate", version="0.1.0")
 store = ProjectStore()
+
+# Runtime orchestration layer (single-node realization; swap for Redis/Celery +
+# Postgres in production — same interfaces). The pipeline stays a pure function.
+bus = EventBus()
+jobs = JobQueue(bus)
+audit = AuditLog()
+audit.attach(bus)
 
 _ALLOWED_SUFFIXES = {".xlsx", ".xls", ".xlsm", ".csv"}
 _NAME_RE = re.compile(r"^[A-Za-z0-9 ._-]{1,128}$")
@@ -143,6 +156,8 @@ def create_project(body: CreateProject) -> dict:
         column_map=body.column_map, region=body.region, policy=body.policy,
     )
     logger.info("created project %s (target=%s source=%s)", project.id, project.target, project.source)
+    bus.publish(Event(EventType.PROJECT_CREATED, project_id=project.id,
+                      detail={"target": project.target, "source": project.source}))
     return _summary(project)
 
 
@@ -171,6 +186,7 @@ def delete_project(pid: str) -> None:
     if not store.delete(pid):
         raise HTTPException(404, "project not found")
     logger.info("deleted project %s", pid)
+    bus.publish(Event(EventType.PROJECT_DELETED, project_id=pid))
 
 
 @app.post("/projects/{pid}/upload")
@@ -197,15 +213,17 @@ async def upload(pid: str, file: UploadFile) -> dict:
     project.upload_path = dest
     project.status = "uploaded"
     logger.info("project %s uploaded %d bytes", project.id, total)
+    bus.publish(Event(EventType.PROJECT_UPLOADED, project_id=project.id, detail={"bytes": total}))
     return _summary(project)
 
 
-@app.post("/projects/{pid}/run")
-def run(pid: str) -> dict:
-    project = _require_project(pid)
-    if project.upload_path is None:
-        raise HTTPException(400, "no file uploaded for this project")
+def _execute_run(project: Project) -> None:
+    """Run the pipeline for a project and update its status/summary in place.
 
+    Raises the original pipeline exceptions (PlanValidationError /
+    PolicyViolationError / ValueError) after marking the project failed — the
+    caller maps them to HTTP codes (sync) or to a failed job (async).
+    """
     out_dir = project.workspace / "project"
     try:
         result = run_pipeline(
@@ -219,19 +237,15 @@ def run(pid: str) -> dict:
             make_zip=True,
             policy_config=project.policy,
         )
-    except PlanValidationError as e:
+    except (PlanValidationError, PolicyViolationError, ValueError) as e:
         project.status = "failed"
-        project.error = "; ".join(e.issues)
-        raise HTTPException(422, {"message": "plan failed validation", "issues": e.issues}) from e
-    except PolicyViolationError as e:
-        project.status = "failed"
-        msgs = [f"[{v.policy}] {v.message}" for v in e.violations]
-        project.error = "; ".join(msgs)
-        raise HTTPException(422, {"message": "plan violates policy", "violations": msgs}) from e
-    except ValueError as e:
-        project.status = "failed"
-        project.error = str(e)
-        raise HTTPException(400, str(e)) from e
+        if isinstance(e, PlanValidationError):
+            project.error = "; ".join(e.issues)
+        elif isinstance(e, PolicyViolationError):
+            project.error = "; ".join(f"[{v.policy}] {v.message}" for v in e.violations)
+        else:
+            project.error = str(e)
+        raise
 
     confidence = score_plan(result.plan, result.vms)
     project.project_dir = result.project_dir
@@ -263,7 +277,53 @@ def run(pid: str) -> dict:
         ],
     }
     logger.info("project %s generated %d instances", project.id, result.plan.vm_count)
+
+
+@app.post("/projects/{pid}/run")
+def run(pid: str) -> dict:
+    """Synchronous run — generates in-request. See POST /jobs for the async path."""
+    project = _require_project(pid)
+    if project.upload_path is None:
+        raise HTTPException(400, "no file uploaded for this project")
+    try:
+        _execute_run(project)
+    except PlanValidationError as e:
+        raise HTTPException(422, {"message": "plan failed validation", "issues": e.issues}) from e
+    except PolicyViolationError as e:
+        msgs = [f"[{v.policy}] {v.message}" for v in e.violations]
+        raise HTTPException(422, {"message": "plan violates policy", "violations": msgs}) from e
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
     return _summary(project)
+
+
+@app.post("/projects/{pid}/jobs", status_code=202)
+def create_job(pid: str) -> dict:
+    """Asynchronous run — enqueue the pipeline and return a job id to poll."""
+    project = _require_project(pid)
+    if project.upload_path is None:
+        raise HTTPException(400, "no file uploaded for this project")
+    project.status = "queued"
+    job = jobs.submit(project.id, lambda: _execute_run(project))
+    return job.to_dict()
+
+
+@app.get("/jobs/{job_id}")
+def get_job(job_id: str) -> dict:
+    job = jobs.get(job_id)
+    if job is None:
+        raise HTTPException(404, "job not found")
+    data = job.to_dict()
+    project = store.get(job.project_id)
+    if project is not None:
+        data["project"] = _summary(project)
+    return data
+
+
+@app.get("/audit")
+def get_audit(project_id: Optional[str] = None, limit: int = 100) -> list:
+    """Recent audit events (newest first), optionally scoped to one project."""
+    return [e.to_dict() for e in audit.recent(project_id=project_id, limit=min(limit, 1000))]
 
 
 @app.post("/projects/{pid}/recommend")
