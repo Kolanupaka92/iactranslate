@@ -18,6 +18,7 @@ from .exec_report import build_executive_report
 from .normalize import normalize
 from .pipeline import run_pipeline
 from .recommend import recommend
+from .renderers import UnknownRendererError, list_renderers
 from .sources import UnknownSourceError, list_sources, resolve_source
 from .targets import UnknownTargetError, get_target, list_targets
 from .validation import PlanValidationError
@@ -49,8 +50,9 @@ def _cmd_translate(args: argparse.Namespace) -> int:
             column_map=_parse_column_map(args.map),
             region=args.region,
             make_zip=args.zip,
+            renderer=args.renderer,
         )
-    except (UnknownTargetError, UnknownSourceError) as e:
+    except (UnknownTargetError, UnknownSourceError, UnknownRendererError) as e:
         print(f"error: {e}", file=sys.stderr)
         return 2
     except FileNotFoundError:
@@ -253,6 +255,8 @@ def build_parser() -> argparse.ArgumentParser:
     t.add_argument("--out", required=True, help="Output project directory.")
     t.add_argument("--region", default=None, help="Target region/location (defaults per cloud).")
     t.add_argument("--name", default=None, help="Project name (defaults to input filename).")
+    t.add_argument("--renderer", default="terraform",
+                   help=f"IaC output format ({', '.join(list_renderers())}). Pulumi is AWS-only.")
     t.add_argument("--zip", action="store_true", help="Also write a <out>.zip archive.")
     t.set_defaults(func=_cmd_translate)
 

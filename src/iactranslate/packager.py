@@ -10,8 +10,8 @@ from .assessment import assess, to_html, to_json
 from .confidence import score_plan
 from .diagram import architecture_mermaid, architecture_svg
 from .exec_report import build_executive_report
-from .generator import build_files
 from .models import MigrationPlan, NormalizedVM
+from .renderers import render
 from .targets.base import Target
 
 
@@ -79,16 +79,18 @@ def build_project(
     out_dir: str | Path,
     target: Target,
     vms: Optional[List[NormalizedVM]] = None,
+    renderer: str = "terraform",
 ) -> Path:
     """Write the full project tree to `out_dir` and return its path.
 
-    When `vms` is supplied, a pre-migration assessment is written alongside the
-    Terraform (assessment.json + documentation/assessment.html).
+    `renderer` selects the IaC output ('terraform' | 'pulumi'). When `vms` is
+    supplied, a pre-migration assessment is written alongside (assessment.json +
+    documentation/assessment.html).
     """
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
 
-    files: Dict[str, str] = build_files(plan, target)
+    files: Dict[str, str] = render(renderer, plan, target)
     for filename, content in files.items():
         (out / filename).write_text(content)
 

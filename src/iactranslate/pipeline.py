@@ -38,6 +38,7 @@ def run_pipeline(
     region: Optional[str] = None,
     provider: Optional[LLMProvider] = None,
     make_zip: bool = False,
+    renderer: str = "terraform",
 ) -> PipelineResult:
     tgt = get_target(target)  # raises UnknownTargetError for bad target
     src = resolve_source(input_path, source)  # auto-detect unless named
@@ -55,7 +56,7 @@ def run_pipeline(
     )
     assert_valid(plan, tgt)  # raises PlanValidationError on any issue
 
-    project_dir = build_project(plan, out_dir, tgt, vms=vms)
+    project_dir = build_project(plan, out_dir, tgt, vms=vms, renderer=renderer)
     zip_path = None
     if make_zip:
         zip_path = zip_project(project_dir, Path(out_dir).with_suffix(".zip"))
