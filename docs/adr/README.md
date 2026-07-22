@@ -1,0 +1,18 @@
+# Architecture Decision Records
+
+Short records of the *why* behind the load-bearing decisions in IaCTranslate.
+Each captures the context at the time, the decision, and its consequences — so
+the reasoning survives even when the people don't.
+
+Format: [Michael Nygard's ADR template](https://cognitect.com/blog/2011/11/15/documenting-architecture-decisions).
+
+| # | Decision | Status |
+|---|---|---|
+| [0001](0001-deterministic-engine.md) | A deterministic engine; AI is optional and gated | Accepted |
+| [0002](0002-normalizedvm-canonical-model.md) | `NormalizedVM` as the canonical inventory model | Accepted |
+| [0003](0003-target-registry.md) | Clouds behind a target registry | Accepted |
+| [0004](0004-ai-provider-interface.md) | AI behind a provider interface with rule-engine default | Accepted |
+| [0005](0005-jinja-renderer.md) | Templates (Jinja2) emit IaC, not the model or the AI | Accepted |
+| [0006](0006-validation-before-render.md) | Validation is a hard gate before rendering | Accepted |
+
+See also the [Architecture & Design](../architecture.md) overview.

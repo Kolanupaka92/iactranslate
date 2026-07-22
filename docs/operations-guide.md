@@ -1,8 +1,9 @@
-# IaCTranslate — Knowledge Transfer & Operations Guide
+# IaCTranslate — Operations Guide
 
-> The single source of truth for understanding, running, extending, operating, and
+> The comprehensive reference for running, extending, operating, and
 > troubleshooting IaCTranslate. Read the **Summary** and **Architecture** first, then
-> jump to whichever How-To or Troubleshooting section you need.
+> jump to whichever How-To or Troubleshooting section you need. For the *why* behind
+> the design, see [Architecture & Design](architecture.md) and the [ADRs](adr/).
 
 **Contents**
 1. [Executive summary](#1-executive-summary)
@@ -18,6 +19,13 @@
 11. [Deployment & operations](#11-deployment--operations)
 12. [Troubleshooting](#12-troubleshooting)
 13. [FAQ & glossary](#13-faq--glossary)
+14. [Performance](#14-performance)
+15. [Security model](#15-security-model)
+16. [Error-handling philosophy](#16-error-handling-philosophy)
+
+> **Design rationale** (principles, the canonical model, request-flow diagrams,
+> scope, assumptions, "why not …") lives in [Architecture & Design](architecture.md)
+> and the [ADRs](adr/). This guide is the *operations* reference.
 
 ---
 
@@ -41,9 +49,11 @@ and will never recommend a rival cloud. IaCTranslate is **source-agnostic + clou
 unbiased**, and its **generic source** ingests any company's CMDB/spreadsheet with no
 bespoke parser — so it works for every company, not just VMware shops.
 
-**Status.** CLI + FastAPI + Next.js web UI. 79 tests, 7 green CI jobs (lint, pytest 3.9/
-3.11/3.12, Docker health, web build, real Terraform validate). Repo:
-`github.com/Kolanupaka92/iactranslate` (private).
+**Status.** CLI + FastAPI + Next.js web UI. On top of the core translator it ships a full
+migration-platform layer — assessment, confidence scoring, executive reports, architecture
+diagrams, infrastructure diff, brownfield adoption, a Pulumi renderer, and opt-in GitOps.
+~145 tests, 7 green CI jobs (lint, pytest 3.9/3.11/3.12, Docker health, web build, real
+Terraform validate). Repo: `github.com/Kolanupaka92/iactranslate` (private).
 
 ---
 
@@ -475,5 +485,73 @@ validate generated HCL.
 
 ---
 
+## 14. Performance
+
+Measured on Apple Silicon (M-series), Python 3.9, the default **rule** provider
+(no network, no AI), each inventory size run in an isolated process. "Core" is
+`parse → normalize → agents → validate → render`; "end-to-end" additionally
+builds the assessment, confidence scoring, executive report, architecture
+diagram, and the `.zip`.
+
+| Workloads | Parse | Core | End-to-end | Peak memory |
+|---:|---:|---:|---:|---:|
+| 500 | ~0.02 s | ~0.05 s | ~0.08 s | ~80 MB |
+| 1,000 | ~0.035 s | ~0.08 s | ~0.21 s | ~90 MB |
+| 5,000 | ~0.16 s | ~0.31 s | ~0.68 s | ~170 MB |
+
+Notes:
+- Scaling is roughly linear in workload count; 5,000 (`IACTRANSLATE_MAX_VMS`
+  default) is comfortably sub-second end-to-end.
+- The `anthropic` provider and `live` pricing add network latency (per-call, with
+  a 24 h price cache) — those paths are I/O-bound, not CPU-bound.
+- Reproduce with `scripts/` bench or the snippet in the repo; numbers are
+  indicative and hardware-dependent, not a benchmark guarantee.
+
+## 15. Security model
+
+IaCTranslate is designed to be safe to run on untrusted inventory uploads and to
+require the minimum possible trust from the operator.
+
+- ✅ **No shell execution** — the pipeline never shells out; input never reaches a shell.
+- ✅ **No Terraform/Pulumi execution** — it *generates* IaC; it never `apply`s. Running the
+  output is a separate, explicit act by the user with their own credentials.
+- ✅ **No cloud credentials required** — generation is fully offline on the default path.
+- ✅ **No inventory modification** — sources are read-only; the customer environment is never touched.
+- ✅ **Upload size limits** — streamed with a hard cap (`IACTRANSLATE_MAX_UPLOAD_MB`, `413` over).
+- ✅ **Workload count limits** — oversized inventories rejected (`IACTRANSLATE_MAX_VMS`).
+- ✅ **Temporary, bounded workspaces** — per-project temp dirs, capacity-capped store, evicted + deleted.
+- ✅ **Path-traversal protection** — project names are validated against a strict allowlist.
+- ✅ **Input validation** — malformed uploads return `400`, never a `500` or a leaked traceback.
+- ✅ **No arbitrary template execution** — templates are shipped with the app, never user-supplied;
+  Jinja renders data into fixed templates, it does not execute user input.
+- ✅ **No secrets in output** — generated GitOps workflows reference GitHub *secrets*; credentials
+  are never embedded in generated files.
+
+Unhandled errors return a generic `500` and are logged server-side with context,
+never surfaced to the client.
+
+## 16. Error-handling philosophy
+
+**Fail fast. Never emit invalid Terraform.** An invalid plan is stopped at the
+validation gate ([ADR 0006](adr/0006-validation-before-render.md)); no files are
+written.
+
+Every validation error is actionable — it explains:
+
+- **what** failed (e.g. "instance type `m9.mega` not in the AWS catalog"),
+- **why** it failed (not a real SKU),
+- **where** it failed (which workload / resource),
+- **how** to fix it (choose a catalog type, or correct the source vCPU/memory).
+
+Surfaces:
+- **CLI** — non-zero exit code with a readable `error: …` message on stderr.
+- **API** — `422` with `{"detail": {"message", "issues": [...]}}` for validation;
+  `400` for bad input; `413` for oversized uploads; a generic logged `500` for the unexpected.
+
+Malformed or attacker-influenced input is treated as a normal `4xx`, never a crash.
+
+---
+
 *Keep this doc current: when you add a source or target, update §3, §7, and §12; when you add
-an env var, update §8; when you add an endpoint, update §9.*
+an env var, update §8; when you add an endpoint, update §9. When you add a section, add it to
+the Contents and (if user-facing) link it from the README.*

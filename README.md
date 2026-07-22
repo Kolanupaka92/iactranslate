@@ -1,175 +1,119 @@
 # IaCTranslate
 
-AI-powered infrastructure migration translator: convert **any** infrastructure
-inventory — VMware (RVTools), Microsoft Hyper-V, a CMDB / spreadsheet export
-(ServiceNow, Device42, Lansweeper, or hand-rolled), or an existing AWS/Azure
-fleet — into **production-ready Terraform** for AWS, Azure, or GCP, without ever
-connecting to the customer environment.
+**Turn any infrastructure inventory into production-ready Infrastructure-as-Code
+for any major cloud — deterministically, offline, and unbiased.**
 
-The value is not "an LLM writes Terraform." It's a **deterministic translation
-layer**:
+Feed it a VMware (RVTools) export, a Hyper-V dump, a CMDB/spreadsheet, or an
+existing AWS/Azure fleet. Get back reviewable **Terraform or Pulumi** for **AWS,
+Azure, or GCP**, plus a migration assessment, a cloud recommendation, and a
+client-ready report — without ever connecting to the customer environment.
+
+It's **not** "an LLM writes Terraform." It's a deterministic translation layer:
 
 ```
-parse → normalize → agents(classify/rightsize/network) → validate → render → package
+parse → normalize → agents(classify · rightsize · network) → validate → render → package
 ```
 
-The AI produces only *structured decisions* (which application group, which
-instance type). Python + Jinja2 emit the actual `.tf`, so the output is
-reproducible, auditable, and enterprise-safe. Every AI decision is re-checked by
-a validation layer before any Terraform is written.
+AI (optional) makes only *structured decisions*; templates emit the actual IaC;
+a validation layer re-checks every decision. Same input → same output, every
+time — and CI proves the output is valid against the real cloud providers
+(`tofu validate`).
 
-> 📖 **New here?** Read the [Knowledge-Transfer & Operations Guide](docs/KT.md) —
-> architecture, step-by-step functionality, how-tos, config reference, extension
-> guides, and troubleshooting.
+## Key features
 
-> **Sources (input, `src/iactranslate/sources/`):** `vmware` (RVTools .xlsx + vSphere CSV),
-> `hyperv` (Get-VM export), `generic` (any CMDB/spreadsheet — auto-detects columns or takes an
-> explicit `--map`), `cloud` (existing AWS/Azure fleet; recovers vCPU/mem from the target
-> catalogs). `--source auto` detects the right one. The generic source means **any company's
-> inventory works without a bespoke parser.**
->
-> **Targets (output, `src/iactranslate/targets/`):** **AWS** (EC2 + VPC), **Azure** (VM +
-> VNet/NSG), **GCP** (Compute Engine + VPC + firewalls), all via Terraform.
->
-> Both are registries behind interfaces; the parser, normalizer, classifier, validation,
-> renderer, and packager are source- and cloud-agnostic. New sources (mainframe, live agents)
-> and targets (Pulumi, OpenTofu) slot in without touching the pipeline.
+- **Any source → any cloud.** Source registry (VMware · Hyper-V · generic CMDB ·
+  existing cloud fleet) and target registry (AWS · Azure · GCP), both behind
+  protocols — new ones need no pipeline changes.
+- **Unbiased cloud recommendation.** Ranks all three clouds on cost, sizing fit,
+  and OS affinity, with explicit weights and plain-English rationale. No vendor
+  gets a thumb on the scale.
+- **Right-sized from real usage.** When utilization data is present, instances
+  are sized to actual demand, not to over-provisioned allocations.
+- **A full migration-platform layer.** Pre-migration **assessment** (readiness +
+  risks), **confidence** scoring, an **executive report**, **architecture
+  diagrams**, **infrastructure diff**, **brownfield** adoption (import blocks),
+  a **Pulumi** renderer, and opt-in **GitOps** CI/CD.
+- **Offline & auditable.** Runs with no internet and no API keys; the output is
+  reproducible and reviewable.
 
-## Install
+## Quick start
 
 ```bash
 python3 -m venv .venv && . .venv/bin/activate
 pip install -e ".[dev]"
-python scripts/make_fixtures.py   # sample RVTools .xlsx + VMware .csv for testing
+python scripts/make_fixtures.py            # sample inventories for testing
+
+# Translate a VMware export into an AWS Terraform project (zipped)
+iactranslate translate tests/fixtures/rvtools_sample.xlsx --target aws --out ./out --zip
 ```
 
-## CLI
+Other clouds and formats are auto-detected: `--target azure|gcp`,
+`--source auto`, `--renderer terraform|pulumi`, `--gitops`. See the
+[Operations Guide](docs/operations-guide.md) for the full CLI, API, and web UI.
 
-```bash
-# AWS (EC2 + VPC)
-iactranslate translate tests/fixtures/rvtools_sample.xlsx \
-  --target aws --out ./out-aws --zip --name acme-migration
+## Example: input → output
 
-# Azure (VM + VNet/NSG)
-iactranslate translate tests/fixtures/rvtools_sample.xlsx \
-  --target azure --out ./out-azure --zip --name acme-migration
+**In** — a row from any inventory (here a CMDB/spreadsheet):
 
-# GCP (Compute Engine + VPC + firewalls)
-iactranslate translate tests/fixtures/rvtools_sample.xlsx \
-  --target gcp --out ./out-gcp --zip --name acme-migration
+| name | cpu | memory_gib | disk_gib | os | cpu_util_pct | mem_util_pct |
+|---|---|---|---|---|---|---|
+| prod-web-01 | 8 | 32 | 100 | Ubuntu 22.04 | 22 | 30 |
 
-# Any source — auto-detected (Hyper-V, cloud fleet, CMDB, …)
-iactranslate translate tests/fixtures/hyperv_sample.csv --target azure --out ./out-hv
+**Out** — `compute.tf` (image resolved automatically, sized to real usage):
 
-# A CMDB/spreadsheet with non-standard headers — map them explicitly
-iactranslate translate my-cmdb.csv --source generic \
-  --map "name=Hostname,cpu=Cores,memory_gib=RAM GB,disk_gib=Storage GB,os=OS" \
-  --target aws --out ./out-cmdb
+```hcl
+resource "aws_instance" "prod_web_01" {
+  ami                    = data.aws_ami.ubuntu_22_04.id
+  instance_type          = "t3.xlarge"     # right-sized from 8 vCPU/32 GiB @ ~22-30% usage
+  subnet_id              = aws_subnet.public_a.id
+  vpc_security_group_ids = [aws_security_group.web_sg.id]
+  root_block_device { volume_size = 100, volume_type = "gp3" }
+  tags = { Name = "prod-web-01", Tier = "web", Environment = "production" }
+}
 ```
 
-## Which cloud? — recommendation
+…plus a VPC, subnets, security groups, an assessment, a confidence score, an
+architecture diagram, and an executive report — all in the generated project.
 
-Don't know which cloud to migrate to? Compare all three on the same inventory:
+## Architecture
 
-```bash
-iactranslate recommend tests/fixtures/rvtools_sample.xlsx
-```
-
-A deterministic, auditable scorer ranks AWS/Azure/GCP on **cost** (projected
-monthly spend), **fit** (how tightly instances match the source vCPU/memory), and
-**OS affinity** (Windows→Azure, Linux→GCP, mixed→AWS), with plain-English rationale
-per cloud and explicit weights. No AI is in this loop — the score is inspectable
-and defensible. Also available at `POST /projects/{id}/recommend`.
-
-Produces a full Terraform project (`main.tf`, `networking.tf`, `compute.tf`,
-`security.tf`, `storage.tf`, `variables.tf`, `outputs.tf`, …), a
-`documentation/migration-summary.md`, and an optional `out.zip`.
-
-## API
-
-```bash
-uvicorn iactranslate.api.main:app --reload
-```
+Two narrow waists (`NormalizedVM` for input, `MigrationPlan` for output) keep the
+pipeline source- and cloud-agnostic:
 
 ```
-POST   /projects                 { "name": "...", "target": "aws" }
-POST   /projects/{id}/upload     multipart file (.xlsx / .csv)
-POST   /projects/{id}/run
-POST   /projects/{id}/recommend  → cloud recommendation
-GET    /projects/{id}            status + summary
-GET    /projects/{id}/download   → Terraform project ZIP
-DELETE /projects/{id}            → delete project + workspace
+ sources/  ─▶  normalize  ─▶  agents  ─▶  validate  ─▶  render  ─▶  package
+ (registry)     (waist:        (rule │      (hard      (targets/    (+ reports,
+  vmware·        Normalized      anthropic)  gate)       terraform│   assessment,
+  hyperv·        VM)                                     pulumi)     diagram, zip)
+  generic·                                     ▲
+  cloud)                                   MigrationPlan (waist)
 ```
 
-## Web UI
+Full rationale — design principles, the canonical model, sequence diagrams,
+scope, and assumptions — is in **[docs/architecture.md](docs/architecture.md)**.
 
-A Next.js app under `web/` gives the full workflow in the browser: create project →
-upload export → (optionally) compare clouds → generate → download ZIP. Includes a
-one-click sample inventory for demos.
+## Documentation
 
-```bash
-# terminal 1 — API with CORS for the frontend
-IACTRANSLATE_CORS_ORIGINS=http://localhost:3000 uvicorn iactranslate.api.main:app
-
-# terminal 2 — frontend
-cd web && npm install && npm run dev   # http://localhost:3000
-```
-
-Point the frontend at a non-default API with `NEXT_PUBLIC_API_URL`.
-
-## Deploy (Docker)
-
-```bash
-docker build -t iactranslate .
-docker run -p 8000:8000 iactranslate      # non-root, healthchecked, /health
-```
-
-## Configuration & limits
-
-The API enforces hard limits to bound memory/disk/CPU on attacker-influenced input
-(all env-overridable — see `src/iactranslate/config.py`):
-
-| Env var | Default | Purpose |
-|---|---|---|
-| `IACTRANSLATE_MAX_UPLOAD_MB` | 25 | Reject larger uploads (413) — streamed, never buffered whole. |
-| `IACTRANSLATE_MAX_VMS` | 5000 | Reject oversized inventories (bounds plan/output size). |
-| `IACTRANSLATE_MAX_PROJECTS` | 200 | Cap the in-memory store; oldest projects + temp dirs are evicted. |
-| `IACTRANSLATE_CORS_ORIGINS` | (none) | Comma-separated allowed origins for the planned frontend. |
-
-Other hardening: project names are validated, malformed uploads return `400`
-(never a `500`/traceback), unhandled errors return a generic `500` and are logged
-server-side, and the store is thread-safe. No customer data leaves the machine on
-the default (`rule`) provider.
-
-## AI providers
-
-The classify / rightsize steps run behind a provider interface:
-
-| `IACTRANSLATE_LLM_PROVIDER` | Behavior |
+| Doc | For |
 |---|---|
-| `rule` (default) | Deterministic rule engine + static AWS catalog. No API key. Reproducible. |
-| `anthropic` | Claude structured tool-use via `client.messages.parse`. Needs `ANTHROPIC_API_KEY`. |
+| [Operations Guide](docs/operations-guide.md) | Running, extending, operating, troubleshooting; CLI/API/config reference; performance & security |
+| [Architecture & Design](docs/architecture.md) | Why it's built this way — principles, canonical model, scope, assumptions, "why not …" |
+| [Architecture Decision Records](docs/adr/) | The record of load-bearing decisions |
+| [Roadmap](docs/roadmap.md) | Shipped vs planned |
 
-Selecting `anthropic` without a key transparently falls back to `rule`, so the
-pipeline always runs. See `.env.example`. Regardless of provider, the validation
-layer and catalog guardrail re-check every decision.
-
-## Test
+## Test & lint
 
 ```bash
-pytest
+pytest                 # ~145 tests: parsers, sizing, validation, all 3 clouds, renderers, API
+ruff check src tests
 ```
 
-Covers parsers, normalization, rightsizing, validation, generation, all three
-cloud targets, the recommender, and API security/robustness (49 tests). Lint with
-`ruff check src tests`.
+CI runs lint, pytest on 3.9/3.11/3.12, a Docker build/health check, the web
+build, and a real `tofu validate` of generated Terraform for AWS, Azure, and GCP.
 
-## Terraform validation
+## Security posture (at a glance)
 
-`terraform` is not required to generate — output is rendered deterministically
-from templates and shape-checked in tests. To validate against the real AWS
-provider, fill in the `ami_ids` placeholders in `terraform.tfvars`, then:
-
-```bash
-cd out && terraform init && terraform validate && terraform plan
-```
+No shell or Terraform execution, no cloud credentials required to generate, no
+inventory modification, streamed upload caps, bounded temp workspaces, path-
+traversal protection, and no secrets embedded in output. Details in
+[Operations Guide § Security model](docs/operations-guide.md#15-security-model).
