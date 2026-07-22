@@ -130,8 +130,15 @@ iactranslate/
 | **Source** | Reads one inventory format → raw records that `normalize.py` understands. Has `detect(path)→confidence` and `parse(path, column_map)`. | `sources/base.py` |
 | **Target** | One cloud: an instance **catalog**, tier→family/subnet/security **mappings**, OS→image detection, and Jinja2 **templates**. | `targets/base.py` |
 | **Provider** | Makes the *structured decisions* (grouping, instance choice). `rule` (deterministic, default) or `anthropic` (Claude). Always re-checked by validation. | `agents/providers/` |
-| **Recommender** | Runs all clouds on one inventory and scores cost (0.45) + fit (0.30) + OS-affinity (0.25). | `recommend.py` |
+| **Recommender** | Runs all clouds on one inventory and scores cost (0.45) + fit (0.30) + OS-affinity (0.25). 2.0 adds decisiveness (clear/moderate/close), annualized cost, and estate notes. | `recommend.py` |
 | **Assessment** | Pre-migration read of the estate: risk/cost/data-quality/capacity findings + a 0-100 readiness score. Deterministic, no AI. Emits JSON + a standalone HTML report. | `assessment/` |
+| **Confidence Engine** | Scores how sure each decision is (sizing/classification/image/cost) per workload + plan-level, from observable signals. | `confidence.py` |
+| **Executive Report** | One client-facing HTML page composing plan + cost + assessment + confidence + recommendation + architecture diagram. | `exec_report.py` |
+| **Architecture Diagram** | Deterministic SVG + Mermaid of the target topology (VPC → subnets → tiered instances). | `diagram.py` |
+| **Infrastructure Diff** | Drift between two inventory snapshots (added/removed/modified + aggregate deltas). | `diff.py` |
+| **Renderer** | Swappable IaC output for the same plan: `terraform` (default, HCL) or `pulumi` (Python, AWS). | `renderers/` |
+| **Brownfield** | Existing cloud fleet with resource ids → Terraform/Pulumi `import` blocks (adopt, don't recreate). | `sources/cloud`, `renderers/` |
+| **GitOps** | Opt-in CI/CD workflow (plan on PR, apply on merge) + .gitignore, target/renderer-aware. | `gitops.py` |
 | **Validation layer** | Never trusts provider output: checks catalog membership, CIDR overlap/containment, duplicate names, referential integrity. | `validation/validators.py` |
 
 **The raw-record contract** (what a `Source.parse` returns, consumed by `normalize`):
@@ -228,8 +235,19 @@ iactranslate translate my-cmdb.csv --source generic \
   --map "name=Hostname,cpu=Cores,memory_gib=RAM GB,disk_gib=Storage GB,os=OS" \
   --target gcp --out ./out-cmdb
 ```
+```bash
+# Pulumi output (AWS) instead of Terraform, with a GitOps CI/CD workflow
+iactranslate translate rvtools.xlsx --target aws --renderer pulumi --gitops --out ./out-pl
+```
 Flags: `--target aws|azure|gcp`, `--source auto|vmware|hyperv|generic|cloud`, `--map`,
-`--region`, `--name`, `--zip`.
+`--region`, `--name`, `--zip`, `--renderer terraform|pulumi` (Pulumi is AWS-only),
+`--gitops` (adds `.github/workflows/*` + `.gitignore`).
+
+Every generated project also ships, under `documentation/`, an executive report
+(`executive-report.html`), an architecture diagram (`architecture.svg`/`.md`), the
+assessment (`assessment.json`, `assessment.html`), and `confidence.json`. A brownfield
+export (a cloud fleet CSV with resource ids) additionally yields `imports.tf` /
+Pulumi import options so existing infra is adopted, not recreated.
 
 ### 6.3 CLI — recommend
 ```bash
@@ -246,6 +264,17 @@ iactranslate assess my-cmdb.csv --html-out report.html # standalone client repor
 ```
 A `translate` run also writes the assessment into the project package
 (`assessment.json` + `documentation/assessment.html`).
+
+### 6.3c CLI — report & diff
+```bash
+# Client-facing executive report (HTML): plan + cost + assessment + confidence + recommendation + diagram
+iactranslate report rvtools.xlsx --target aws --out report.html
+iactranslate report rvtools.xlsx --no-recommend           # skip the 3-cloud compare
+
+# Drift between two inventory snapshots (added/removed/resized + aggregate deltas)
+iactranslate diff old-inventory.csv new-inventory.csv
+iactranslate diff old.csv new.csv --json
+```
 
 ### 6.4 API
 ```bash
@@ -347,8 +376,9 @@ All env vars (see `src/iactranslate/config.py`):
 | `POST` | `/projects/{id}/upload` | multipart `file` (.xlsx/.csv). 413 if too big, 400 if wrong type. |
 | `POST` | `/projects/{id}/run` | Runs the pipeline. 200 summary; 422 on validation issues; 400 on bad input. |
 | `POST` | `/projects/{id}/assess` | Pre-migration readiness assessment (findings + score) from the uploaded inventory. |
-| `POST` | `/projects/{id}/recommend` | Cloud recommendation from the uploaded inventory. |
-| `GET` | `/projects/{id}` | Status + summary. |
+| `POST` | `/projects/{id}/recommend` | Cloud recommendation (with decisiveness, annualized cost, notes). |
+| `POST` | `/projects/{id}/report` | Executive report HTML. `?include_recommendation=false` to skip the 3-cloud compare. |
+| `GET` | `/projects/{id}` | Status + summary (includes the plan's confidence). |
 | `GET` | `/projects/{id}/download` | The Terraform project ZIP. 409 if not generated yet. |
 | `DELETE` | `/projects/{id}` | Deletes the project + its temp workspace. 204. |
 
