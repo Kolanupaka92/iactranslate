@@ -4,6 +4,7 @@ Flow:
     POST   /projects                   -> create a project
     POST   /projects/{id}/upload       -> upload an RVTools/VMware export
     POST   /projects/{id}/run          -> run the pipeline
+    POST   /projects/{id}/assess       -> pre-migration readiness assessment
     POST   /projects/{id}/recommend    -> compare clouds and recommend one
     GET    /projects/{id}              -> status + summary
     GET    /projects/{id}/download     -> download the Terraform project ZIP
@@ -22,6 +23,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, field_validator
 from starlette.requests import Request
 
+from ..assessment import assess
 from ..config import MAX_UPLOAD_BYTES, cors_origins
 from ..normalize import normalize
 from ..pipeline import run_pipeline
@@ -224,6 +226,18 @@ def recommend_cloud(pid: str) -> dict:
         return recommend(vms).model_dump()
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
+
+
+@app.post("/projects/{pid}/assess")
+def assess_estate(pid: str) -> dict:
+    project = _require_project(pid)
+    if project.upload_path is None:
+        raise HTTPException(400, "no file uploaded for this project")
+
+    vms = _parse_inventory(project)
+    src = resolve_source(str(project.upload_path), project.source)
+    a = assess(vms, project_name=project.name, source_platform=src.name)
+    return a.model_dump(mode="json")
 
 
 @app.get("/projects/{pid}/download")

@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from "react";
 
+import AssessmentPanel from "@/components/AssessmentPanel";
 import RecommendTable from "@/components/RecommendTable";
 import RunSummary from "@/components/RunSummary";
 import SourcePicker from "@/components/SourcePicker";
@@ -9,12 +10,14 @@ import TargetPicker from "@/components/TargetPicker";
 import UploadDropzone from "@/components/UploadDropzone";
 import {
   ApiError,
+  assessEstate,
   createProject,
   deleteProject,
   downloadUrl,
   recommendClouds,
   runProject,
   uploadFile,
+  type Assessment,
   type ProjectSummary,
   type Recommendation,
   type RunResult,
@@ -22,7 +25,7 @@ import {
   type Target,
 } from "@/lib/api";
 
-type Busy = "create" | "upload" | "recommend" | "switch" | "run" | null;
+type Busy = "create" | "upload" | "assess" | "recommend" | "switch" | "run" | null;
 
 function Section({
   step,
@@ -60,6 +63,7 @@ export default function Home() {
   const [file, setFile] = useState<File | null>(null);
   const [uploaded, setUploaded] = useState(false);
   const [rec, setRec] = useState<Recommendation | null>(null);
+  const [assessment, setAssessment] = useState<Assessment | null>(null);
   const [result, setResult] = useState<RunResult | null>(null);
   const [busy, setBusy] = useState<Busy>(null);
   const [error, setError] = useState<string | null>(null);
@@ -89,6 +93,7 @@ export default function Home() {
         setFile(f);
         setUploaded(true);
         setRec(null);
+        setAssessment(null);
         setResult(null);
       } catch (e) {
         fail(e);
@@ -98,6 +103,19 @@ export default function Home() {
     },
     [project],
   );
+
+  const handleAssess = useCallback(async () => {
+    if (!project) return;
+    setBusy("assess");
+    setError(null);
+    try {
+      setAssessment(await assessEstate(project.id));
+    } catch (e) {
+      fail(e);
+    } finally {
+      setBusy(null);
+    }
+  }, [project]);
 
   const handleRecommend = useCallback(async () => {
     if (!project) return;
@@ -155,6 +173,7 @@ export default function Home() {
     setFile(null);
     setUploaded(false);
     setRec(null);
+    setAssessment(null);
     setResult(null);
     setError(null);
     setName("");
@@ -230,6 +249,30 @@ export default function Home() {
 
         <Section
           step={3}
+          title="Assess migration readiness (optional)"
+          active={uploaded && !result}
+        >
+          <button
+            type="button"
+            onClick={handleAssess}
+            disabled={busy === "assess"}
+            className="rounded-lg border border-neutral-300 px-4 py-2 text-sm font-semibold hover:border-neutral-400 disabled:opacity-50 dark:border-neutral-700 dark:hover:border-neutral-500"
+          >
+            {busy === "assess" ? "Assessing…" : "Assess this estate"}
+          </button>
+          <p className="mt-2 text-xs opacity-60">
+            Surfaces migration risks, cost-optimization opportunities, and data
+            gaps, with a readiness score. Deterministic — no AI.
+          </p>
+          {assessment && (
+            <div className="mt-4">
+              <AssessmentPanel a={assessment} />
+            </div>
+          )}
+        </Section>
+
+        <Section
+          step={4}
           title="Not sure which cloud? Compare all three (optional)"
           active={uploaded && !result}
         >
@@ -252,7 +295,7 @@ export default function Home() {
         </Section>
 
         <Section
-          step={4}
+          step={5}
           title={`Generate Terraform for ${project?.target.toUpperCase() ?? "your cloud"}`}
           active={uploaded && !result}
         >
@@ -267,7 +310,7 @@ export default function Home() {
         </Section>
 
         {result && project && (
-          <Section step={5} title="Your Terraform project is ready" active>
+          <Section step={6} title="Your Terraform project is ready" active>
             <RunSummary result={result} />
             <div className="mt-5 flex items-center gap-3">
               <a
@@ -285,9 +328,9 @@ export default function Home() {
               </button>
             </div>
             <p className="mt-3 text-xs opacity-60">
-              Fill in the image-ID placeholders in terraform.tfvars, then run
-              terraform init / plan / apply. A migration summary is included under
-              documentation/.
+              OS images resolve automatically — just add cloud credentials (and a
+              GCP project ID) and run terraform init / plan / apply. A migration
+              summary and readiness assessment are included under documentation/.
             </p>
           </Section>
         )}

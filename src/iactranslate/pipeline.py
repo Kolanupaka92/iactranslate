@@ -55,7 +55,7 @@ def run_pipeline(
     )
     assert_valid(plan, tgt)  # raises PlanValidationError on any issue
 
-    project_dir = build_project(plan, out_dir, tgt)
+    project_dir = build_project(plan, out_dir, tgt, vms=vms)
     zip_path = None
     if make_zip:
         zip_path = zip_project(project_dir, Path(out_dir).with_suffix(".zip"))

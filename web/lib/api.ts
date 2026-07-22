@@ -48,6 +48,41 @@ export interface Recommendation {
   ranked: CloudScore[];
 }
 
+export type Severity = "critical" | "high" | "medium" | "low" | "info";
+
+export interface Finding {
+  id: string;
+  category: string;
+  severity: Severity;
+  title: string;
+  detail: string;
+  recommendation: string;
+  affected: string[];
+}
+
+export interface ReadinessScore {
+  score: number;
+  band: "ready" | "minor-gaps" | "needs-work" | "blocked";
+  rationale: string;
+}
+
+export interface Assessment {
+  project_name: string;
+  source_platform: string;
+  total_workloads: number;
+  powered_on: number;
+  powered_off: number;
+  total_vcpu: number;
+  total_memory_gib: number;
+  total_storage_gib: number;
+  windows_workloads: number;
+  linux_workloads: number;
+  unknown_os_workloads: number;
+  utilization_coverage_pct: number;
+  readiness: ReadinessScore;
+  findings: Finding[];
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -118,6 +153,10 @@ export function runProject(projectId: string): Promise<ProjectSummary> {
 
 export function recommendClouds(projectId: string): Promise<Recommendation> {
   return request(`/projects/${projectId}/recommend`, { method: "POST" });
+}
+
+export function assessEstate(projectId: string): Promise<Assessment> {
+  return request(`/projects/${projectId}/assess`, { method: "POST" });
 }
 
 export function deleteProject(projectId: string): Promise<void> {

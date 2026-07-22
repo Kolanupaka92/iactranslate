@@ -83,8 +83,9 @@ iactranslate/
 │  ├─ normalize.py         # raw records → List[NormalizedVM] (unit coercion, dedupe)
 │  ├─ pipeline.py          # run_pipeline(): the end-to-end orchestrator
 │  ├─ recommend.py         # deterministic multi-cloud recommender
-│  ├─ packager.py          # write project tree + migration-summary.md + zip
-│  ├─ cli.py               # `iactranslate translate|recommend`
+│  ├─ assessment/          # pre-migration readiness assessment (findings + score + HTML)
+│  ├─ packager.py          # write project tree + migration-summary.md + assessment + zip
+│  ├─ cli.py               # `iactranslate translate|recommend|assess`
 │  ├─ parsers/             # back-compat shim → sources (legacy parse/detect_format)
 │  │
 │  ├─ sources/             # ── INPUT registry ──
@@ -130,6 +131,7 @@ iactranslate/
 | **Target** | One cloud: an instance **catalog**, tier→family/subnet/security **mappings**, OS→image detection, and Jinja2 **templates**. | `targets/base.py` |
 | **Provider** | Makes the *structured decisions* (grouping, instance choice). `rule` (deterministic, default) or `anthropic` (Claude). Always re-checked by validation. | `agents/providers/` |
 | **Recommender** | Runs all clouds on one inventory and scores cost (0.45) + fit (0.30) + OS-affinity (0.25). | `recommend.py` |
+| **Assessment** | Pre-migration read of the estate: risk/cost/data-quality/capacity findings + a 0-100 readiness score. Deterministic, no AI. Emits JSON + a standalone HTML report. | `assessment/` |
 | **Validation layer** | Never trusts provider output: checks catalog membership, CIDR overlap/containment, duplicate names, referential integrity. | `validation/validators.py` |
 
 **The raw-record contract** (what a `Source.parse` returns, consumed by `normalize`):
@@ -235,6 +237,16 @@ iactranslate recommend tests/fixtures/rvtools_sample.xlsx
 # prints a ranked table (score, $/mo, cost/fit/OS) + per-cloud rationale
 ```
 
+### 6.3b CLI — assess
+```bash
+iactranslate assess tests/fixtures/rvtools_sample.xlsx
+# prints a readiness score (0-100) + categorized findings (risk/cost/data-quality/capacity)
+iactranslate assess my-cmdb.csv --json                 # machine-readable
+iactranslate assess my-cmdb.csv --html-out report.html # standalone client report
+```
+A `translate` run also writes the assessment into the project package
+(`assessment.json` + `documentation/assessment.html`).
+
 ### 6.4 API
 ```bash
 uvicorn iactranslate.api.main:app --port 8000            # add --reload for dev
@@ -246,6 +258,7 @@ Full curl walkthrough:
 PID=$(curl -s -X POST localhost:8000/projects -H 'content-type: application/json' \
       -d '{"name":"demo","target":"aws","source":"auto"}' | python -c 'import sys,json;print(json.load(sys.stdin)["id"])')
 curl -s -X POST localhost:8000/projects/$PID/upload -F "file=@tests/fixtures/rvtools_sample.xlsx"
+curl -s -X POST localhost:8000/projects/$PID/assess           # optional
 curl -s -X POST localhost:8000/projects/$PID/recommend        # optional
 curl -s -X POST localhost:8000/projects/$PID/run
 curl -s -o out.zip localhost:8000/projects/$PID/download
@@ -333,6 +346,7 @@ All env vars (see `src/iactranslate/config.py`):
 | `POST` | `/projects` | `{name, target, source?, column_map?, region?}` → 201 project summary. |
 | `POST` | `/projects/{id}/upload` | multipart `file` (.xlsx/.csv). 413 if too big, 400 if wrong type. |
 | `POST` | `/projects/{id}/run` | Runs the pipeline. 200 summary; 422 on validation issues; 400 on bad input. |
+| `POST` | `/projects/{id}/assess` | Pre-migration readiness assessment (findings + score) from the uploaded inventory. |
 | `POST` | `/projects/{id}/recommend` | Cloud recommendation from the uploaded inventory. |
 | `GET` | `/projects/{id}` | Status + summary. |
 | `GET` | `/projects/{id}/download` | The Terraform project ZIP. 409 if not generated yet. |

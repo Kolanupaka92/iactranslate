@@ -3,10 +3,11 @@ from __future__ import annotations
 
 import zipfile
 from pathlib import Path
-from typing import Dict
+from typing import Dict, List, Optional
 
+from .assessment import assess, to_html, to_json
 from .generator import build_files
-from .models import MigrationPlan
+from .models import MigrationPlan, NormalizedVM
 from .targets.base import Target
 
 
@@ -66,8 +67,17 @@ def migration_summary(plan: MigrationPlan) -> str:
     return "\n".join(lines) + "\n"
 
 
-def build_project(plan: MigrationPlan, out_dir: str | Path, target: Target) -> Path:
-    """Write the full project tree to `out_dir` and return its path."""
+def build_project(
+    plan: MigrationPlan,
+    out_dir: str | Path,
+    target: Target,
+    vms: Optional[List[NormalizedVM]] = None,
+) -> Path:
+    """Write the full project tree to `out_dir` and return its path.
+
+    When `vms` is supplied, a pre-migration assessment is written alongside the
+    Terraform (assessment.json + documentation/assessment.html).
+    """
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
 
@@ -78,6 +88,11 @@ def build_project(plan: MigrationPlan, out_dir: str | Path, target: Target) -> P
     docs = out / "documentation"
     docs.mkdir(exist_ok=True)
     (docs / "migration-summary.md").write_text(migration_summary(plan))
+
+    if vms:
+        a = assess(vms, project_name=plan.project_name, source_platform=plan.source_platform)
+        (out / "assessment.json").write_text(to_json(a))
+        (docs / "assessment.html").write_text(to_html(a))
 
     # Placeholder for future module extraction (kept in the tree for structure).
     modules = out / "modules"

@@ -27,6 +27,9 @@ def test_pipeline_produces_valid_project(rvtools_path, tmp_path):
     for name in ("main.tf", "compute.tf", "networking.tf", "README.md"):
         assert (out / name).exists()
     assert (out / "documentation" / "migration-summary.md").exists()
+    # Pre-migration assessment shipped alongside the Terraform.
+    assert (out / "assessment.json").exists()
+    assert (out / "documentation" / "assessment.html").exists()
 
     # ZIP contains the terraform files.
     assert result.zip_path and result.zip_path.exists()
@@ -34,6 +37,7 @@ def test_pipeline_produces_valid_project(rvtools_path, tmp_path):
         names = zf.namelist()
     assert "compute.tf" in names
     assert "documentation/migration-summary.md" in names
+    assert "assessment.json" in names
 
 
 def test_api_full_flow(rvtools_path, tmp_path):
@@ -56,6 +60,13 @@ def test_api_full_flow(rvtools_path, tmp_path):
     body = r.json()
     assert body["status"] == "completed"
     assert body["result"]["vm_count"] == 7
+
+    r = client.post(f"/projects/{pid}/assess")
+    assert r.status_code == 200, r.text
+    assessment = r.json()
+    assert assessment["total_workloads"] == 7
+    assert 0 <= assessment["readiness"]["score"] <= 100
+    assert isinstance(assessment["findings"], list)
 
     r = client.get(f"/projects/{pid}/download")
     assert r.status_code == 200
