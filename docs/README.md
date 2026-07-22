@@ -10,17 +10,31 @@
 
 The short entry point is the [repo README](../README.md).
 
-## Shared web version (keep in sync)
+## Shareable web versions (Artifacts — keep in sync)
 
-`operations-guide.md` also has a rendered, shareable web page (an Artifact) for
-handing to teammates or leadership:
+Two published, shareable web pages back this repo:
 
-- **URL:** https://claude.ai/code/artifact/926d0f20-5a9f-4e4b-ba98-89670477d531
+| Artifact | Source | URL |
+|---|---|---|
+| **Operations Guide** (HTML) | `operations-guide.md` → `scripts/build_guide_artifact.py` | https://claude.ai/code/artifact/926d0f20-5a9f-4e4b-ba98-89670477d531 |
+| **Investor Deck** (HTML) | [`investor-deck.html`](investor-deck.html) | https://claude.ai/code/artifact/b44cbc29-1e33-4519-a921-2387323fa33d |
 
-**When you edit `operations-guide.md`, re-publish the web page so the two don't
-drift.** The page is generated from the doc's content; ask Claude Code to "update
-the operations-guide Artifact" (it republishes to the **same URL** — the link
-never changes). Do this in the same change as the doc edit.
+**Operations Guide:** it is published as **self-contained HTML** (not raw
+Markdown) so the table-of-contents anchors and cross-document links actually
+resolve in the standalone page. Regenerate after editing the Markdown:
+
+```bash
+python scripts/build_guide_artifact.py /tmp/operations-guide.html
+```
+
+then re-publish that file to the **same** Artifact URL (the link never changes).
+The script gives every heading a GitHub-style id (TOC works) and rewrites
+cross-doc links to absolute GitHub URLs.
+
+**Investor Deck:** the source is [`docs/investor-deck.html`](investor-deck.html) —
+edit it directly and re-publish to its Artifact URL.
+
+Do the re-publish in the **same change** as the source edit so the pages don't drift.
 
 Maintenance rule of thumb: new source/target → update §3, §7, §12; new env var →
 §8; new endpoint → §9 — in **both** the doc and the page. New design decision →

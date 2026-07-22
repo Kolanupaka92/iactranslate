@@ -51,8 +51,9 @@ bespoke parser — so it works for every company, not just VMware shops.
 
 **Status.** CLI + FastAPI + Next.js web UI. On top of the core translator it ships a full
 migration-platform layer — assessment, confidence scoring, executive reports, architecture
-diagrams, infrastructure diff, brownfield adoption, a Pulumi renderer, and opt-in GitOps.
-~165 tests, 7 green CI jobs (lint, pytest 3.9/3.11/3.12, Docker health, web build, real
+diagrams, infrastructure diff, brownfield adoption, a Pulumi renderer, a policy engine, an
+Infrastructure Graph IR, async jobs + audit, and opt-in GitOps.
+~184 tests, 7 green CI jobs (lint, pytest 3.9/3.11/3.12, Docker health, web build, real
 Terraform validate). Repo: `github.com/Kolanupaka92/iactranslate` (private).
 
 ---
@@ -427,7 +428,7 @@ Interactive docs at `/docs` (Swagger) when the server is running.
 ## 10. Testing & CI
 
 ```bash
-pytest                                   # full suite (fast, offline) — 79 tests
+pytest                                   # full suite (fast, offline) — ~184 tests
 ruff check src tests                     # lint
 cd web && npm run lint && npm run build  # frontend
 
@@ -457,10 +458,15 @@ OpenTofu, validates aws/azure/gcp output against real providers).
   On `anthropic`, inventory metadata is sent to the Claude API — use a zero-retention key for
   enterprise data. Uploaded files live in per-project temp workspaces and are deleted on
   project delete / eviction.
-- **State:** the project store is **in-memory** (deliberate MVP shim). Restarting the API
-  loses projects. Persistence (Postgres + S3/R2) is the next planned slice.
-- **Scale:** `run` is synchronous. For very large inventories, an async job queue (Celery/
-  Redis) is a planned slice; the `MAX_VMS` cap bounds request cost today.
+- **Async jobs, events & audit (shipped, single-node):** `POST /projects/{id}/jobs` runs the
+  pipeline on a worker and returns a `job_id` to poll (`GET /jobs/{id}`); lifecycle events flow
+  through an in-process bus; `GET /audit` returns the trail. These are the interfaces the
+  production backends drop into — see [Deployment & Execution](deployment.md).
+- **State:** the project store, jobs, and audit are **in-memory** (single-node). Restarting the
+  API loses them; durability arrives with the Postgres + object-storage backend (the
+  [reference architecture](deployment.md#reference-architecture)).
+- **Scale:** the `MAX_VMS` cap bounds request cost today; horizontal scale (stateless API pods +
+  Redis/Celery workers + Postgres + object storage) is the documented v2.1 path.
 
 ---
 

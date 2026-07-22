@@ -1,0 +1,378 @@
+<title>IaCTranslate — Investor Deck</title>
+<style>
+  :root{
+    --ground:#070b0a; --ground-2:#0b110f; --panel:#0f1613; --panel-2:#131c18;
+    --ink:#eef3f0; --muted:#93a49d; --faint:#63746e; --line:#1c2723;
+    --accent:#2fce97; --accent-2:#1f9d72; --accent-wash:#0f2018;
+    --amber:#e9b64a; --danger:#e0736c;
+    --mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;height:100%;}
+  body{
+    background:var(--ground); color:var(--ink); font-family:var(--sans);
+    -webkit-font-smoothing:antialiased; overflow:hidden;
+  }
+  .deck{position:fixed;inset:0;}
+
+  .slide{
+    position:absolute; inset:0; display:flex; flex-direction:column;
+    justify-content:center; padding:clamp(28px,6vw,96px);
+    opacity:0; visibility:hidden; transform:translateY(14px);
+    transition:opacity .5s ease, transform .5s ease, visibility .5s;
+    background:
+      radial-gradient(1200px 600px at 82% -10%, rgba(47,206,151,.10), transparent 60%),
+      radial-gradient(900px 500px at -10% 110%, rgba(31,157,114,.08), transparent 60%),
+      var(--ground);
+  }
+  .slide.active{opacity:1;visibility:visible;transform:none;}
+  @media (prefers-reduced-motion: reduce){.slide{transition:opacity .2s;transform:none;}}
+  .wrap{width:100%;max-width:1080px;margin:0 auto;}
+
+  .eyebrow{font-family:var(--mono);font-size:12.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);}
+  h1{font-size:clamp(34px,7vw,76px);line-height:1.02;letter-spacing:-.03em;margin:.35em 0 0;font-weight:720;text-wrap:balance;}
+  h2{font-size:clamp(26px,4.4vw,46px);line-height:1.08;letter-spacing:-.025em;margin:.2em 0 .5em;font-weight:680;text-wrap:balance;}
+  p.lead{font-size:clamp(16px,2vw,21px);color:var(--muted);max-width:60ch;line-height:1.55;margin:0;}
+  strong{color:var(--ink);font-weight:640;}
+  .accent{color:var(--accent);}
+  .amber{color:var(--amber);}
+
+  /* chrome */
+  .bar{position:fixed;left:0;right:0;bottom:0;height:3px;background:var(--line);z-index:20;}
+  .bar>i{display:block;height:100%;background:linear-gradient(90deg,var(--accent-2),var(--accent));transition:width .5s ease;}
+  .hud{position:fixed;z-index:20;bottom:18px;font-family:var(--mono);font-size:12px;color:var(--faint);}
+  .hud.count{right:22px;}
+  .hud.brand{left:22px;display:flex;align-items:center;gap:9px;}
+  .hud.brand .dot{width:8px;height:8px;border-radius:2px;background:var(--accent);}
+  .nav{position:fixed;z-index:20;bottom:14px;left:50%;transform:translateX(-50%);display:flex;gap:7px;}
+  .nav button{width:9px;height:9px;padding:0;border:0;border-radius:999px;background:var(--line);cursor:pointer;transition:background .2s,width .2s;}
+  .nav button.on{background:var(--accent);width:22px;}
+  .arrows{position:fixed;z-index:20;bottom:14px;right:64px;display:flex;gap:6px;}
+  .arrows button{width:30px;height:26px;border:1px solid var(--line);background:var(--panel);color:var(--muted);border-radius:7px;cursor:pointer;font-size:13px;}
+  .arrows button:hover{border-color:var(--accent);color:var(--accent);}
+  @media (max-width:640px){.arrows{display:none;}}
+
+  /* reusable pieces */
+  .row{display:flex;gap:14px;flex-wrap:wrap;}
+  .grid{display:grid;gap:14px;}
+  .card{background:linear-gradient(180deg,var(--panel),var(--panel-2));border:1px solid var(--line);border-radius:14px;padding:18px 20px;}
+  .card h3{margin:0 0 6px;font-size:17px;letter-spacing:-.01em;}
+  .card p{margin:0;color:var(--muted);font-size:14.5px;line-height:1.5;}
+  .kicker{font-family:var(--mono);font-size:12px;color:var(--accent);letter-spacing:.04em;}
+  .pill{font-family:var(--mono);font-size:12px;color:var(--muted);border:1px solid var(--line);background:var(--panel);border-radius:999px;padding:5px 11px;}
+  .stat b{display:block;font-size:clamp(30px,5vw,52px);letter-spacing:-.03em;font-variant-numeric:tabular-nums;line-height:1;}
+  .stat span{color:var(--faint);font-size:13px;font-family:var(--mono);}
+  .note{font-family:var(--mono);font-size:11.5px;color:var(--faint);margin-top:18px;}
+
+  table{border-collapse:collapse;width:100%;font-size:14px;}
+  th,td{padding:11px 12px;border-bottom:1px solid var(--line);text-align:left;}
+  thead th{font-family:var(--mono);font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--faint);font-weight:500;}
+  td.us{color:var(--accent);font-weight:600;}
+  .yes{color:var(--accent);} .no{color:var(--danger);} .part{color:var(--amber);}
+  tbody tr:first-child td{background:rgba(47,206,151,.05);}
+
+  .flow{display:flex;align-items:center;gap:14px;flex-wrap:wrap;font-family:var(--mono);font-size:13px;color:var(--muted);margin-top:26px;}
+  .flow .node{border:1px solid var(--line);background:var(--panel);border-radius:10px;padding:9px 13px;}
+  .flow .node.hot{border-color:var(--accent-2);color:var(--ink);box-shadow:0 0 0 1px rgba(47,206,151,.25),0 10px 30px rgba(47,206,151,.12);}
+  .flow .arrow{color:var(--accent);}
+  .flow .arrow .dash{display:inline-block;animation:slide 1.6s linear infinite;}
+  @keyframes slide{to{opacity:.3;}}
+  @media (prefers-reduced-motion: reduce){.flow .arrow .dash{animation:none;}}
+
+  ul.clean{list-style:none;padding:0;margin:14px 0 0;display:flex;flex-direction:column;gap:11px;}
+  ul.clean li{display:flex;gap:12px;color:var(--muted);font-size:16px;line-height:1.5;max-width:64ch;}
+  ul.clean li::before{content:"→";color:var(--accent);font-family:var(--mono);}
+  ul.clean li b{color:var(--ink);}
+
+  .cta a{color:var(--accent);text-underline-offset:3px;}
+  code{font-family:var(--mono);background:var(--panel);border:1px solid var(--line);border-radius:5px;padding:1px 6px;font-size:.85em;color:var(--accent);}
+  .hint{position:fixed;top:18px;right:22px;z-index:20;font-family:var(--mono);font-size:11px;color:var(--faint);}
+</style>
+
+<div class="deck" id="deck">
+
+  <!-- 1 · THESIS -->
+  <section class="slide active">
+    <div class="wrap">
+      <div class="eyebrow">IaCTranslate</div>
+      <h1>Any inventory in.<br>Any cloud out.<br><span class="accent">A migration platform.</span></h1>
+      <p class="lead" style="margin-top:22px">The AI migration platform that turns a company's existing infrastructure inventory — VMware, Hyper-V, a CMDB, or an existing cloud fleet — into production-ready, provider-validated Terraform (or Pulumi) for AWS, Azure, or GCP. It assesses the estate, recommends the cloud, enforces policy, and explains every decision.</p>
+      <div class="flow">
+        <span class="node">VMware</span><span class="node">Hyper-V</span><span class="node">CMDB</span><span class="node">Cloud</span>
+        <span class="arrow"><span class="dash">──▶</span></span>
+        <span class="node hot">IaCTranslate</span>
+        <span class="arrow"><span class="dash">──▶</span></span>
+        <span class="node">AWS</span><span class="node">Azure</span><span class="node">GCP</span>
+      </div>
+      <div class="note">Investor &amp; client overview · figures marked ⚑ are illustrative placeholders</div>
+    </div>
+  </section>
+
+  <!-- 2 · PROBLEM -->
+  <section class="slide">
+    <div class="wrap">
+      <div class="eyebrow">The problem</div>
+      <h2>Cloud migration is manual, slow, and rigged toward lock-in.</h2>
+      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(230px,1fr));margin-top:8px">
+        <div class="card"><h3>Weeks of hand-work</h3><p>Infra engineers hand-translate discovery reports into IaC, VM by VM. Expensive, error-prone, hard to audit.</p></div>
+        <div class="card"><h3>Estates are messy</h3><p>No company is only VMware. It's Hyper-V + physical + legacy + a CMDB + an existing cloud footprint.</p></div>
+        <div class="card"><h3>Vendor tools lock you in</h3><p>AWS/Azure/Google migration tools are single-cloud, emit no portable IaC, and will never recommend a rival cloud.</p></div>
+      </div>
+      <p class="lead" style="margin-top:22px">So teams either pay consultants for months, or accept whichever cloud the tool was built to sell.</p>
+    </div>
+  </section>
+
+  <!-- 3 · SOLUTION -->
+  <section class="slide">
+    <div class="wrap">
+      <div class="eyebrow">The solution</div>
+      <h2>Exported inventory → deployable IaC, plus an <span class="accent">unbiased</span> cloud recommendation.</h2>
+      <ul class="clean">
+        <li><b>Secure by design.</b> Works entirely from exported files — never connects to the customer environment. Runs offline, no keys.</li>
+        <li><b>Not "an LLM writes Terraform."</b> A deterministic engine: AI makes only structured decisions; templates emit the <code>.tf</code>; a validation layer re-checks everything.</li>
+        <li><b>Reproducible &amp; auditable.</b> Output is provider-validated HCL — proven in CI, not a demo. Every decision carries a reason and a confidence score.</li>
+        <li><b>Days of engineering → minutes.</b> Upload, assess, recommend, generate, download a ready-to-apply project.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- 4 · HOW IT WORKS -->
+  <section class="slide">
+    <div class="wrap">
+      <div class="eyebrow">How it works</div>
+      <h2>One deterministic pipeline. Two swappable registries.</h2>
+      <div class="card" style="margin-top:6px">
+        <p style="font-family:var(--mono);color:var(--ink);font-size:13px;line-height:1.9;margin:0;overflow-x:auto">
+        <span class="accent">parse</span> → <span class="accent">normalize</span> → agents(<span class="amber">classify → rightsize → network</span>) → <span class="accent">validate</span> → <span class="accent">policy</span> → render → <span class="accent">package</span></p>
+      </div>
+      <div class="grid" style="grid-template-columns:1fr 1fr;margin-top:14px">
+        <div class="card"><h3 class="kicker">Sources (input) · 4</h3><p style="margin-top:6px;color:var(--ink)">VMware · Hyper-V · <b class="accent">Generic CMDB</b> · Cloud fleet — auto-detected. The generic reader ingests <em>any</em> spreadsheet with no bespoke parser.</p></div>
+        <div class="card"><h3 class="kicker">Targets (output) · 3</h3><p style="margin-top:6px;color:var(--ink)">AWS · Azure · GCP — each a catalog + tier mapping + templates. Terraform <em>or</em> Pulumi from the same plan. New clouds slot in without touching the pipeline.</p></div>
+      </div>
+      <p class="lead" style="margin-top:18px">The AI is optional and behind an interface — it defaults to a deterministic rule engine, so it runs offline with zero keys and is fully reproducible.</p>
+    </div>
+  </section>
+
+  <!-- 5 · THE PLATFORM -->
+  <section class="slide">
+    <div class="wrap">
+      <div class="eyebrow">More than a translator</div>
+      <h2>The whole migration — assess, recommend, plan, govern, ship.</h2>
+      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(240px,1fr));margin-top:8px">
+        <div class="card"><h3 class="kicker">Assess</h3><p style="margin-top:5px">A pre-migration <b class="accent">readiness score</b> (0–100) + risk / cost / data-quality findings — before a resource is provisioned.</p></div>
+        <div class="card"><h3 class="kicker">Recommend</h3><p style="margin-top:5px">Unbiased 3-cloud ranking on cost, fit &amp; OS — with a <b class="accent">decisiveness</b> call and annualized spend.</p></div>
+        <div class="card"><h3 class="kicker">Explain</h3><p style="margin-top:5px">Every instance choice carries a <b class="accent">reason</b> and a <b class="accent">confidence</b> score — auditable, not a black box.</p></div>
+        <div class="card"><h3 class="kicker">Govern</h3><p style="margin-top:5px">A <b class="accent">policy engine</b> blocks rendering on org rules — no public IPs, budget caps, approved families, naming.</p></div>
+        <div class="card"><h3 class="kicker">Report</h3><p style="margin-top:5px">A client-ready <b class="accent">executive report</b> + architecture diagrams, generated with the project.</p></div>
+        <div class="card"><h3 class="kicker">Ship</h3><p style="margin-top:5px"><b class="accent">Brownfield</b> import for existing fleets, <b class="accent">GitOps</b> CI/CD, infra diff, async jobs + audit trail.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6 · MOAT -->
+  <section class="slide">
+    <div class="wrap">
+      <div class="eyebrow">Why we win</div>
+      <h2>Source-agnostic. Cloud-neutral. Unbiased.</h2>
+      <div style="overflow-x:auto;margin-top:4px">
+      <table>
+        <thead><tr><th>Capability</th><th>IaCTranslate</th><th>AWS Migration Hub</th><th>Azure Migrate</th><th>Google Migrate</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>Multi-source (VMware / Hyper-V / CMDB / cloud)</td>
+            <td class="us">Yes ✓</td><td class="part">Agents</td><td class="part">Agents</td><td class="part">Agents</td>
+          </tr>
+          <tr>
+            <td>Portable IaC output (Terraform / Pulumi)</td>
+            <td class="us">Yes ✓</td><td class="no">No</td><td class="no">No</td><td class="no">No</td>
+          </tr>
+          <tr>
+            <td>Multi-cloud target</td>
+            <td class="us">AWS·Azure·GCP</td><td class="no">AWS only</td><td class="no">Azure only</td><td class="no">GCP only</td>
+          </tr>
+          <tr>
+            <td>Unbiased best-cloud recommendation</td>
+            <td class="us">Yes ✓</td><td class="no">Never</td><td class="no">Never</td><td class="no">Never</td>
+          </tr>
+          <tr>
+            <td>Assessment · policy governance · reports</td>
+            <td class="us">Built-in</td><td class="part">Partial</td><td class="part">Partial</td><td class="part">Partial</td>
+          </tr>
+          <tr>
+            <td>Works from a spreadsheet — no agents</td>
+            <td class="us">Yes ✓</td><td class="no">No</td><td class="no">No</td><td class="no">No</td>
+          </tr>
+        </tbody>
+      </table>
+      </div>
+      <p class="lead" style="margin-top:16px">A vendor's own tool will never emit portable IaC or send a customer to a competitor. That structural conflict is our moat.</p>
+    </div>
+  </section>
+
+  <!-- 7 · PROOF -->
+  <section class="slide">
+    <div class="wrap">
+      <div class="eyebrow">Proof, not slideware</div>
+      <h2>The product is built — and the output actually validates.</h2>
+      <div class="row" style="margin-top:8px;gap:26px">
+        <div class="stat"><b>4→3</b><span>sources → clouds, live</span></div>
+        <div class="stat"><b>184</b><span>automated tests</span></div>
+        <div class="stat"><b>7/7</b><span>CI jobs green</span></div>
+        <div class="stat"><b class="accent">tofu&nbsp;✓</b><span>real provider validate</span></div>
+      </div>
+      <ul class="clean" style="margin-top:24px">
+        <li>Generated Terraform passes <b>real <code>tofu validate</code></b> against the actual AWS, azurerm, and google providers — enforced continuously in CI.</li>
+        <li>Shipping today: a <b>CLI</b>, a hardened <b>FastAPI</b> service (sync + <b>async jobs</b> + audit), and a <b>Next.js web app</b> — plus assessment, confidence, executive reports, diagrams, infra diff, a <b>policy engine</b>, an Infrastructure-Graph IR, and <b>Pulumi</b> output for all three clouds.</li>
+        <li>Engineered like a platform: <b>12 architecture decision records</b>, deterministic + offline + reproducible, non-root Docker, streamed upload caps.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- 8 · THE MONEY SHOT -->
+  <section class="slide">
+    <div class="wrap">
+      <div class="eyebrow">The value, quantified</div>
+      <h2>Same estate, three clouds — cost swung <span class="accent">~24%</span>.</h2>
+      <div class="grid" style="grid-template-columns:repeat(3,1fr);margin-top:8px;max-width:720px">
+        <div class="card" style="border-color:var(--accent-2)"><h3 class="kicker">GCP · recommended</h3><p style="font-size:26px;color:var(--ink);font-variant-numeric:tabular-nums;margin-top:6px">$2,437<span style="font-size:13px;color:var(--faint)">/mo</span></p></div>
+        <div class="card"><h3 class="kicker">Azure</h3><p style="font-size:26px;color:var(--muted);font-variant-numeric:tabular-nums;margin-top:6px">$3,005<span style="font-size:13px;color:var(--faint)">/mo</span></p></div>
+        <div class="card"><h3 class="kicker">AWS</h3><p style="font-size:26px;color:var(--muted);font-variant-numeric:tabular-nums;margin-top:6px">$3,218<span style="font-size:13px;color:var(--faint)">/mo</span></p></div>
+      </div>
+      <p class="lead" style="margin-top:22px">From our 7-VM sample estate. The recommender scores every cloud on <b>cost</b>, <b>sizing fit</b>, and <b>OS affinity</b> — an inspectable number, not a black box. On a real 5,000-VM enterprise estate, that swing is life-changing money — and we surface it before a single resource is provisioned.</p>
+    </div>
+  </section>
+
+  <!-- 9 · MARKET / WHY NOW -->
+  <section class="slide">
+    <div class="wrap">
+      <div class="eyebrow">Why now</div>
+      <h2>Every enterprise is mid-migration — and multi-cloud is the default.</h2>
+      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr));margin-top:8px">
+        <div class="card"><h3>VMware in flux</h3><p>Post-acquisition licensing shocks are pushing huge VMware estates to re-platform — right now.</p></div>
+        <div class="card"><h3>Multi-cloud &amp; repatriation</h3><p>Teams want portability and leverage, not lock-in. Terraform is the lingua franca.</p></div>
+        <div class="card"><h3>IaC is standard</h3><p>Migrations that don't end in version-controlled IaC are no longer acceptable to modern platform teams.</p></div>
+      </div>
+      <div class="row" style="margin-top:22px;gap:26px">
+        <div class="stat"><b class="amber">⚑ $XXB</b><span>cloud migration services TAM</span></div>
+        <div class="stat"><b class="amber">⚑ XX%</b><span>enterprises multi-cloud</span></div>
+      </div>
+      <div class="note">⚑ Replace with sourced market figures (Gartner / IDC / Flexera) before circulating.</div>
+    </div>
+  </section>
+
+  <!-- 10 · ICP + MODEL -->
+  <section class="slide">
+    <div class="wrap">
+      <div class="eyebrow">Who buys · how we charge</div>
+      <h2>Sold to the people who run migrations for a living.</h2>
+      <div class="grid" style="grid-template-columns:1fr 1fr;margin-top:6px">
+        <div class="card">
+          <h3 class="kicker">Ideal customers</h3>
+          <ul class="clean" style="margin-top:10px">
+            <li>Cloud consultancies &amp; <b>MSPs</b></li>
+            <li><b>Enterprise IT</b> &amp; platform teams</li>
+            <li>Cloud-migration specialists · SIs</li>
+          </ul>
+          <p style="margin-top:12px;font-family:var(--mono);font-size:12px;color:var(--faint)">Beachhead: US mid-market consultancies</p>
+        </div>
+        <div class="card">
+          <h3 class="kicker">Business model ⚑</h3>
+          <ul class="clean" style="margin-top:10px">
+            <li><b>SaaS</b> — per-project &amp; per-seat tiers</li>
+            <li><b>Enterprise</b> — self-host, SSO, audit, volume</li>
+            <li>Land with a single migration, expand across the portfolio</li>
+          </ul>
+          <p style="margin-top:12px;font-family:var(--mono);font-size:12px;color:var(--faint)">⚑ Pricing to be validated with design partners</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 11 · STATUS + ROADMAP -->
+  <section class="slide">
+    <div class="wrap">
+      <div class="eyebrow">Where we are · where we go</div>
+      <h2>Platform shipped. The next slices make it enterprise-operable.</h2>
+      <div class="grid" style="grid-template-columns:1fr 1fr;margin-top:6px">
+        <div class="card">
+          <h3 class="kicker">Done — today</h3>
+          <ul class="clean" style="margin-top:10px">
+            <li>4 sources → 3 clouds · Terraform + Pulumi renderers</li>
+            <li>Assessment · recommendation · confidence · reports · diagrams · diff</li>
+            <li>Policy engine · brownfield import · GitOps · async jobs + audit</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3 class="kicker">Next</h3>
+          <ul class="clean" style="margin-top:10px">
+            <li>Persistence (Postgres) + object storage + durable job queue</li>
+            <li>Auth (OIDC/SAML) + RBAC → multi-tenant SaaS</li>
+            <li>Notifications, ticketing (Jira/ServiceNow), Bicep/CDK renderers</li>
+          </ul>
+        </div>
+      </div>
+      <p class="lead" style="margin-top:18px">The runtime seams for scale — jobs, events, audit, an in-memory store behind one interface — already exist. v2.1 swaps them for Postgres · Redis · object storage without an API rewrite.</p>
+    </div>
+  </section>
+
+  <!-- 12 · ASK -->
+  <section class="slide">
+    <div class="wrap">
+      <div class="eyebrow">The ask</div>
+      <h1 style="font-size:clamp(30px,5.5vw,60px)">Let's translate the enterprise to the cloud — <span class="accent">on the customer's terms.</span></h1>
+      <div class="row" style="margin-top:26px;gap:14px">
+        <span class="pill">⚑ Raising: seed / pre-seed</span>
+        <span class="pill">Seeking: design-partner MSPs</span>
+        <span class="pill">US-first</span>
+      </div>
+      <p class="lead cta" style="margin-top:26px"><strong>See it live:</strong> the product, the code, and the docs are ready to demo today — <a href="https://github.com/Kolanupaka92/iactranslate" target="_blank" rel="noopener">github.com/Kolanupaka92/iactranslate</a>.</p>
+      <div class="note">⚑ Insert round size, use of funds, and contact details before sharing externally.</div>
+    </div>
+  </section>
+
+</div>
+
+<div class="hint">← → · space to advance</div>
+<div class="hud brand"><span class="dot"></span> IaCTranslate</div>
+<div class="hud count"><span id="cur">01</span> / <span id="tot">12</span></div>
+<div class="arrows"><button id="prev" aria-label="Previous slide">‹</button><button id="next" aria-label="Next slide">›</button></div>
+<div class="nav" id="dots"></div>
+<div class="bar"><i id="prog"></i></div>
+
+<script>
+(function(){
+  var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
+  var i = 0, n = slides.length;
+  var dots = document.getElementById('dots');
+  var prog = document.getElementById('prog');
+  var cur = document.getElementById('cur');
+  document.getElementById('tot').textContent = String(n).padStart(2,'0');
+  slides.forEach(function(_,k){
+    var b = document.createElement('button');
+    b.addEventListener('click', function(){ go(k); });
+    dots.appendChild(b);
+  });
+  var dotEls = Array.prototype.slice.call(dots.children);
+  function go(k){
+    i = Math.max(0, Math.min(n-1, k));
+    slides.forEach(function(s,x){ s.classList.toggle('active', x===i); });
+    dotEls.forEach(function(d,x){ d.classList.toggle('on', x===i); });
+    prog.style.width = ((i)/(n-1)*100) + '%';
+    cur.textContent = String(i+1).padStart(2,'0');
+  }
+  function next(){ go(i+1); } function prev(){ go(i-1); }
+  document.getElementById('next').addEventListener('click', next);
+  document.getElementById('prev').addEventListener('click', prev);
+  window.addEventListener('keydown', function(e){
+    if(e.key==='ArrowRight'||e.key===' '||e.key==='PageDown'){ e.preventDefault(); next(); }
+    else if(e.key==='ArrowLeft'||e.key==='PageUp'){ e.preventDefault(); prev(); }
+    else if(e.key==='Home'){ go(0); } else if(e.key==='End'){ go(n-1); }
+  });
+  document.getElementById('deck').addEventListener('click', function(e){
+    if(e.target.closest('a,button')) return;
+    (e.clientX > window.innerWidth/2) ? next() : prev();
+  });
+  go(0);
+})();
+</script>
