@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 from typing import Dict, Optional
@@ -12,6 +13,7 @@ from typing import Dict, Optional
 from .agents import build_migration_plan
 from .assessment import assess, to_html, to_json
 from .confidence import score_plan
+from .diff import diff_inventories
 from .exec_report import build_executive_report
 from .normalize import normalize
 from .pipeline import run_pipeline
@@ -189,6 +191,50 @@ def _cmd_report(args: argparse.Namespace) -> int:
     return 0
 
 
+def _load_inventory(path: str, source: str, column_map: Optional[str]):
+    src = resolve_source(path, source)
+    return normalize(src.parse(path, column_map=_parse_column_map(column_map)))
+
+
+def _cmd_diff(args: argparse.Namespace) -> int:
+    try:
+        before = _load_inventory(args.before, args.source, args.map)
+        after = _load_inventory(args.after, args.source, args.map)
+    except UnknownSourceError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+    except FileNotFoundError as e:
+        print(f"error: input file not found: {e.filename}", file=sys.stderr)
+        return 2
+    if not before or not after:
+        print("error: one of the inventories has no workloads", file=sys.stderr)
+        return 2
+
+    d = diff_inventories(before, after)
+    if args.json:
+        print(json.dumps(d.model_dump(mode="json"), indent=2))
+        return 0
+
+    print(f"Inventory diff: {args.before} → {args.after}\n")
+    print(f"  Added:     {len(d.added)}")
+    print(f"  Removed:   {len(d.removed)}")
+    print(f"  Modified:  {len(d.modified)}")
+    print(f"  Unchanged: {d.unchanged}\n")
+    print(f"  vCPU:    {d.before.vcpu} → {d.after.vcpu} ({d.vcpu_delta:+d})")
+    print(f"  Memory:  {d.before.memory_gib:g} → {d.after.memory_gib:g} GiB ({d.memory_delta:+g})")
+    print(f"  Storage: {d.before.storage_gib:g} → {d.after.storage_gib:g} GiB ({d.storage_delta:+g})\n")
+    for name in d.added:
+        print(f"  + {name}")
+    for name in d.removed:
+        print(f"  - {name}")
+    for wc in d.modified:
+        deltas = ", ".join(f"{c.field}: {c.before}→{c.after}" for c in wc.changes)
+        print(f"  ~ {wc.vm_name} ({deltas})")
+    if not d.has_changes:
+        print("  No changes — inventories are identical.")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="iactranslate",
@@ -235,6 +281,14 @@ def build_parser() -> argparse.ArgumentParser:
     rp.add_argument("--no-recommend", action="store_true", help="Skip the 3-cloud recommendation section.")
     rp.add_argument("--out", default="executive-report.html", help="Output HTML path.")
     rp.set_defaults(func=_cmd_report)
+
+    d = sub.add_parser("diff", help="Compare two inventory snapshots (drift detection).")
+    d.add_argument("before", help="Earlier inventory export (.xlsx/.csv).")
+    d.add_argument("after", help="Later inventory export (.xlsx/.csv).")
+    d.add_argument("--source", default="auto", help=src_help)
+    d.add_argument("--map", default=None, help=map_help)
+    d.add_argument("--json", action="store_true", help="Emit the diff as JSON.")
+    d.set_defaults(func=_cmd_diff)
     return parser
 
 
