@@ -10,7 +10,6 @@ from iactranslate.renderers import (
     list_renderers,
     render,
 )
-from iactranslate.renderers.pulumi import RendererNotSupportedError
 from iactranslate.sources import resolve_source
 from iactranslate.targets import get_target
 
@@ -30,31 +29,44 @@ def test_unknown_renderer_raises(rvtools_path):
         render("cloudformation", plan, get_target("aws"))
 
 
-def test_pulumi_program_compiles(rvtools_path, tmp_path):
-    plan, _ = _plan(rvtools_path)
-    files = render("pulumi", plan, get_target("aws"))
+@pytest.mark.parametrize("cloud", ["aws", "azure", "gcp"])
+def test_pulumi_program_compiles(rvtools_path, tmp_path, cloud):
+    plan, _ = _plan(rvtools_path, target=cloud)
+    files = render("pulumi", plan, get_target(cloud))
     assert set(files) >= {"__main__.py", "Pulumi.yaml", "requirements.txt", "README.md"}
+    assert f"pulumi-{cloud}" in files["requirements.txt"]
     main = tmp_path / "main.py"
     main.write_text(files["__main__.py"])
     py_compile.compile(str(main), doraise=True)  # raises on a syntax error
 
 
-def test_pulumi_covers_core_resources(rvtools_path):
+def test_pulumi_covers_core_resources_aws(rvtools_path):
     plan, _ = _plan(rvtools_path)
     main = render("pulumi", plan, get_target("aws"))["__main__.py"]
-    assert "aws.ec2.Vpc(" in main
-    assert "aws.ec2.Subnet(" in main
-    assert "aws.ec2.SecurityGroup(" in main
-    assert "aws.ec2.Instance(" in main
-    assert "aws.ec2.get_ami(" in main
-    # One instance resource per workload.
+    for res in ("aws.ec2.Vpc(", "aws.ec2.Subnet(", "aws.ec2.SecurityGroup(",
+                "aws.ec2.Instance(", "aws.ec2.get_ami("):
+        assert res in main
     assert main.count("aws.ec2.Instance(") == plan.vm_count
 
 
-def test_pulumi_only_supports_aws(rvtools_path):
+def test_pulumi_covers_core_resources_azure(rvtools_path):
     plan, _ = _plan(rvtools_path, target="azure")
-    with pytest.raises(RendererNotSupportedError):
-        render("pulumi", plan, get_target("azure"))
+    main = render("pulumi", plan, get_target("azure"))["__main__.py"]
+    for res in ("azure.core.ResourceGroup(", "azure.network.VirtualNetwork(",
+                "azure.network.NetworkSecurityGroup(", "azure.network.NetworkInterface("):
+        assert res in main
+    # One VM (linux or windows) per workload.
+    vms = main.count("azure.compute.LinuxVirtualMachine(") + main.count("azure.compute.WindowsVirtualMachine(")
+    assert vms == plan.vm_count
+
+
+def test_pulumi_covers_core_resources_gcp(rvtools_path):
+    plan, _ = _plan(rvtools_path, target="gcp")
+    main = render("pulumi", plan, get_target("gcp"))["__main__.py"]
+    for res in ("gcp.compute.Network(", "gcp.compute.Subnetwork(",
+                "gcp.compute.Firewall(", "gcp.compute.Instance("):
+        assert res in main
+    assert main.count("gcp.compute.Instance(") == plan.vm_count
 
 
 def test_terraform_renderer_matches_generator(rvtools_path):
