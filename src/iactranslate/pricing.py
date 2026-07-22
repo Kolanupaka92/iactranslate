@@ -10,8 +10,8 @@ credential-free by default:
 Live coverage:
   * Azure — public Retail Prices API, **no credentials**. Works out of the box.
   * AWS   — Price List Query API via boto3, when boto3 + AWS credentials exist.
-  * GCP   — not yet wired (Cloud Billing Catalog needs an API key); falls back
-            to static.
+  * GCP   — Cloud Billing Catalog API, when ``IACTRANSLATE_GCP_BILLING_API_KEY``
+            is set (sums the machine family's vCPU-core + RAM-GB SKUs).
 
 Enable with ``IACTRANSLATE_PRICING=live``.
 """
@@ -144,10 +144,87 @@ def _aws_hourly(instance_type: str, region: str) -> Optional[float]:
     return None
 
 
-def _gcp_hourly(instance_type: str, region: str) -> Optional[float]:
-    # Cloud Billing Catalog requires an API key and complex SKU matching; not
-    # yet wired. Falls back to static. (Documented as the next pricing target.)
+# Compute Engine service id in the Cloud Billing Catalog.
+_GCP_COMPUTE_SERVICE = "6F81-5844-456A"
+
+
+def _gcp_family(instance_type: str) -> Optional[str]:
+    """'e2-standard-4' -> 'E2', 'n2d-highmem-8' -> 'N2D'. None if unrecognized."""
+    head = instance_type.split("-", 1)[0].strip()
+    return head.upper() if head else None
+
+
+def _gcp_sku_unit_price(sku: dict) -> Optional[float]:
+    """USD per usage unit (per vCPU-hour or per GB-hour) from a SKU entry."""
+    try:
+        rate = sku["pricingInfo"][0]["pricingExpression"]["tieredRates"][-1]["unitPrice"]
+        return int(rate.get("units", 0)) + int(rate.get("nanos", 0)) / 1e9
+    except (KeyError, IndexError, ValueError, TypeError):
+        return None
+
+
+def _gcp_find_price(skus: list, region: str, phrase: str) -> Optional[float]:
+    """First on-demand SKU in `region` whose description contains `phrase`."""
+    for sku in skus:
+        cat = sku.get("category", {})
+        if cat.get("usageType") != "OnDemand" or cat.get("resourceFamily") != "Compute":
+            continue
+        if region not in sku.get("serviceRegions", []):
+            continue
+        desc = sku.get("description", "")
+        if phrase in desc and "Sole Tenancy" not in desc and "Custom" not in desc:
+            price = _gcp_sku_unit_price(sku)
+            if price is not None:
+                return price
     return None
+
+
+def _gcp_fetch_skus(api_key: str) -> list:
+    """All Compute Engine SKUs (paginated). [] on any failure."""
+    skus: list = []
+    page_token = ""
+    base = f"https://cloudbilling.googleapis.com/v1/services/{_GCP_COMPUTE_SERVICE}/skus"
+    for _ in range(20):  # hard page cap
+        params = {"key": api_key, "pageSize": "5000"}
+        if page_token:
+            params["pageToken"] = page_token
+        url = base + "?" + urllib.parse.urlencode(params)
+        try:
+            with urllib.request.urlopen(url, timeout=_HTTP_TIMEOUT) as resp:  # noqa: S310
+                data = json.load(resp)
+        except Exception:  # noqa: BLE001
+            return skus
+        skus.extend(data.get("skus", []))
+        page_token = data.get("nextPageToken", "")
+        if not page_token:
+            break
+    return skus
+
+
+def _gcp_hourly(instance_type: str, region: str) -> Optional[float]:
+    api_key = os.getenv("IACTRANSLATE_GCP_BILLING_API_KEY")
+    if not api_key:
+        return None
+    family = _gcp_family(instance_type)
+    if not family:
+        return None
+    try:
+        from .targets import get_target  # lazy: recover vCPU/RAM for the machine type
+
+        spec = get_target("gcp").spec_of(instance_type)
+    except Exception:  # noqa: BLE001
+        return None
+    if spec is None:
+        return None
+
+    skus = _gcp_fetch_skus(api_key)
+    if not skus:
+        return None
+    core = _gcp_find_price(skus, region, f"{family} Instance Core running")
+    ram = _gcp_find_price(skus, region, f"{family} Instance Ram running")
+    if core is None or ram is None:
+        return None
+    return round(spec.vcpu * core + spec.memory_gib * ram, 6)
 
 
 _FETCHERS = {"azure": _azure_hourly, "aws": _aws_hourly, "gcp": _gcp_hourly}
