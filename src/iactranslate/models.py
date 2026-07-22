@@ -144,6 +144,8 @@ class ComputePlan(BaseModel):
     right_sized: bool = False
     source_vcpu: Optional[int] = None
     source_memory_gib: Optional[float] = None
+    # Explainability: a human-readable "why this instance / tier" for the decision.
+    reason: Optional[str] = None
     # Brownfield: existing cloud resource id to adopt via a Terraform import block.
     external_id: Optional[str] = None
 

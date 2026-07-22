@@ -19,6 +19,34 @@ from .base import LLMProvider
 _MIN_ROOT_GIB = 30
 
 
+def _decision_reason(vm, demand, spec, tier, overridden: bool, suggested: str) -> str:
+    """A human-readable explanation of why this instance/tier was chosen."""
+    chosen = (
+        f"{spec.name} ({spec.vcpu} vCPU / {spec.memory_gib:g} GiB)"
+        if spec else "the selected instance"
+    )
+    if demand.right_sized:
+        util = []
+        if vm.cpu_util_pct is not None:
+            util.append(f"{vm.cpu_util_pct:g}% CPU")
+        if vm.mem_util_pct is not None:
+            util.append(f"{vm.mem_util_pct:g}% mem")
+        util_s = f" at {', '.join(util)}" if util else ""
+        basis = (
+            f"right-sized from observed utilization: {vm.cpu} vCPU / {vm.memory_gib:g} GiB"
+            f"{util_s} → {chosen}"
+        )
+    else:
+        basis = (
+            f"sized from allocation (no utilization data): {vm.cpu} vCPU / "
+            f"{vm.memory_gib:g} GiB → {chosen}"
+        )
+    reason = f"{basis}; {tier.value} tier."
+    if overridden:
+        reason += f" Catalog guardrail: model suggestion '{suggested}' is not a real type."
+    return reason
+
+
 def _root_and_extra(vm: NormalizedVM) -> Tuple[int, List[int]]:
     disks = [int(math.ceil(d)) for d in vm.disks_gib if d > 0]
     if not disks:
@@ -47,13 +75,15 @@ def build_compute_plans(
         instance_type = suggestion.instance_type
         # Guardrail: never emit an instance type that isn't in the target catalog.
         # Fall back to the same demand model the provider should have used.
-        if not target.instance_exists(instance_type):
+        overridden = not target.instance_exists(instance_type)
+        if overridden:
             instance_type = target.smallest_fit(
                 demand.vcpu, demand.memory_gib, headroom=demand.headroom,
                 prefer_family=target.family_for_tier(tier),
             ).name
 
         spec = target.spec_of(instance_type)
+        reason = _decision_reason(vm, demand, spec, tier, overridden, suggestion.instance_type)
         image_key = suggestion.image_key or target.image_key(vm.os)
         root_gib, extra_gib = _root_and_extra(vm)
         cost, price_source = monthly_cost(
@@ -79,6 +109,7 @@ def build_compute_plans(
                 right_sized=demand.right_sized,
                 source_vcpu=vm.cpu if demand.right_sized else None,
                 source_memory_gib=vm.memory_gib if demand.right_sized else None,
+                reason=reason,
                 external_id=vm.external_id,
             )
         )

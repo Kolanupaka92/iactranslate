@@ -28,6 +28,7 @@ in CI on `main`.
 - ✅ GitOps: opt-in CI/CD workflow (plan on PR, apply on merge)
 - ✅ **Policy engine** — pluggable, read-only org rules (`deny`/`warn`) before rendering
 - ✅ **Capability flags** — targets advertise supported features (`GET /targets`)
+- ✅ **Explainability** — per-decision `reason` + `decisions.json` (why + how sure)
 - ✅ Model schema versioning (`NormalizedVM` / `MigrationPlan`)
 
 **Surfaces & delivery**
@@ -57,8 +58,6 @@ in CI on `main`.
 **Considered, deliberately deferred** (would add value but aren't warranted at the
 current size — tracked so the reasoning is explicit, not forgotten):
 
-- ◻ **Per-decision explainability** — attach a `reason` to each classification/
-  sizing choice (today: confidence scoring per factor, but not a free-text why).
 - ◻ **Audit event stream** — emit a structured `AuditEvent` per stage. Valuable
   once runs are long-lived/multi-user; the current pipeline is a sub-second,
   single-shot, deterministic function, so an audit subsystem would be weight

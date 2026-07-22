@@ -33,6 +33,8 @@ def test_pipeline_produces_valid_project(rvtools_path, tmp_path):
     assert (out / "documentation" / "assessment.html").exists()
     # Confidence scoring shipped too.
     assert (out / "confidence.json").exists()
+    # Explainability: per-decision reasons joined with confidence.
+    assert (out / "decisions.json").exists()
     # Executive report bundled for the client.
     assert (out / "documentation" / "executive-report.html").exists()
     # Architecture diagram (SVG + mermaid doc).

@@ -153,6 +153,13 @@ validation passes, the `MigrationPlan` is treated as frozen. Assessment,
 confidence, the policy engine, renderers, reports, and GitOps all take it as
 read-only input. (See [ADR 0007](adr/0007-immutable-plan.md).)
 
+**Explainability.** Every compute decision carries a human-readable `reason`
+captured *at the moment it's made* (e.g. "right-sized from observed utilization:
+16 vCPU / 64 GiB at 15% CPU → t3.xlarge; database tier"). The package's
+`decisions.json` joins each decision's reason with its confidence — so a
+reviewer gets both *why* an instance was chosen and *how sure* the tool is,
+per workload.
+
 ## Policy engine
 
 Enterprise requirements diverge exactly at policy: naming conventions, approved

@@ -62,6 +62,14 @@ def migration_summary(plan: MigrationPlan, vms: Optional[List[NormalizedVM]] = N
         )
     lines.append("")
 
+    # Explainability: why each instance was chosen.
+    if any(c.reason for c in plan.compute):
+        lines += ["## Why these instances", ""]
+        for c in plan.compute:
+            if c.reason:
+                lines.append(f"- **{c.vm_name}** → `{c.instance_type}`: {c.reason}")
+        lines.append("")
+
     net = plan.network
     lines += [
         "## Network",
@@ -115,6 +123,23 @@ def build_project(
     (out / "confidence.json").write_text(
         json.dumps(confidence.model_dump(mode="json"), indent=2)
     )
+
+    # Explainability — one entry per workload: what was decided, WHY, and how
+    # sure we are. Joins each compute decision's reason with its confidence.
+    conf_by_vm = {w.vm_name: w for w in confidence.workloads}
+    decisions = []
+    for c in plan.compute:
+        w = conf_by_vm.get(c.vm_name)
+        decisions.append({
+            "vm": c.vm_name,
+            "instance_type": c.instance_type,
+            "tier": c.tier.value,
+            "environment": c.environment.value,
+            "right_sized": c.right_sized,
+            "reason": c.reason,
+            "confidence": {"overall": w.overall, "level": w.level} if w else None,
+        })
+    (out / "decisions.json").write_text(json.dumps({"decisions": decisions}, indent=2))
 
     # Policy report — only when policies were evaluated and produced findings
     # (deny violations abort before packaging; this captures warnings).
