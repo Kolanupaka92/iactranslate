@@ -6,6 +6,7 @@ Flow:
     POST   /projects/{id}/run          -> run the pipeline
     POST   /projects/{id}/assess       -> pre-migration readiness assessment
     POST   /projects/{id}/recommend    -> compare clouds and recommend one
+    POST   /projects/{id}/report       -> client-facing executive report (HTML)
     GET    /projects/{id}              -> status + summary
     GET    /projects/{id}/download     -> download the Terraform project ZIP
     DELETE /projects/{id}              -> delete a project + its workspace
@@ -19,18 +20,20 @@ from typing import Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pydantic import BaseModel, field_validator
 from starlette.requests import Request
 
+from ..agents import build_migration_plan
 from ..assessment import assess
 from ..confidence import score_plan
 from ..config import MAX_UPLOAD_BYTES, cors_origins
+from ..exec_report import build_executive_report
 from ..normalize import normalize
 from ..pipeline import run_pipeline
 from ..recommend import recommend
 from ..sources import list_sources, resolve_source
-from ..targets import list_targets
+from ..targets import get_target, list_targets
 from ..validation import PlanValidationError
 from .store import Project, ProjectStore
 
@@ -246,6 +249,23 @@ def assess_estate(pid: str) -> dict:
     src = resolve_source(str(project.upload_path), project.source)
     a = assess(vms, project_name=project.name, source_platform=src.name)
     return a.model_dump(mode="json")
+
+
+@app.post("/projects/{pid}/report", response_class=HTMLResponse)
+def executive_report(pid: str, include_recommendation: bool = True) -> HTMLResponse:
+    project = _require_project(pid)
+    if project.upload_path is None:
+        raise HTTPException(400, "no file uploaded for this project")
+
+    vms = _parse_inventory(project)
+    src = resolve_source(str(project.upload_path), project.source)
+    target = get_target(project.target)
+    plan = build_migration_plan(
+        vms, project_name=project.name, target=target, region=project.region,
+        source_platform=getattr(src, "source_platform", src.name),
+    )
+    rec = recommend(vms) if include_recommendation else None
+    return HTMLResponse(build_executive_report(plan, vms, recommendation=rec))
 
 
 @app.get("/projects/{pid}/download")

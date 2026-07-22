@@ -9,13 +9,15 @@ import sys
 from pathlib import Path
 from typing import Dict, Optional
 
+from .agents import build_migration_plan
 from .assessment import assess, to_html, to_json
 from .confidence import score_plan
+from .exec_report import build_executive_report
 from .normalize import normalize
 from .pipeline import run_pipeline
 from .recommend import recommend
 from .sources import UnknownSourceError, list_sources, resolve_source
-from .targets import UnknownTargetError, list_targets
+from .targets import UnknownTargetError, get_target, list_targets
 from .validation import PlanValidationError
 
 
@@ -154,6 +156,35 @@ def _cmd_assess(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_report(args: argparse.Namespace) -> int:
+    try:
+        src = resolve_source(args.input, args.source)
+        vms = normalize(src.parse(args.input, column_map=_parse_column_map(args.map)))
+    except UnknownSourceError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+    except FileNotFoundError:
+        print(f"error: input file not found: {args.input}", file=sys.stderr)
+        return 2
+    if not vms:
+        print(f"error: no workloads found in {args.input}", file=sys.stderr)
+        return 2
+
+    project_name = args.name or Path(args.input).stem
+    try:
+        target = get_target(args.target)
+    except UnknownTargetError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+    plan = build_migration_plan(vms, project_name=project_name, target=target, region=args.region)
+    rec = None if args.no_recommend else recommend(vms)
+    html = build_executive_report(plan, vms, recommendation=rec)
+
+    Path(args.out).write_text(html, encoding="utf-8")
+    print(f"Executive report written to {args.out}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="iactranslate",
@@ -189,6 +220,17 @@ def build_parser() -> argparse.ArgumentParser:
     a.add_argument("--json", action="store_true", help="Emit the assessment as JSON to stdout.")
     a.add_argument("--html-out", default=None, help="Also write a standalone HTML report to this path.")
     a.set_defaults(func=_cmd_assess)
+
+    rp = sub.add_parser("report", help="Generate a client-facing executive migration report (HTML).")
+    rp.add_argument("input", help="Path to an inventory export (.xlsx/.csv).")
+    rp.add_argument("--target", default="aws", help=f"Target cloud ({', '.join(list_targets())}).")
+    rp.add_argument("--source", default="auto", help=src_help)
+    rp.add_argument("--map", default=None, help=map_help)
+    rp.add_argument("--name", default=None, help="Project name (defaults to input filename).")
+    rp.add_argument("--region", default=None, help="Target region/location (defaults per cloud).")
+    rp.add_argument("--no-recommend", action="store_true", help="Skip the 3-cloud recommendation section.")
+    rp.add_argument("--out", default="executive-report.html", help="Output HTML path.")
+    rp.set_defaults(func=_cmd_report)
     return parser
 
 

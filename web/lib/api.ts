@@ -174,3 +174,7 @@ export function deleteProject(projectId: string): Promise<void> {
 export function downloadUrl(projectId: string): string {
   return `${API_URL}/projects/${projectId}/download`;
 }
+
+export function reportUrl(projectId: string): string {
+  return `${API_URL}/projects/${projectId}/report`;
+}

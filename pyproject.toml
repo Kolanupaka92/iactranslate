@@ -53,6 +53,7 @@ select = ["E", "F", "I", "W", "B"]
 ignore = ["B008"]
 
 [tool.ruff.lint.per-file-ignores]
-# report.py embeds a self-contained HTML/CSS template; wrapping inline CSS rules
+# These modules embed self-contained HTML/CSS templates; wrapping inline CSS/HTML
 # to satisfy the line limit hurts readability more than it helps.
 "src/iactranslate/assessment/report.py" = ["E501"]
+"src/iactranslate/exec_report.py" = ["E501"]

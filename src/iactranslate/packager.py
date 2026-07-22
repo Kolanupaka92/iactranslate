@@ -8,6 +8,7 @@ from typing import Dict, List, Optional
 
 from .assessment import assess, to_html, to_json
 from .confidence import score_plan
+from .exec_report import build_executive_report
 from .generator import build_files
 from .models import MigrationPlan, NormalizedVM
 from .targets.base import Target
@@ -103,6 +104,9 @@ def build_project(
     (out / "confidence.json").write_text(
         json.dumps(confidence.model_dump(mode="json"), indent=2)
     )
+
+    # Client-facing executive report (chosen-target focus; no 3-cloud compare here).
+    (docs / "executive-report.html").write_text(build_executive_report(plan, vms))
 
     # Placeholder for future module extraction (kept in the tree for structure).
     modules = out / "modules"

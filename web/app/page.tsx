@@ -15,6 +15,7 @@ import {
   deleteProject,
   downloadUrl,
   recommendClouds,
+  reportUrl,
   runProject,
   uploadFile,
   type Assessment,
@@ -25,7 +26,7 @@ import {
   type Target,
 } from "@/lib/api";
 
-type Busy = "create" | "upload" | "assess" | "recommend" | "switch" | "run" | null;
+type Busy = "create" | "upload" | "assess" | "recommend" | "switch" | "run" | "report" | null;
 
 function Section({
   step,
@@ -160,6 +161,23 @@ export default function Home() {
       const summary = await runProject(project.id);
       setProject(summary);
       setResult(summary.result ?? null);
+    } catch (e) {
+      fail(e);
+    } finally {
+      setBusy(null);
+    }
+  }, [project]);
+
+  const handleViewReport = useCallback(async () => {
+    if (!project) return;
+    setBusy("report");
+    setError(null);
+    try {
+      const res = await fetch(reportUrl(project.id), { method: "POST" });
+      if (!res.ok) throw new ApiError(res.status, "Could not generate the report.");
+      const html = await res.text();
+      const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+      window.open(url, "_blank", "noopener");
     } catch (e) {
       fail(e);
     } finally {
@@ -319,6 +337,14 @@ export default function Home() {
               >
                 Download ZIP
               </a>
+              <button
+                type="button"
+                onClick={handleViewReport}
+                disabled={busy === "report"}
+                className="rounded-lg border border-neutral-300 px-4 py-2 text-sm font-semibold hover:border-neutral-400 disabled:opacity-50 dark:border-neutral-700 dark:hover:border-neutral-500"
+              >
+                {busy === "report" ? "Building report…" : "View executive report"}
+              </button>
               <button
                 type="button"
                 onClick={handleReset}
