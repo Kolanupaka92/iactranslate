@@ -80,6 +80,10 @@ class NormalizedVM(BaseModel):
     hostname: Optional[str] = None
     cluster: Optional[str] = None
     datacenter: Optional[str] = None
+    # Brownfield: the workload's existing cloud resource id (e.g. an EC2
+    # instance id), when the source is an existing fleet. Enables generating
+    # Terraform `import` blocks so the fleet is adopted, not recreated.
+    external_id: Optional[str] = None
     tags: Dict[str, str] = Field(default_factory=dict)
 
     @field_validator("vm_name")
@@ -139,6 +143,8 @@ class ComputePlan(BaseModel):
     right_sized: bool = False
     source_vcpu: Optional[int] = None
     source_memory_gib: Optional[float] = None
+    # Brownfield: existing cloud resource id to adopt via a Terraform import block.
+    external_id: Optional[str] = None
 
     @field_validator("resource_name")
     @classmethod

@@ -79,6 +79,7 @@ def build_compute_plans(
                 right_sized=demand.right_sized,
                 source_vcpu=vm.cpu if demand.right_sized else None,
                 source_memory_gib=vm.memory_gib if demand.right_sized else None,
+                external_id=vm.external_id,
             )
         )
     return plans

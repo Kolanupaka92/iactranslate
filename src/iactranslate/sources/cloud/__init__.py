@@ -45,6 +45,8 @@ class CloudSource:
         cpu_col = find_column(df, ["vCPUs", "vCPU", "CPUs", "Cores"])
         mem_col = find_column(df, ["Memory GiB", "MemoryGB", "RAM GB", "Memory"])
         disk_col = find_column(df, ["VolumeSize", "Disk GB", "Storage GB", "RootVolumeGB"])
+        # Brownfield: an existing resource id lets us emit Terraform import blocks.
+        id_col = find_column(df, ["InstanceId", "Instance ID", "ResourceId", "Resource ID", "VM ID"])
 
         records: List[RawRecord] = []
         for _, row in df.iterrows():
@@ -52,6 +54,9 @@ class CloudSource:
             if name is None or not str(name).strip():
                 continue
             rec: RawRecord = {"name": str(name).strip(), "os": cell(row, os_col)}
+            ext_id = cell(row, id_col)
+            if ext_id is not None and str(ext_id).strip():
+                rec["external_id"] = str(ext_id).strip()
 
             spec = None
             itype = cell(row, type_col)

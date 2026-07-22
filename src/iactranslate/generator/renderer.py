@@ -101,4 +101,6 @@ def build_files(plan: MigrationPlan, target: Target) -> Dict[str, str]:
     out: Dict[str, str] = {}
     for template_name, filename in target.template_map.items():
         out[filename] = env.get_template(template_name).render(**context)
-    return out
+    # Drop files that rendered empty — e.g. imports.tf when there are no
+    # brownfield resource ids to adopt.
+    return {name: content for name, content in out.items() if content.strip()}

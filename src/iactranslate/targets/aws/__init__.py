@@ -15,8 +15,11 @@ class AwsTarget:
     default_region = "us-east-1"
     vpc_cidr = mapping.VPC_CIDR
     template_dir = Path(__file__).parent / "templates"
-    # AWS resolves AMIs with data sources in an extra images.tf.
-    template_map: Dict[str, str] = {**TEMPLATE_MAP, "images.tf.j2": "images.tf"}
+    # AWS resolves AMIs with data sources in an extra images.tf, and emits
+    # import blocks (imports.tf) for any brownfield resources to adopt.
+    template_map: Dict[str, str] = {
+        **TEMPLATE_MAP, "images.tf.j2": "images.tf", "imports.tf.j2": "imports.tf",
+    }
     default_ingress: Dict[str, List[IngressRule]] = mapping.DEFAULT_INGRESS
 
     def __init__(self) -> None:

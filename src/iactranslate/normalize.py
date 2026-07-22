@@ -130,6 +130,7 @@ def normalize(records: List[Dict[str, object]]) -> List[NormalizedVM]:
             hostname=_clean_str(rec.get("dns_name")),
             cluster=_clean_str(rec.get("cluster")),
             datacenter=_clean_str(rec.get("datacenter")),
+            external_id=_clean_str(rec.get("external_id")),
         )
         # De-dupe by name; prefer the record with more disk detail.
         existing = seen.get(vm.vm_name)
