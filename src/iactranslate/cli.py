@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Dict, Optional
 
 from .assessment import assess, to_html, to_json
+from .confidence import score_plan
 from .normalize import normalize
 from .pipeline import run_pipeline
 from .recommend import recommend
@@ -59,11 +60,15 @@ def _cmd_translate(args: argparse.Namespace) -> int:
         return 2
 
     plan = result.plan
-    print(f"Project:   {plan.project_name}")
-    print(f"Migration: {plan.source_platform} -> {plan.target} ({plan.region})")
-    print(f"VMs:       {plan.vm_count}")
-    print(f"Est. cost: ${plan.total_estimated_monthly_cost_usd:.2f}/month")
-    print(f"Output:    {result.project_dir}")
+    conf = score_plan(plan, result.vms)
+    print(f"Project:    {plan.project_name}")
+    print(f"Migration:  {plan.source_platform} -> {plan.target} ({plan.region})")
+    print(f"VMs:        {plan.vm_count}")
+    print(f"Est. cost:  ${plan.total_estimated_monthly_cost_usd:.2f}/month")
+    print(f"Confidence: {conf.overall * 100:.0f}% ({conf.level})"
+          + (f" — {len(conf.low_confidence())} low-confidence VM(s)"
+             if conf.low_confidence() else ""))
+    print(f"Output:     {result.project_dir}")
     if result.zip_path:
         print(f"ZIP:       {result.zip_path}")
     return 0

@@ -12,11 +12,19 @@ export interface InstanceRow {
   tier: string;
 }
 
+export interface ConfidenceSummary {
+  overall: number;
+  level: "high" | "medium" | "low";
+  factor_averages: Record<string, number>;
+  low_confidence_count: number;
+}
+
 export interface RunResult {
   vm_count: number;
   estimated_monthly_cost_usd: number;
   pricing_source?: "static" | "live";
   right_sized_count?: number;
+  confidence?: ConfidenceSummary;
   instances: InstanceRow[];
 }
 

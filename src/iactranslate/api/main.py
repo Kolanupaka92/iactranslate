@@ -24,6 +24,7 @@ from pydantic import BaseModel, field_validator
 from starlette.requests import Request
 
 from ..assessment import assess
+from ..confidence import score_plan
 from ..config import MAX_UPLOAD_BYTES, cors_origins
 from ..normalize import normalize
 from ..pipeline import run_pipeline
@@ -198,6 +199,7 @@ def run(pid: str) -> dict:
         project.error = str(e)
         raise HTTPException(400, str(e)) from e
 
+    confidence = score_plan(result.plan, result.vms)
     project.project_dir = result.project_dir
     project.zip_path = result.zip_path
     project.status = "completed"
@@ -206,6 +208,12 @@ def run(pid: str) -> dict:
         "estimated_monthly_cost_usd": result.plan.total_estimated_monthly_cost_usd,
         "pricing_source": result.plan.pricing_source,
         "right_sized_count": sum(1 for c in result.plan.compute if c.right_sized),
+        "confidence": {
+            "overall": confidence.overall,
+            "level": confidence.level,
+            "factor_averages": confidence.factor_averages,
+            "low_confidence_count": len(confidence.low_confidence()),
+        },
         "instances": [
             {"vm": c.vm_name, "instance_type": c.instance_type, "tier": c.tier.value}
             for c in result.plan.compute

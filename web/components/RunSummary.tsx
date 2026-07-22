@@ -2,7 +2,14 @@
 
 import type { RunResult } from "@/lib/api";
 
+const CONF_STYLE: Record<string, string> = {
+  high: "text-emerald-700 dark:text-emerald-400",
+  medium: "text-amber-600 dark:text-amber-400",
+  low: "text-red-600 dark:text-red-400",
+};
+
 export default function RunSummary({ result }: { result: RunResult }) {
+  const conf = result.confidence;
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3">
@@ -34,6 +41,22 @@ export default function RunSummary({ result }: { result: RunResult }) {
           Right-sized {result.right_sized_count} of {result.vm_count} workloads to observed
           utilization — sized to actual usage, not raw allocation.
         </p>
+      ) : null}
+
+      {conf ? (
+        <div className="rounded-lg border border-neutral-200 px-3 py-2 text-sm dark:border-neutral-800">
+          <span className="opacity-70">Translation confidence: </span>
+          <span className={`font-semibold ${CONF_STYLE[conf.level] ?? ""}`}>
+            {(conf.overall * 100).toFixed(0)}% ({conf.level})
+          </span>
+          {conf.low_confidence_count > 0 ? (
+            <span className="opacity-70">
+              {" "}
+              — {conf.low_confidence_count} workload
+              {conf.low_confidence_count === 1 ? "" : "s"} to review
+            </span>
+          ) : null}
+        </div>
       ) : null}
 
       <div className="overflow-x-auto">

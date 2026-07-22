@@ -30,6 +30,8 @@ def test_pipeline_produces_valid_project(rvtools_path, tmp_path):
     # Pre-migration assessment shipped alongside the Terraform.
     assert (out / "assessment.json").exists()
     assert (out / "documentation" / "assessment.html").exists()
+    # Confidence scoring shipped too.
+    assert (out / "confidence.json").exists()
 
     # ZIP contains the terraform files.
     assert result.zip_path and result.zip_path.exists()
@@ -60,6 +62,9 @@ def test_api_full_flow(rvtools_path, tmp_path):
     body = r.json()
     assert body["status"] == "completed"
     assert body["result"]["vm_count"] == 7
+    conf = body["result"]["confidence"]
+    assert 0.0 <= conf["overall"] <= 1.0
+    assert conf["level"] in {"high", "medium", "low"}
 
     r = client.post(f"/projects/{pid}/assess")
     assert r.status_code == 200, r.text

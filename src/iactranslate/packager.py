@@ -1,19 +1,22 @@
 """Assemble the generated Terraform into a downloadable project tree + ZIP."""
 from __future__ import annotations
 
+import json
 import zipfile
 from pathlib import Path
 from typing import Dict, List, Optional
 
 from .assessment import assess, to_html, to_json
+from .confidence import score_plan
 from .generator import build_files
 from .models import MigrationPlan, NormalizedVM
 from .targets.base import Target
 
 
-def migration_summary(plan: MigrationPlan) -> str:
+def migration_summary(plan: MigrationPlan, vms: Optional[List[NormalizedVM]] = None) -> str:
     """Human-readable migration report (documentation/migration-summary.md)."""
     right_sized = [c for c in plan.compute if c.right_sized]
+    conf = score_plan(plan, vms)
     lines = [
         f"# Migration Summary — {plan.project_name}",
         "",
@@ -22,6 +25,8 @@ def migration_summary(plan: MigrationPlan) -> str:
         f"- **VMs migrated:** {plan.vm_count}",
         f"- **Estimated monthly cost:** ${plan.total_estimated_monthly_cost_usd:.2f} "
         f"({'live market prices' if plan.pricing_source == 'live' else 'curated static rates'}, on-demand)",
+        f"- **Translation confidence:** {conf.overall * 100:.0f}% ({conf.level})"
+        + (f" — {len(conf.low_confidence())} workload(s) need review" if conf.low_confidence() else ""),
     ]
     if right_sized:
         lines.append(
@@ -87,12 +92,17 @@ def build_project(
 
     docs = out / "documentation"
     docs.mkdir(exist_ok=True)
-    (docs / "migration-summary.md").write_text(migration_summary(plan))
+    (docs / "migration-summary.md").write_text(migration_summary(plan, vms))
 
     if vms:
         a = assess(vms, project_name=plan.project_name, source_platform=plan.source_platform)
         (out / "assessment.json").write_text(to_json(a))
         (docs / "assessment.html").write_text(to_html(a))
+
+    confidence = score_plan(plan, vms)
+    (out / "confidence.json").write_text(
+        json.dumps(confidence.model_dump(mode="json"), indent=2)
+    )
 
     # Placeholder for future module extraction (kept in the tree for structure).
     modules = out / "modules"
