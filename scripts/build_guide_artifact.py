@@ -20,7 +20,9 @@ import markdown
 
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "docs" / "operations-guide.md"
-REPO = "https://github.com/Kolanupaka92/iactranslate"
+# The self-contained, externally shareable Documentation site (all docs, in-page
+# anchors). Cross-document links resolve there so this guide is external-safe too.
+DOCS_SITE = "https://claude.ai/code/artifact/ecc2a04b-904e-431b-9ab0-7a8856963c20"
 
 
 def gh_slugify(value: str, separator: str = "-") -> str:
@@ -34,19 +36,37 @@ def gh_slugify(value: str, separator: str = "-") -> str:
     return value.replace(" ", separator).strip(separator)
 
 
+# Cross-doc target → (heading-id prefix, section id) in the Documentation site.
+_SITE_SECTIONS = {
+    "docs/architecture.md": ("arch-", "doc-architecture"),
+    "docs/deployment.md": ("deploy-", "doc-deployment"),
+    "docs/roadmap.md": ("roadmap-", "doc-roadmap"),
+}
+
+
 def _resolve_link(href: str) -> str:
-    """Rewrite a repo-relative doc link (from docs/) to an absolute GitHub URL."""
+    """Rewrite a repo-relative doc link to the externally shareable Documentation site.
+
+    Same-page anchors (the guide's own TOC) are left untouched; cross-document
+    links resolve to the corresponding section/anchor in the docs site so an
+    outside reader (no repo access) can follow them."""
+    import posixpath
+
     if href.startswith(("http://", "https://", "#", "mailto:")):
         return href
     path, _, frag = href.partition("#")
-    frag = f"#{frag}" if frag else ""
-    if path.startswith("../"):
-        rel = path[3:]
-        return f"{REPO}/blob/main/{rel}{frag}"
-    full = f"docs/{path}"
-    if path.endswith("/"):
-        return f"{REPO}/tree/main/{full.rstrip('/')}{frag}"
-    return f"{REPO}/blob/main/{full}{frag}"
+    if path.startswith("../"):  # ../README.md → the docs-site top
+        return DOCS_SITE
+    full = posixpath.normpath(posixpath.join("docs", path))
+    m = re.search(r"adr/(\d{4})-", full)
+    if m:
+        return f"{DOCS_SITE}#adr-{m.group(1)}"
+    if full.rstrip("/").endswith("docs/adr") or full.endswith("docs/adr/README.md"):
+        return f"{DOCS_SITE}#doc-adr"
+    if full in _SITE_SECTIONS:
+        prefix, section = _SITE_SECTIONS[full]
+        return f"{DOCS_SITE}#{prefix}{frag}" if frag else f"{DOCS_SITE}#{section}"
+    return DOCS_SITE
 
 
 def _rewrite_links(html: str) -> str:
@@ -113,9 +133,8 @@ hr{border:0;border-top:1px solid var(--line-2);margin:2.2em 0;}
 """
 
 _NOTE = (
-    '<div class="doc-note">Rendered from '
-    '<code>docs/operations-guide.md</code>. Cross-document links open the source on GitHub '
-    f'(<a href="{REPO}">{REPO.split("//")[1]}</a>, private). '
+    '<div class="doc-note">Rendered from <code>docs/operations-guide.md</code>. '
+    f'Cross-document links open the full <a href="{DOCS_SITE}">Documentation site</a>. '
     "Regenerate with <code>python scripts/build_guide_artifact.py</code>.</div>"
 )
 
