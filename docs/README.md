@@ -10,6 +10,21 @@
 
 The short entry point is the [repo README](../README.md).
 
+## Public site (for external sharing) 🌐
+
+The docs + investor overview are deployed as a **public static site on Vercel** —
+no login, works for anyone (investors, prospects, partners):
+
+| Page | URL |
+|---|---|
+| **Documentation** (operations · architecture · deployment · roadmap · ADRs) | https://iactranslate-docs.vercel.app |
+| **Investor overview** | https://iactranslate-docs.vercel.app/overview |
+
+Redeploy after editing any doc or the deck: `bash scripts/deploy_public_site.sh`
+(needs the `vercel` CLI logged in). This is the recommended way to share
+externally — claude.ai Artifacts published via Claude Code can't be made fully
+public.
+
 ## Shareable web versions (Artifacts — keep in sync)
 
 Two published, shareable web pages back this repo:
