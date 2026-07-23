@@ -31,7 +31,7 @@ def gh_slugify(value: str, separator: str = "-") -> str:
     'testing--ci', matching the '#10-testing--ci' anchors)."""
     value = value.strip().lower()
     value = re.sub(r"[^\w\s-]", "", value, flags=re.UNICODE)
-    return value.replace(" ", separator)
+    return value.replace(" ", separator).strip(separator)
 
 
 def _resolve_link(href: str) -> str:

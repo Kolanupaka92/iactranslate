@@ -16,8 +16,22 @@ Two published, shareable web pages back this repo:
 
 | Artifact | Source | URL |
 |---|---|---|
+| **Documentation site** — *for external sharing* (HTML) | all of `docs/` → `scripts/build_docs_site.py` | https://claude.ai/code/artifact/ecc2a04b-904e-431b-9ab0-7a8856963c20 |
 | **Operations Guide** (HTML) | `operations-guide.md` → `scripts/build_guide_artifact.py` | https://claude.ai/code/artifact/926d0f20-5a9f-4e4b-ba98-89670477d531 |
 | **Investor Deck** (HTML) | [`investor-deck.html`](investor-deck.html) | https://claude.ai/code/artifact/b44cbc29-1e33-4519-a921-2387323fa33d |
+
+**Sharing externally:** the **Documentation site** bundles *every* doc (operations,
+architecture, deployment, roadmap, all ADRs) into one page with **all links
+resolved in-page** — no GitHub access needed, so it's safe to send to prospects,
+investors, or partners. The standalone Operations Guide links back to the (private)
+repo, so use it internally. Regenerate the site after editing any doc:
+
+```bash
+python scripts/build_docs_site.py /tmp/docs-site.html
+```
+
+then re-publish to the **same** Documentation-site Artifact URL. (Artifacts are
+private until you share them from the page's **Share** menu.)
 
 **Operations Guide:** it is published as **self-contained HTML** (not raw
 Markdown) so the table-of-contents anchors and cross-document links actually
