@@ -215,31 +215,10 @@ def build() -> str:
         "<footer>Generated from the IaCTranslate docs/ tree "
         "(<code>python scripts/build_docs_site.py</code>). Self-contained; safe to share.</footer>"
     )
-    # Make in-page anchors scroll reliably even inside a sandboxed artifact
-    # iframe: intercept #-link clicks and scroll the target into view via JS
-    # (default hash navigation can be a no-op when the frame is full-height).
-    parts.append(_ANCHOR_JS)
+    # No <script>: kept pure HTML/CSS so the page is eligible for PUBLIC artifact
+    # sharing. In-page anchors work via the browser's built-in hash navigation
+    # (every heading carries a matching id); mermaid renders via the runtime.
     return "\n".join(parts)
-
-
-_ANCHOR_JS = """<script>
-(function () {
-  function jump(id) {
-    var el = id && document.getElementById(id);
-    if (!el) return false;
-    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    try { history.replaceState(null, '', '#' + id); } catch (e) {}
-    return true;
-  }
-  document.addEventListener('click', function (e) {
-    var a = e.target.closest ? e.target.closest('a[href^="#"]') : null;
-    if (!a) return;
-    var id = decodeURIComponent(a.getAttribute('href').slice(1));
-    if (jump(id)) e.preventDefault();
-  });
-  if (location.hash) setTimeout(function () { jump(decodeURIComponent(location.hash.slice(1))); }, 60);
-})();
-</script>"""
 
 
 if __name__ == "__main__":
