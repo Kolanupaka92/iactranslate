@@ -16,6 +16,7 @@ from ..targets.base import Target
 from .bicep import build_bicep_files as _build_bicep
 from .cdk import build_cdk_files as _build_cdk
 from .cloudformation import build_cloudformation_files as _build_cloudformation
+from .kubernetes import build_kubernetes_files as _build_kubernetes
 from .pulumi import build_pulumi_files as _build_pulumi
 
 # name -> (fn(plan, target) -> {filename: content}, human label)
@@ -25,6 +26,7 @@ _RENDERERS: Dict[str, tuple] = {
     "cloudformation": (_build_cloudformation, "CloudFormation (JSON, AWS-only)"),
     "bicep": (_build_bicep, "Bicep (Azure-only)"),
     "cdk": (_build_cdk, "AWS CDK (Python, AWS-only)"),
+    "kubernetes": (_build_kubernetes, "Kubernetes/KubeVirt (JSON, any cloud)"),
 }
 
 

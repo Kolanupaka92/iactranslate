@@ -25,10 +25,11 @@ renders **from the graph** (its natural consumer), and the graph ships as
 - Structure is defined once. A renderer walks the graph instead of re-deriving
   topology from the plan — proven by the CloudFormation
   ([0013](0013-cloudformation-from-graph.md)), Bicep
-  ([0014](0014-bicep-from-graph.md)), and AWS CDK
-  ([0015](0015-cdk-from-graph.md)) renderers, all three of which consume
-  `build_graph(plan)` rather than the plan directly. Kubernetes is the same
-  seam. Terraform/Pulumi now share the graph's placement decision too — see
+  ([0014](0014-bicep-from-graph.md)), AWS CDK
+  ([0015](0015-cdk-from-graph.md)), and Kubernetes/KubeVirt
+  ([0017](0017-kubernetes-from-graph.md)) renderers, all four of which consume
+  `build_graph(plan)` rather than the plan directly. Terraform/Pulumi now
+  share the graph's placement decision too — see
   [0016](0016-terraform-pulumi-placement-from-graph.md), which also documents
   a real bug that auditing this shared seam caught.
 - `graph.json` is a reproducible, tool-agnostic description of the target

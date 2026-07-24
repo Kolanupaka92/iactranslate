@@ -20,14 +20,16 @@ def _plan(path, target="aws"):
     return build_migration_plan(vms, "r", get_target(target)), vms
 
 
-def test_registry_lists_all_five():
-    assert set(list_renderers()) == {"terraform", "pulumi", "cloudformation", "bicep", "cdk"}
+def test_registry_lists_all_six():
+    assert set(list_renderers()) == {
+        "terraform", "pulumi", "cloudformation", "bicep", "cdk", "kubernetes",
+    }
 
 
 def test_unknown_renderer_raises(rvtools_path):
     plan, _ = _plan(rvtools_path)
     with pytest.raises(UnknownRendererError):
-        render("kubernetes", plan, get_target("aws"))
+        render("crossplane", plan, get_target("aws"))
 
 
 @pytest.mark.parametrize("cloud", ["aws", "azure", "gcp"])
@@ -287,4 +289,73 @@ def test_cdk_is_deterministic(rvtools_path):
     plan, _ = _plan(rvtools_path)
     a = render("cdk", plan, get_target("aws"))
     b = render("cdk", plan, get_target("aws"))
+    assert a == b
+
+
+def _k8s_items(files, name):
+    return json.loads(files[name])["items"]
+
+
+def test_kubernetes_files_are_valid_json(rvtools_path):
+    plan, _ = _plan(rvtools_path)
+    files = render("kubernetes", plan, get_target("aws"))
+    assert set(files) == {
+        "namespace.json", "networkpolicies.json", "virtualmachines.json",
+        "services.json", "README.md",
+    }
+    for name in ("namespace.json", "networkpolicies.json", "virtualmachines.json", "services.json"):
+        doc = json.loads(files[name])
+        assert "apiVersion" in doc and "kind" in doc
+
+
+def test_kubernetes_works_for_every_cloud(rvtools_path):
+    """Unlike CloudFormation/Bicep/CDK, Kubernetes has no target restriction."""
+    for cloud in ("aws", "azure", "gcp"):
+        plan, _ = _plan(rvtools_path, target=cloud)
+        files = render("kubernetes", plan, get_target(cloud))
+        assert json.loads(files["virtualmachines.json"])["items"]
+
+
+def test_kubernetes_one_vm_per_instance(rvtools_path):
+    plan, _ = _plan(rvtools_path)
+    files = render("kubernetes", plan, get_target("aws"))
+    vms = _k8s_items(files, "virtualmachines.json")
+    assert len(vms) == plan.vm_count
+    for vm in vms:
+        assert vm["apiVersion"] == "kubevirt.io/v1"
+        assert vm["kind"] == "VirtualMachine"
+        assert vm["spec"]["template"]["spec"]["domain"]["cpu"]["cores"] > 0
+        assert vm["spec"]["template"]["spec"]["volumes"]
+        # every volume must have a matching dataVolumeTemplate
+        dv_names = {dv["metadata"]["name"] for dv in vm["spec"]["dataVolumeTemplates"]}
+        for vol in vm["spec"]["template"]["spec"]["volumes"]:
+            assert vol["dataVolume"]["name"] in dv_names
+
+
+def test_kubernetes_network_policies_cover_every_security_group(rvtools_path):
+    plan, _ = _plan(rvtools_path)
+    files = render("kubernetes", plan, get_target("aws"))
+    policies = _k8s_items(files, "networkpolicies.json")
+    assert len(policies) == len(plan.network.security_groups)
+    for pol in policies:
+        assert pol["kind"] == "NetworkPolicy"
+        assert pol["spec"]["ingress"]
+
+
+def test_kubernetes_service_type_matches_subnet_tier(rvtools_path):
+    plan, _ = _plan(rvtools_path)
+    files = render("kubernetes", plan, get_target("aws"))
+    svc_by_name = {s["metadata"]["name"]: s for s in _k8s_items(files, "services.json")}
+    for c in plan.compute:
+        svc = svc_by_name.get(c.resource_name.replace("_", "-"))
+        if svc is None:
+            continue
+        expected = "LoadBalancer" if c.subnet_tier.value == "public" else "ClusterIP"
+        assert svc["spec"]["type"] == expected
+
+
+def test_kubernetes_is_deterministic(rvtools_path):
+    plan, _ = _plan(rvtools_path)
+    a = render("kubernetes", plan, get_target("aws"))
+    b = render("kubernetes", plan, get_target("aws"))
     assert a == b

@@ -51,9 +51,9 @@ bespoke parser — so it works for every company, not just VMware shops.
 
 **Status.** CLI + FastAPI + Next.js web UI. On top of the core translator it ships a full
 migration-platform layer — assessment, confidence scoring, executive reports, architecture
-diagrams, infrastructure diff, brownfield adoption, Pulumi/CloudFormation/Bicep/CDK
-renderers, a policy engine, an Infrastructure Graph IR, async jobs + audit, and
-opt-in GitOps.
+diagrams, infrastructure diff, brownfield adoption,
+Pulumi/CloudFormation/Bicep/CDK/Kubernetes renderers, a policy engine, an
+Infrastructure Graph IR, async jobs + audit, and opt-in GitOps.
 ~184 tests, 7 green CI jobs (lint, pytest 3.9/3.11/3.12, Docker health, web build, real
 Terraform validate). Repo: `github.com/Kolanupaka92/iactranslate` (private).
 
@@ -148,7 +148,7 @@ iactranslate/
 | **Executive Report** | One client-facing HTML page composing plan + cost + assessment + confidence + recommendation + architecture diagram. | `exec_report.py` |
 | **Architecture Diagram** | Deterministic SVG + Mermaid of the target topology (VPC → subnets → tiered instances). | `diagram.py` |
 | **Infrastructure Diff** | Drift between two inventory snapshots (added/removed/modified + aggregate deltas). | `diff.py` |
-| **Renderer** | Swappable IaC output: `terraform` (default, HCL, all 3 clouds), `pulumi` (Python, all 3 clouds), `cloudformation` (JSON, AWS-only), `bicep` (Azure-only), or `cdk` (Python, AWS-only) — the latter three render from the Infrastructure Graph, not the plan. | `renderers/` |
+| **Renderer** | Swappable IaC output: `terraform` (default, HCL, all 3 clouds), `pulumi` (Python, all 3 clouds), `cloudformation` (JSON, AWS-only), `bicep` (Azure-only), `cdk` (Python, AWS-only), or `kubernetes` (JSON/KubeVirt, any cloud) — the latter four render from the Infrastructure Graph, not the plan. | `renderers/` |
 | **Brownfield** | Existing cloud fleet with resource ids → Terraform/Pulumi `import` blocks (adopt, don't recreate). | `sources/cloud`, `renderers/` |
 | **GitOps** | Opt-in CI/CD workflow (plan on PR, apply on merge) + .gitignore, target/renderer-aware. | `gitops.py` |
 | **Validation layer** | Never trusts provider output: checks catalog membership, CIDR overlap/containment, duplicate names, referential integrity. | `validation/validators.py` |
@@ -261,11 +261,14 @@ iactranslate translate rvtools.xlsx --target azure --renderer bicep --out ./out-
 
 # AWS CDK (Python) output, also rendered from the Infrastructure Graph
 iactranslate translate rvtools.xlsx --target aws --renderer cdk --out ./out-cdk
+
+# Kubernetes/KubeVirt output, works for any target (cloud-agnostic)
+iactranslate translate rvtools.xlsx --target gcp --renderer kubernetes --out ./out-k8s
 ```
 Flags: `--target aws|azure|gcp`, `--source auto|vmware|hyperv|generic|cloud`, `--map`,
-`--region`, `--name`, `--zip`, `--renderer terraform|pulumi|cloudformation|bicep|cdk`
-(CloudFormation and CDK are AWS-only; Bicep is Azure-only), `--gitops` (adds
-`.github/workflows/*` + `.gitignore`).
+`--region`, `--name`, `--zip`, `--renderer terraform|pulumi|cloudformation|bicep|cdk|kubernetes`
+(CloudFormation and CDK are AWS-only; Bicep is Azure-only; Kubernetes has no
+target restriction), `--gitops` (adds `.github/workflows/*` + `.gitignore`).
 
 Every generated project also ships, under `documentation/`, an executive report
 (`executive-report.html`), an architecture diagram (`architecture.svg`/`.md`), the
