@@ -28,9 +28,6 @@ resource "azurerm_network_interface" "{{ c.resource_name }}" {
 {% if c.subnet_tier == SubnetTier.PUBLIC and c.vm_name not in fronted_vm_names %}
     public_ip_address_id          = azurerm_public_ip.{{ c.resource_name }}.id
 {% endif %}
-{% if c.vm_name in fronted_vm_names %}
-    load_balancer_backend_address_pools_ids = [azurerm_lb_backend_address_pool.{{ lb_resource_of[c.vm_name] }}.id]
-{% endif %}
   }
 
   tags = {
@@ -42,6 +39,15 @@ resource "azurerm_network_interface_security_group_association" "{{ c.resource_n
   network_interface_id      = azurerm_network_interface.{{ c.resource_name }}.id
   network_security_group_id = azurerm_network_security_group.{{ sg_resource[c.security_group] }}.id
 }
+
+{% if c.vm_name in fronted_vm_names %}
+resource "azurerm_network_interface_backend_address_pool_association" "{{ c.resource_name }}" {
+  network_interface_id   = azurerm_network_interface.{{ c.resource_name }}.id
+  ip_configuration_name   = "internal"
+  backend_address_pool_id = azurerm_lb_backend_address_pool.{{ lb_resource_of[c.vm_name] }}.id
+}
+
+{% endif %}
 
 {% if c.image_key.startswith('windows') %}
 resource "azurerm_windows_virtual_machine" "{{ c.resource_name }}" {

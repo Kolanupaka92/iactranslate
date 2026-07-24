@@ -369,8 +369,6 @@ def _azure_main(plan: MigrationPlan, target: Target) -> str:
         )
         if public:
             ip_cfg += f', "public_ip_address_id": pip_{c.resource_name}.id'
-        if backend_pool_ref:
-            ip_cfg += f', "load_balancer_backend_address_pools_ids": [{backend_pool_ref}]'
         lines += [
             f"{nic} = azure.network.NetworkInterface(",
             f"    {_py_str(c.resource_name)},",
@@ -384,6 +382,15 @@ def _azure_main(plan: MigrationPlan, target: Target) -> str:
                 f"    {_py_str(c.resource_name)},",
                 f"    network_interface_id={nic}.id,",
                 f"    network_security_group_id=nsg_{sg_res}.id,",
+                ")",
+            ]
+        if backend_pool_ref:
+            lines += [
+                "azure.network.NetworkInterfaceBackendAddressPoolAssociation(",
+                f"    {_py_str(c.resource_name)},",
+                f"    network_interface_id={nic}.id,",
+                '    ip_configuration_name="internal",',
+                f"    backend_address_pool_id={backend_pool_ref},",
                 ")",
             ]
         vm_type = "WindowsVirtualMachine" if is_windows else "LinuxVirtualMachine"

@@ -135,10 +135,10 @@ def test_terraform_azure_skips_individual_public_ip_for_fronted_instances(rvtool
     plan, _ = _plan(rvtools_path, target="azure")
     compute_tf = render("terraform", plan, get_target("azure"))["compute.tf"]
     fronted = {vm for lb in plan.network.load_balancers for vm in lb.targets}
+    assert "azurerm_network_interface_backend_address_pool_association" in compute_tf
     for c in plan.compute:
         if c.vm_name in fronted and c.subnet_tier.value == "public":
             assert f'resource "azurerm_public_ip" "{c.resource_name}"' not in compute_tf
-            assert "load_balancer_backend_address_pools_ids" in compute_tf
 
 
 def test_cloudformation_unsupported_targets_raise(rvtools_path):
