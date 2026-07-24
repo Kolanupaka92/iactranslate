@@ -20,14 +20,14 @@ def _plan(path, target="aws"):
     return build_migration_plan(vms, "r", get_target(target)), vms
 
 
-def test_registry_lists_all_three():
-    assert set(list_renderers()) == {"terraform", "pulumi", "cloudformation"}
+def test_registry_lists_all_four():
+    assert set(list_renderers()) == {"terraform", "pulumi", "cloudformation", "bicep"}
 
 
 def test_unknown_renderer_raises(rvtools_path):
     plan, _ = _plan(rvtools_path)
     with pytest.raises(UnknownRendererError):
-        render("bicep", plan, get_target("aws"))
+        render("kubernetes", plan, get_target("aws"))
 
 
 @pytest.mark.parametrize("cloud", ["aws", "azure", "gcp"])
@@ -161,4 +161,77 @@ def test_cloudformation_is_deterministic(rvtools_path):
     plan, _ = _plan(rvtools_path)
     a = render("cloudformation", plan, get_target("aws"))
     b = render("cloudformation", plan, get_target("aws"))
+    assert a == b
+
+
+def _assert_balanced_braces(text: str) -> None:
+    depth = 0
+    for ch in text:
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+        assert depth >= 0, "unbalanced closing brace"
+    assert depth == 0, "unbalanced braces"
+
+
+def test_bicep_unsupported_targets_raise(rvtools_path):
+    from iactranslate.renderers.bicep import RendererNotSupportedError
+
+    for cloud in ("aws", "gcp"):
+        plan, _ = _plan(rvtools_path, target=cloud)
+        with pytest.raises(RendererNotSupportedError):
+            render("bicep", plan, get_target(cloud))
+
+
+def test_bicep_files_and_structure(rvtools_path):
+    plan, _ = _plan(rvtools_path, target="azure")
+    files = render("bicep", plan, get_target("azure"))
+    assert set(files) == {"main.bicep", "resources.bicep", "README.md"}
+    for name in ("main.bicep", "resources.bicep"):
+        _assert_balanced_braces(files[name])
+        assert files[name].count("[") == files[name].count("]")
+
+    main = files["main.bicep"]
+    assert "targetScope = 'subscription'" in main
+    assert "Microsoft.Resources/resourceGroups" in main
+    assert "module resources 'resources.bicep'" in main
+
+
+def test_bicep_covers_core_resources(rvtools_path):
+    plan, _ = _plan(rvtools_path, target="azure")
+    resources = render("bicep", plan, get_target("azure"))["resources.bicep"]
+    for res_type in (
+        "Microsoft.Network/virtualNetworks@",
+        "Microsoft.Network/virtualNetworks/subnets@",
+        "Microsoft.Network/networkSecurityGroups@",
+        "Microsoft.Network/networkInterfaces@",
+        "Microsoft.Compute/virtualMachines@",
+    ):
+        assert res_type in resources
+    assert resources.count("Microsoft.Compute/virtualMachines@") == plan.vm_count
+    assert resources.count("Microsoft.Network/networkInterfaces@") == plan.vm_count
+
+
+def test_bicep_uses_azure_image_reference(rvtools_path):
+    plan, _ = _plan(rvtools_path, target="azure")
+    resources = render("bicep", plan, get_target("azure"))["resources.bicep"]
+    ref = get_target("azure").image_reference(plan.compute[0].image_key)
+    assert ref["publisher"] in resources
+    assert ref["offer"] in resources
+    assert ref["sku"] in resources
+
+
+def test_bicep_secrets_have_no_insecure_default(rvtools_path):
+    plan, _ = _plan(rvtools_path, target="azure")
+    resources = render("bicep", plan, get_target("azure"))["resources.bicep"]
+    assert "@secure()" in resources
+    assert "param adminPassword string = ''" in resources
+    assert "REPLACE_ME" not in resources
+
+
+def test_bicep_is_deterministic(rvtools_path):
+    plan, _ = _plan(rvtools_path, target="azure")
+    a = render("bicep", plan, get_target("azure"))
+    b = render("bicep", plan, get_target("azure"))
     assert a == b

@@ -31,6 +31,17 @@ PY
 printf '{"cleanUrls": true}\n' > "$BUILD/vercel.json"
 
 cd "$BUILD"
-URL="$(vercel deploy --prod --yes | tail -1)"
+# $BUILD is normally under /tmp, which doesn't survive reboots — re-link to the
+# real project every run instead of relying on a persisted .vercel/project.json,
+# or a stale/missing link makes `vercel deploy` silently create a new project.
+vercel link --yes --project=iactranslate-docs >/dev/null
+DEPLOY_LOG="$(mktemp)"
+vercel deploy --prod --yes | tee "$DEPLOY_LOG"
+URL="$(grep -oE 'https://iactranslate-docs-[a-zA-Z0-9.-]*\.vercel\.app' "$DEPLOY_LOG" | tail -1)"
+rm -f "$DEPLOY_LOG"
+if [ -z "$URL" ]; then
+  echo "Could not find the deployment URL in vercel's output — aborting alias step." >&2
+  exit 1
+fi
 vercel alias set "$URL" "$ALIAS"
 echo "Live: https://$ALIAS  (/ = docs, /overview = investor overview)"

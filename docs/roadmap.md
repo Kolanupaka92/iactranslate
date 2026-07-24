@@ -47,7 +47,6 @@ in CI on `main`.
 **New targets & renderers**
 - ◻ OCI (Oracle Cloud) target
 - ◻ DigitalOcean target
-- ◻ Bicep renderer (Azure)
 - ◻ AWS CDK renderer
 
 **Deeper migration coverage**
@@ -70,9 +69,10 @@ backends and integrations that plug into them, via the
 | v2.6 | Ticketing (Jira/ServiceNow/Azure DevOps) from the assessment | assessment (shipped) |
 | v3.0 | Multi-tenant SaaS + plugin ecosystem + OPA-compatible policy | policy engine, source/target registries (shipped) |
 
-**Renderers via the Infrastructure Graph** (the IR seam now proven):
+**Renderers via the Infrastructure Graph** (the IR seam now proven twice):
 - ✅ CloudFormation (AWS) — walks `graph.json`, not the plan
-- ◻ Bicep, AWS CDK, Kubernetes back-ends consuming `graph.json`
+- ✅ Bicep (Azure) — subscription-scope + module, also walks `graph.json`
+- ◻ AWS CDK, Kubernetes back-ends consuming `graph.json`
 - ◻ Migrate the Terraform/Pulumi renderers onto the graph
 
 **Considered, deliberately deferred** (tracked so the reasoning is explicit):
