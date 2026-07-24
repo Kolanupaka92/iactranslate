@@ -264,20 +264,24 @@ platform services layered on top.
 - ✅ Generic CMDB / spreadsheet exports (ServiceNow, Device42, Lansweeper, hand-rolled)
 - ✅ Existing AWS inventories (re-platform / cross-cloud, with import for brownfield)
 - ✅ Existing Azure inventories
-- ✅ Targets: AWS, Azure, GCP · Renderers: Terraform, Pulumi
+- ✅ Targets: AWS, Azure, GCP · Renderers: Terraform, Pulumi, CloudFormation,
+  Bicep, AWS CDK, Kubernetes/KubeVirt
+- ✅ Load balancer topology (multi-instance tiers front behind an ALB /
+  Standard LB / Network LB, per cloud)
 
 **Not yet supported**
 
-- ✗ Kubernetes / managed Kubernetes (EKS/AKS/GKE) workloads
+- ✗ Kubernetes / managed Kubernetes (EKS/AKS/GKE) workloads *as a migration source*
+  (the Kubernetes *renderer* above is an output target, not a source reader)
 - ✗ VMware NSX (overlay networking, micro-segmentation)
-- ✗ Load balancer migration
 - ✗ Database schema / data migration
 - ✗ IAM / identity migration
 - ✗ Serverless (Lambda/Functions) and PaaS databases (RDS/Cloud SQL/Cosmos)
 
-The network model is deliberately VM-centric: VPC/VNet, subnets, and tier-scoped
-security groups. Anything above the VM (service meshes, managed data planes,
-identity) is out of scope by design, not by omission.
+The network model is deliberately VM-centric: VPC/VNet, subnets, tier-scoped
+security groups, and — where a tier has more than one instance — a load
+balancer fronting it. Anything above the VM (service meshes, managed data
+planes, identity) is out of scope by design, not by omission.
 
 ---
 

@@ -51,10 +51,10 @@ bespoke parser — so it works for every company, not just VMware shops.
 
 **Status.** CLI + FastAPI + Next.js web UI. On top of the core translator it ships a full
 migration-platform layer — assessment, confidence scoring, executive reports, architecture
-diagrams, infrastructure diff, brownfield adoption,
+diagrams, infrastructure diff, brownfield adoption, load balancer topology,
 Pulumi/CloudFormation/Bicep/CDK/Kubernetes renderers, a policy engine, an
 Infrastructure Graph IR, async jobs + audit, and opt-in GitOps.
-~184 tests, 7 green CI jobs (lint, pytest 3.9/3.11/3.12, Docker health, web build, real
+~237 tests, 7 green CI jobs (lint, pytest 3.9/3.11/3.12, Docker health, web build, real
 Terraform validate). Repo: `github.com/Kolanupaka92/iactranslate` (private).
 
 ---
@@ -146,7 +146,8 @@ iactranslate/
 | **Assessment** | Pre-migration read of the estate: risk/cost/data-quality/capacity findings + a 0-100 readiness score. Deterministic, no AI. Emits JSON + a standalone HTML report. | `assessment/` |
 | **Confidence Engine** | Scores how sure each decision is (sizing/classification/image/cost) per workload + plan-level, from observable signals. | `confidence.py` |
 | **Executive Report** | One client-facing HTML page composing plan + cost + assessment + confidence + recommendation + architecture diagram. | `exec_report.py` |
-| **Architecture Diagram** | Deterministic SVG + Mermaid of the target topology (VPC → subnets → tiered instances). | `diagram.py` |
+| **Architecture Diagram** | Deterministic SVG + Mermaid of the target topology (VPC → subnets → tiered instances → load balancers). | `diagram.py` |
+| **Load Balancer** | Any `(tier, environment, subnet_tier)` group with >1 instance gets one, with listeners from the tier's own security-group ingress (AWS ALB, Azure Standard LB, GCP Network/Internal LB). | `agents/network.py`, `models.py` |
 | **Infrastructure Diff** | Drift between two inventory snapshots (added/removed/modified + aggregate deltas). | `diff.py` |
 | **Renderer** | Swappable IaC output: `terraform` (default, HCL, all 3 clouds), `pulumi` (Python, all 3 clouds), `cloudformation` (JSON, AWS-only), `bicep` (Azure-only), `cdk` (Python, AWS-only), or `kubernetes` (JSON/KubeVirt, any cloud) — the latter four render from the Infrastructure Graph, not the plan. | `renderers/` |
 | **Brownfield** | Existing cloud fleet with resource ids → Terraform/Pulumi `import` blocks (adopt, don't recreate). | `sources/cloud`, `renderers/` |

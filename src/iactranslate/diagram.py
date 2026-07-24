@@ -33,6 +33,7 @@ _GAP = 16
 _COLS = 4                 # instances per row within a lane
 _MAX_PER_LANE = 12        # cap drawn boxes per lane; rest summarised
 _PAD = 24
+_LB_ROW_H = 24            # height of one load-balancer banner row
 
 
 def _esc(s: object) -> str:
@@ -51,24 +52,50 @@ def _lane(graph: InfrastructureGraph, subnet_tier: str) -> List[GraphNode]:
     return [n for n in _instances(graph) if n.attributes.get("subnet_tier") == subnet_tier]
 
 
-def _lane_height(n: int) -> int:
+def _load_balancers(graph: InfrastructureGraph, subnet_tier: str) -> List[GraphNode]:
+    return [
+        n for n in graph.nodes_of(NodeKind.LOAD_BALANCER)
+        if n.attributes.get("subnet_tier") == subnet_tier
+    ]
+
+
+def _lb_listener_summary(node: GraphNode) -> str:
+    ports = [f"{listener['protocol']}:{listener['listener_port']}" for listener in node.attributes.get("listeners", [])]
+    return ", ".join(ports)
+
+
+def _lane_height(n: int, lb_count: int = 0) -> int:
     rows = max(1, (min(n, _MAX_PER_LANE) + _COLS - 1) // _COLS)
-    return rows * _BOX_H + (rows + 1) * _GAP + 34  # + lane title strip
+    return rows * _BOX_H + (rows + 1) * _GAP + 34 + lb_count * _LB_ROW_H  # + lane title strip
 
 
-def _draw_lane(x: int, y: int, w: int, title: str, subtitle: str, nodes: List[GraphNode]) -> str:
+def _draw_lane(
+    x: int, y: int, w: int, title: str, subtitle: str, nodes: List[GraphNode], load_balancers: List[GraphNode]
+) -> str:
+    lb_h = len(load_balancers) * _LB_ROW_H
     parts = [
-        f'<rect x="{x}" y="{y}" width="{w}" height="{_lane_height(len(nodes))}" '
+        f'<rect x="{x}" y="{y}" width="{w}" height="{_lane_height(len(nodes), len(load_balancers))}" '
         f'rx="10" fill="#ffffff" stroke="#cbd5e1" stroke-dasharray="4 3"/>',
         f'<text x="{x + 14}" y="{y + 22}" font-size="13" font-weight="700" fill="#334155">{_esc(title)}</text>',
         f'<text x="{x + w - 14}" y="{y + 22}" font-size="11" fill="#94a3b8" text-anchor="end">{_esc(subtitle)}</text>',
     ]
+    for i, lb in enumerate(load_balancers):
+        ly = y + 34 + i * _LB_ROW_H
+        parts.append(f'<rect x="{x + _GAP}" y="{ly}" width="{w - 2 * _GAP}" height="{_LB_ROW_H - 4}" rx="5" fill="#fef3c7" stroke="#d97706"/>')
+        parts.append(
+            f'<text x="{x + _GAP + 8}" y="{ly + 14}" font-size="10" font-weight="700" fill="#92400e">'
+            f'⇄ {_esc(lb.name)}</text>'
+        )
+        parts.append(
+            f'<text x="{x + w - _GAP - 8}" y="{ly + 14}" font-size="10" fill="#92400e" '
+            f'text-anchor="end">{_esc(_lb_listener_summary(lb))}</text>'
+        )
     for i, node in enumerate(nodes[:_MAX_PER_LANE]):
         tier = str(node.attributes.get("tier", Tier.OTHER.value))
         itype = str(node.attributes.get("instance_type", ""))
         col, row = i % _COLS, i // _COLS
         bx = x + _GAP + col * (_BOX_W + _GAP)
-        by = y + 34 + _GAP + row * (_BOX_H + _GAP)
+        by = y + 34 + lb_h + _GAP + row * (_BOX_H + _GAP)
         fill = _TIER_FILL.get(tier, _TIER_FILL[Tier.OTHER.value])
         parts.append(
             f'<rect x="{bx}" y="{by}" width="{_BOX_W}" height="{_BOX_H}" rx="7" fill="{fill}"/>'
@@ -84,7 +111,7 @@ def _draw_lane(x: int, y: int, w: int, title: str, subtitle: str, nodes: List[Gr
     hidden = len(nodes) - min(len(nodes), _MAX_PER_LANE)
     if hidden > 0:
         parts.append(
-            f'<text x="{x + _GAP}" y="{y + _lane_height(len(nodes)) - 12}" '
+            f'<text x="{x + _GAP}" y="{y + _lane_height(len(nodes), len(load_balancers)) - 12}" '
             f'font-size="11" fill="#94a3b8">+{hidden} more instance(s)</text>'
         )
     return "\n".join(parts)
@@ -94,6 +121,8 @@ def architecture_svg_from_graph(graph: InfrastructureGraph) -> str:
     """Render the topology graph as a standalone SVG string."""
     public = _lane(graph, "public")
     private = _lane(graph, "private")
+    public_lbs = _load_balancers(graph, "public")
+    private_lbs = _load_balancers(graph, "private")
     count = len(_instances(graph))
     vpc = graph.node("vpc")
     vpc_cidr = str(vpc.attributes.get("cidr", "")) if vpc else ""
@@ -105,8 +134,8 @@ def architecture_svg_from_graph(graph: InfrastructureGraph) -> str:
     vpc_x, vpc_y = _PAD, 70
     lane_x = vpc_x + _PAD
 
-    pub_h = _lane_height(len(public))
-    priv_h = _lane_height(len(private))
+    pub_h = _lane_height(len(public), len(public_lbs))
+    priv_h = _lane_height(len(private), len(private_lbs))
     pub_y = vpc_y + 46
     priv_y = pub_y + pub_h + _GAP + 24  # + connector strip
     vpc_h = (priv_y + priv_h + _PAD) - vpc_y
@@ -133,8 +162,8 @@ def architecture_svg_from_graph(graph: InfrastructureGraph) -> str:
   <rect x="{vpc_x}" y="{vpc_y}" width="{width - 2 * _PAD}" height="{vpc_h}" rx="12" fill="none" stroke="#334155" stroke-width="1.5"/>
   <text x="{vpc_x + 14}" y="{vpc_y + 22}" font-size="13" font-weight="700" fill="#334155">VPC {_esc(vpc_cidr)}</text>
 
-{_draw_lane(lane_x, pub_y, lane_w, "Public subnet", igw, public)}
-{_draw_lane(lane_x, priv_y, lane_w, "Private subnet", nat, private)}
+{_draw_lane(lane_x, pub_y, lane_w, "Public subnet", igw, public, public_lbs)}
+{_draw_lane(lane_x, priv_y, lane_w, "Private subnet", nat, private, private_lbs)}
 
   {"".join(legend_items)}
 </svg>"""
@@ -150,6 +179,7 @@ def architecture_mermaid_from_graph(graph: InfrastructureGraph) -> str:
         by_lane[str(n.attributes.get("subnet_tier"))].append(n)
 
     node_id = 0
+    mermaid_id: Dict[str, str] = {}
     for lane, label in (("public", "Public subnet"), ("private", "Private subnet")):
         insts = by_lane.get(lane, [])
         if not insts:
@@ -157,16 +187,27 @@ def architecture_mermaid_from_graph(graph: InfrastructureGraph) -> str:
         lines.append(f'    subgraph {lane}["{label}"]')
         for n in insts[:_MAX_PER_LANE]:
             node_id += 1
+            mid = f"n{node_id}"
+            mermaid_id[n.id] = mid
             safe = n.name.replace('"', "'")
             itype = n.attributes.get("instance_type", "")
             tier = n.attributes.get("tier", "")
-            lines.append(f'      n{node_id}["{safe}<br/>{itype} · {tier}"]')
+            lines.append(f'      {mid}["{safe}<br/>{itype} · {tier}"]')
         hidden = len(insts) - min(len(insts), _MAX_PER_LANE)
         if hidden > 0:
             node_id += 1
             lines.append(f'      n{node_id}["+{hidden} more"]')
         lines.append("    end")
     lines.append("  end")
+
+    for lb in graph.nodes_of(NodeKind.LOAD_BALANCER):
+        node_id += 1
+        lb_mid = f"lb{node_id}"
+        safe = lb.name.replace('"', "'")
+        lines.append(f'  {lb_mid}{{{{"{safe}"}}}}')
+        for e in graph.out_edges(lb.id):
+            if e.kind.value == "fronts" and e.target in mermaid_id:
+                lines.append(f"  {lb_mid} --> {mermaid_id[e.target]}")
     return "\n".join(lines) + "\n"
 
 

@@ -16,7 +16,7 @@ resource "google_compute_instance" "{{ c.resource_name }}" {
 
   network_interface {
     subnetwork = google_compute_subnetwork.{{ subnet_of[c.vm_name] }}.id
-{% if c.subnet_tier == SubnetTier.PUBLIC %}
+{% if c.subnet_tier == SubnetTier.PUBLIC and c.vm_name not in fronted_vm_names %}
     access_config {
       # Ephemeral external IP.
     }

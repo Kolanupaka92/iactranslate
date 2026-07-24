@@ -2,8 +2,8 @@
 
 `MigrationPlan` is the canonical *planning* artifact; the graph is the canonical
 *topology* artifact derived from it: typed nodes (VPC, subnets, security groups,
-instances) and edges (containment, placement, security). It is deterministic and
-carries no cloud syntax.
+instances, load balancers) and edges (containment, placement, security, fronting).
+It is deterministic and carries no cloud syntax.
 
 Why a separate IR: it decouples planning from code generation. The architecture
 diagram, CloudFormation, Bicep, and CDK render from this graph; Terraform and
@@ -26,12 +26,14 @@ class NodeKind(str, Enum):
     SUBNET = "subnet"
     SECURITY_GROUP = "security_group"
     INSTANCE = "instance"
+    LOAD_BALANCER = "load_balancer"
 
 
 class EdgeKind(str, Enum):
     CONTAINS = "contains"        # vpc → subnet
-    PLACED_IN = "placed_in"      # instance → subnet
-    SECURED_BY = "secured_by"    # instance → security_group
+    PLACED_IN = "placed_in"      # instance/load_balancer → subnet
+    SECURED_BY = "secured_by"    # instance/load_balancer → security_group
+    FRONTS = "fronts"            # load_balancer → instance
 
 
 class GraphNode(BaseModel):
@@ -79,6 +81,10 @@ def _sg_id(resource_name: str) -> str:
 
 def _instance_id(resource_name: str) -> str:
     return f"instance:{resource_name}"
+
+
+def _lb_id(resource_name: str) -> str:
+    return f"lb:{resource_name}"
 
 
 def assign_subnets(plan: MigrationPlan) -> Dict[str, str]:
@@ -181,6 +187,37 @@ def build_graph(plan: MigrationPlan) -> InfrastructureGraph:
         sg_target = sg_id_by_name.get(c.security_group)
         if sg_target:
             edges.append(GraphEdge(source=iid, target=sg_target, kind=EdgeKind.SECURED_BY))
+
+    # Load balancers: fronts its target instances, placed in every subnet of
+    # its tier (it spans AZs, unlike a single instance), secured by its SG.
+    instance_id_by_vm_name = {c.vm_name: _instance_id(c.resource_name) for c in plan.compute}
+    for lb in net.load_balancers:
+        lid = _lb_id(lb.resource_name)
+        nodes.append(GraphNode(
+            id=lid, kind=NodeKind.LOAD_BALANCER, name=lb.name,
+            attributes={
+                "tier": lb.tier.value,
+                "environment": lb.environment.value,
+                "subnet_tier": lb.subnet_tier.value,
+                "internet_facing": lb.internet_facing,
+                "health_check_path": lb.health_check_path,
+                "listeners": [
+                    {"protocol": listener.protocol, "listener_port": listener.listener_port,
+                     "target_port": listener.target_port}
+                    for listener in lb.listeners
+                ],
+            },
+        ))
+        for sn in net.subnets:
+            if sn.tier == lb.subnet_tier:
+                edges.append(GraphEdge(source=lid, target=_subnet_id(sn.resource_name), kind=EdgeKind.PLACED_IN))
+        sg_target = sg_id_by_name.get(lb.security_group)
+        if sg_target:
+            edges.append(GraphEdge(source=lid, target=sg_target, kind=EdgeKind.SECURED_BY))
+        for vm_name in lb.targets:
+            target_iid = instance_id_by_vm_name.get(vm_name)
+            if target_iid:
+                edges.append(GraphEdge(source=lid, target=target_iid, kind=EdgeKind.FRONTS))
 
     return InfrastructureGraph(
         project=plan.project_name, target=plan.target, region=plan.region,

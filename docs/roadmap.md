@@ -24,9 +24,12 @@ in CI on `main`.
 - ✅ Architecture diagrams (SVG + Mermaid)
 - ✅ Infrastructure diff (drift between two snapshots)
 - ✅ Brownfield support (Terraform/Pulumi `import` for existing fleets)
-- ✅ Multi-renderer: Pulumi (AWS, Azure, GCP) alongside Terraform
-- ✅ **CloudFormation renderer** (AWS-only) — the first renderer that consumes the
-  Infrastructure Graph directly rather than the plan, proving the IR seam (ADR 0010)
+- ✅ Multi-renderer: Pulumi, CloudFormation, Bicep, AWS CDK, Kubernetes/KubeVirt
+  alongside Terraform — the latter four consume the Infrastructure Graph
+  directly rather than the plan, proving the IR seam (ADR 0010, 0013-0017)
+- ✅ **Load balancer topology** — multi-instance tiers front behind a load
+  balancer (ALB / Standard LB / Network LB per cloud), modeled once in
+  `NetworkPlan.load_balancers` and rendered by all 6 renderers + the diagram
 - ✅ GitOps: opt-in CI/CD workflow (plan on PR, apply on merge)
 - ✅ **Policy engine** — pluggable, read-only org rules (`deny`/`warn`) before rendering
 - ✅ **Capability flags** — targets advertise supported features (`GET /targets`)
@@ -49,7 +52,6 @@ in CI on `main`.
 - ◻ DigitalOcean target
 
 **Deeper migration coverage**
-- ◻ Load balancer topology
 - ◻ Managed-database re-platforming (RDS / Cloud SQL / Azure SQL) recommendations
 - ◻ Kubernetes workload discovery
 

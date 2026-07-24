@@ -53,6 +53,7 @@ def _stack_py(graph: InfrastructureGraph, plan: MigrationPlan, target: Target) -
         "(see docs/adr/0010-infrastructure-graph.md and 0015), not the plan directly.\"\"\"",
         "from aws_cdk import CfnParameter, Stack, Tags",
         "from aws_cdk import aws_ec2 as ec2",
+        "from aws_cdk import aws_elasticloadbalancingv2 as elbv2",
         "from constructs import Construct",
         "",
         "",
@@ -186,9 +187,11 @@ def _stack_py(graph: InfrastructureGraph, plan: MigrationPlan, target: Target) -
             add(")")
             add("")
 
+    instance_var_by_name: Dict[str, str] = {}
     for c in plan.compute:
         inst = next(n for n in graph.nodes_of(NodeKind.INSTANCE) if n.name == c.vm_name)
         ivar = _var("inst", inst.name)
+        instance_var_by_name[inst.name] = ivar
         key = inst.attributes["image_key"]
         dyn = _ami_dynamic_ref(key)
         image_expr = _py_str(dyn) if dyn is not None else f"{param_var_by_key[key]}.value_as_string"
@@ -229,6 +232,55 @@ def _stack_py(graph: InfrastructureGraph, plan: MigrationPlan, target: Target) -
         add(f"Tags.of({ivar}).add('Name', {_py_str(inst.name)})")
         add(f"Tags.of({ivar}).add('Tier', {_py_str(inst.attributes['tier'])})")
         add(f"Tags.of({ivar}).add('Environment', {_py_str(inst.attributes['environment'])})")
+        add("")
+
+    for lb in graph.nodes_of(NodeKind.LOAD_BALANCER):
+        lvar = _var("lb", lb.name)
+        lb_subnet_vars = [
+            subnet_var_by_node[e.target] for e in graph.out_edges(lb.id, EdgeKind.PLACED_IN)
+        ]
+        lb_sg_vars = [sg_var_by_node[e.target] for e in graph.out_edges(lb.id, EdgeKind.SECURED_BY)]
+        add(f"{lvar} = elbv2.CfnLoadBalancer(")
+        add(f"    self, {_py_str(_cid('Lb', lb.name))},")
+        add("    type='application',")
+        add(f"    scheme={_py_str('internet-facing' if lb.attributes['internet_facing'] else 'internal')},")
+        add(f"    subnets=[{', '.join(f'{v}.attr_subnet_id' for v in lb_subnet_vars)}],")
+        add(f"    security_groups=[{', '.join(f'{v}.attr_group_id' for v in lb_sg_vars)}],")
+        add(")")
+
+        target_vars = [
+            instance_var_by_name[graph.node(e.target).name]
+            for e in graph.out_edges(lb.id, EdgeKind.FRONTS)
+            if graph.node(e.target) is not None
+        ]
+        for listener in lb.attributes["listeners"]:
+            listener_suffix = f"{lb.name}-{listener['listener_port']}"
+            tgvar = _var("tg", listener_suffix)
+            tg_cid = _cid("TargetGroup", listener_suffix)
+            add(f"{tgvar} = elbv2.CfnTargetGroup(")
+            add(f"    self, {_py_str(tg_cid)},")
+            add(f"    port={listener['target_port']}, protocol={_py_str(listener['protocol'])},")
+            add(f"    vpc_id={vpc_var}.attr_vpc_id, target_type='instance',")
+            add(f"    health_check_path={_py_str(lb.attributes['health_check_path'])},")
+            add("    targets=[")
+            for tv in target_vars:
+                add(
+                    f"        elbv2.CfnTargetGroup.TargetDescriptionProperty("
+                    f"id={tv}.ref, port={listener['target_port']}),"
+                )
+            add("    ],")
+            add(")")
+            lvar_listener = _var("listener", listener_suffix)
+            listener_cid = _cid("Listener", listener_suffix)
+            add(f"{lvar_listener} = elbv2.CfnListener(")
+            add(f"    self, {_py_str(listener_cid)},")
+            add(f"    load_balancer_arn={lvar}.ref,")
+            add(f"    port={listener['listener_port']}, protocol={_py_str(listener['protocol'])},")
+            add(
+                f"    default_actions=[elbv2.CfnListener.ActionProperty("
+                f"type='forward', target_group_arn={tgvar}.ref)],"
+            )
+            add(")")
         add("")
 
     return "\n".join(lines) + "\n"

@@ -155,13 +155,46 @@ def _virtual_machines(graph: InfrastructureGraph, plan: MigrationPlan, namespace
 
 
 def _services(graph: InfrastructureGraph, plan: MigrationPlan, namespace: str) -> Dict[str, object]:
+    """One Service per graph load balancer (selecting the whole fronted group by
+    tier+environment label), plus one Service per instance NOT fronted by any
+    load balancer — mirroring the same "front the group, not the instance"
+    decision the other renderers make once a LoadBalancerPlan exists."""
     sg_by_instance: Dict[str, object] = {}
     for e in graph.edges:
         if e.kind == EdgeKind.SECURED_BY:
             sg_by_instance[e.source] = graph.node(e.target)
 
     items: List[Dict[str, object]] = []
+    fronted_vm_names: set = set()
+    for lb in graph.nodes_of(NodeKind.LOAD_BALANCER):
+        fronts = graph.out_edges(lb.id, EdgeKind.FRONTS)
+        member_names = {graph.node(e.target).name for e in fronts if graph.node(e.target) is not None}
+        fronted_vm_names |= member_names
+        items.append({
+            "apiVersion": "v1",
+            "kind": "Service",
+            "metadata": {"name": _slug(lb.name), "namespace": namespace},
+            "spec": {
+                "selector": {
+                    "iactranslate.io/tier": lb.attributes["tier"],
+                    "iactranslate.io/environment": lb.attributes["environment"],
+                },
+                "type": "LoadBalancer" if lb.attributes["internet_facing"] else "ClusterIP",
+                "ports": [
+                    {
+                        "name": f"port-{listener['listener_port']}",
+                        "port": listener["listener_port"],
+                        "targetPort": listener["target_port"],
+                        "protocol": "TCP",
+                    }
+                    for listener in lb.attributes["listeners"]
+                ],
+            },
+        })
+
     for c in plan.compute:
+        if c.vm_name in fronted_vm_names:
+            continue
         inst = next(n for n in graph.nodes_of(NodeKind.INSTANCE) if n.name == c.vm_name)
         name = _slug(c.resource_name)
         sg = sg_by_instance.get(inst.id)

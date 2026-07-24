@@ -30,3 +30,14 @@ output "instance_private_ips" {
 {% endfor %}
   }
 }
+
+{% if network.load_balancers %}
+output "load_balancer_dns_names" {
+  description = "Map of load balancer name to its public DNS name."
+  value = {
+{% for lb in network.load_balancers %}
+    "{{ lb.name }}" = aws_lb.{{ lb.resource_name }}.dns_name
+{% endfor %}
+  }
+}
+{% endif %}

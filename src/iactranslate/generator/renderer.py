@@ -103,6 +103,11 @@ def build_files(plan: MigrationPlan, target: Target) -> Dict[str, str]:
         "image_refs": image_refs,
         "subnet_of": subnet_of,
         "sg_resource": sg_resource,
+        "fronted_vm_names": {vm for lb in plan.network.load_balancers for vm in lb.targets},
+        "lb_resource_of": {vm: lb.resource_name for lb in plan.network.load_balancers for vm in lb.targets},
+        "has_https_listener": any(
+            listener.protocol == "HTTPS" for lb in plan.network.load_balancers for listener in lb.listeners
+        ),
         "vm_slug": {c.vm_name: _rfc1035_slug(c.vm_name) for c in plan.compute},
         "volumes": _data_volumes(plan.compute),
         "SubnetTier": SubnetTier,

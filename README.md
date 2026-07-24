@@ -30,6 +30,9 @@ time — and CI proves the output is valid against the real cloud providers
   gets a thumb on the scale.
 - **Right-sized from real usage.** When utilization data is present, instances
   are sized to actual demand, not to over-provisioned allocations.
+- **Load balancer topology.** Any tier with more than one instance gets fronted
+  by a load balancer (ALB / Standard LB / Network LB, per cloud) — modeled
+  once, rendered by all six IaC formats and the diagram.
 - **A full migration-platform layer.** Pre-migration **assessment** (readiness +
   risks), **confidence** scoring, an **executive report**, **architecture
   diagrams**, **infrastructure diff**, **brownfield** adoption (import blocks),

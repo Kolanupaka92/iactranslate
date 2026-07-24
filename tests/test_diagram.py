@@ -71,3 +71,23 @@ def test_diagram_on_real_fixture(rvtools_path):
     assert svg.startswith("<svg")
     # Every instance name that fits the cap should be labelled.
     assert any(c.vm_name in svg for c in plan.compute)
+
+
+def _real_plan(path="tests/fixtures/rvtools_sample.xlsx", target="aws"):
+    vms = normalize(resolve_source(path).parse(path))
+    return build_migration_plan(vms, "d", get_target(target))
+
+
+def test_svg_shows_load_balancers():
+    plan = _real_plan()
+    svg = architecture_svg(plan)
+    for lb in plan.network.load_balancers:
+        assert lb.name in svg
+
+
+def test_mermaid_shows_load_balancers_and_fronting_edges():
+    plan = _real_plan()
+    mer = architecture_mermaid(plan)
+    for lb in plan.network.load_balancers:
+        assert lb.name in mer
+        assert mer.count("-->") >= len(lb.targets)

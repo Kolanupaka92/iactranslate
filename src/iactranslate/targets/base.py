@@ -132,6 +132,7 @@ TEMPLATE_MAP: Dict[str, str] = {
     "terraform.tfvars.j2": "terraform.tfvars",
     "networking.tf.j2": "networking.tf",
     "security.tf.j2": "security.tf",
+    "loadbalancer.tf.j2": "loadbalancer.tf",
     "compute.tf.j2": "compute.tf",
     "storage.tf.j2": "storage.tf",
     "outputs.tf.j2": "outputs.tf",

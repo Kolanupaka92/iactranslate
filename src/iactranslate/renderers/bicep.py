@@ -123,6 +123,96 @@ def _resources_bicep(graph: InfrastructureGraph, plan: MigrationPlan, target: Ta
             "",
         ]
 
+    backend_pool_ref_by_vm_name: Dict[str, str] = {}
+    for lb in graph.nodes_of(NodeKind.LOAD_BALANCER):
+        lb_var = _id(f"lb-{lb.name}")
+        placed_in = graph.out_edges(lb.id, EdgeKind.PLACED_IN)
+
+        frontend_props: List[str]
+        if lb.attributes["internet_facing"]:
+            pip_var = _id(f"pip-{lb.name}")
+            lines += [
+                f"resource {pip_var} 'Microsoft.Network/publicIPAddresses@2023-05-01' = {{",
+                f"  name: {_str(lb.name + '-pip')}",
+                "  location: location",
+                "  sku: { name: 'Standard' }",
+                "  properties: { publicIPAllocationMethod: 'Static' }",
+                "}",
+                "",
+            ]
+            frontend_props = [f"        properties: {{ publicIPAddress: {{ id: {pip_var}.id }} }}"]
+        else:
+            # Standard LB doesn't need a subnet per AZ the way an AWS ALB does;
+            # one private frontend in the tier's first subnet is sufficient.
+            subnet_var = subnet_id_by_node[placed_in[0].target] if placed_in else vnet_id
+            frontend_props = [
+                "        properties: {",
+                f"          subnet: {{ id: {subnet_var}.id }}",
+                "          privateIPAllocationMethod: 'Dynamic'",
+                "        }",
+            ]
+
+        probes = []
+        rules = []
+        for listener in lb.attributes["listeners"]:
+            probe_name = f"probe{listener['listener_port']}"
+            rule_name = f"rule{listener['listener_port']}"
+            probes.append(
+                "      {\n"
+                f"        name: {_str(probe_name)}\n"
+                "        properties: {\n"
+                "          protocol: 'Tcp'\n"
+                f"          port: {listener['target_port']}\n"
+                "          intervalInSeconds: 15\n"
+                "          numberOfProbes: 2\n"
+                "        }\n"
+                "      }"
+            )
+            rules.append(
+                "      {\n"
+                f"        name: {_str(rule_name)}\n"
+                "        properties: {\n"
+                f"          frontendIPConfiguration: {{ id: {lb_var}.properties.frontendIPConfigurations[0].id }}\n"
+                f"          backendAddressPool: {{ id: {lb_var}.properties.backendAddressPools[0].id }}\n"
+                f"          probe: {{ id: {lb_var}.properties.probes[{len(probes) - 1}].id }}\n"
+                "          protocol: 'Tcp'\n"
+                f"          frontendPort: {listener['listener_port']}\n"
+                f"          backendPort: {listener['target_port']}\n"
+                "        }\n"
+                "      }"
+            )
+
+        lines += [
+            f"resource {lb_var} 'Microsoft.Network/loadBalancers@2023-05-01' = {{",
+            f"  name: {_str(lb.name)}",
+            "  location: location",
+            "  sku: { name: 'Standard' }",
+            "  properties: {",
+            "    frontendIPConfigurations: [",
+            "      {",
+            "        name: 'frontend'",
+            *frontend_props,
+            "      }",
+            "    ]",
+            "    backendAddressPools: [ { name: 'backendPool' } ]",
+            "    probes: [",
+            ",\n".join(probes),
+            "    ]",
+            "    loadBalancingRules: [",
+            ",\n".join(rules),
+            "    ]",
+            "  }",
+            "}",
+            "",
+        ]
+        # Azure LB has no NSG property of its own — the backend instances'
+        # NICs already carry the tier's NSG (same ingress rules this LB's
+        # listeners were derived from), so enforcement is unaffected.
+        for e in graph.out_edges(lb.id, EdgeKind.FRONTS):
+            target_node = graph.node(e.target)
+            if target_node is not None:
+                backend_pool_ref_by_vm_name[target_node.name] = f"{lb_var}.properties.backendAddressPools[0].id"
+
     for c in plan.compute:
         inst = next(n for n in graph.nodes_of(NodeKind.INSTANCE) if n.name == c.vm_name)
         placed_in = graph.out_edges(inst.id, EdgeKind.PLACED_IN)
@@ -132,8 +222,11 @@ def _resources_bicep(graph: InfrastructureGraph, plan: MigrationPlan, target: Ta
         ref = target.image_reference(inst.attributes["image_key"])
         windows = is_windows[c.resource_name]
 
+        backend_pool_ref = backend_pool_ref_by_vm_name.get(c.vm_name)
         pip_id = None
-        if inst.attributes["subnet_tier"] == "public":
+        # A fronted instance gets its public entry point via the load balancer,
+        # not its own public IP — giving it one too would bypass the LB.
+        if inst.attributes["subnet_tier"] == "public" and not backend_pool_ref:
             pip_id = _id(f"pip-{c.resource_name}")
             lines += [
                 f"resource {pip_id} 'Microsoft.Network/publicIPAddresses@2023-05-01' = {{",
@@ -153,6 +246,8 @@ def _resources_bicep(graph: InfrastructureGraph, plan: MigrationPlan, target: Ta
         ]
         if pip_id:
             ip_config_props.append(f"          publicIPAddress: {{ id: {pip_id}.id }}")
+        if backend_pool_ref:
+            ip_config_props.append(f"          loadBalancerBackendAddressPools: [ {{ id: {backend_pool_ref} }} ]")
         ip_config_props.append("        }")
         nic_body = [
             f"resource {nic_id} 'Microsoft.Network/networkInterfaces@2023-05-01' = {{",

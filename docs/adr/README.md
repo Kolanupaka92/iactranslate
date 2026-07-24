@@ -25,5 +25,6 @@ Format: [Michael Nygard's ADR template](https://cognitect.com/blog/2011/11/15/do
 | [0015](0015-cdk-from-graph.md) | AWS CDK renders from the graph via L1 constructs, reusing CloudFormation's AMI logic | Accepted |
 | [0016](0016-terraform-pulumi-placement-from-graph.md) | Terraform/Pulumi placement moves onto the graph; fixes a subnet-collapse bug | Accepted |
 | [0017](0017-kubernetes-from-graph.md) | Kubernetes renders VMs as KubeVirt VirtualMachines, not fabricated Deployments | Accepted |
+| [0018](0018-load-balancer-topology.md) | Load balancer topology: modeled once, rendered six ways | Accepted |
 
 See also the [Architecture & Design](../architecture.md) overview.

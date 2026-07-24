@@ -114,3 +114,31 @@ def test_terraform_and_graph_agree_on_subnet_placement():
     from_graph = assign_subnets(plan)
     from_terraform = terraform_assign_subnets(plan)
     assert from_graph == from_terraform
+
+
+def test_load_balancer_nodes_front_and_are_placed_and_secured():
+    plan, g = _graph()
+    lbs = g.nodes_of(NodeKind.LOAD_BALANCER)
+    assert lbs, "fixture should have at least one load balancer"
+    subnet_ids = {n.id for n in g.nodes_of(NodeKind.SUBNET)}
+    sg_ids = {n.id for n in g.nodes_of(NodeKind.SECURITY_GROUP)}
+    instance_ids = {n.id for n in g.nodes_of(NodeKind.INSTANCE)}
+    for lb in lbs:
+        placed = g.out_edges(lb.id, EdgeKind.PLACED_IN)
+        secured = g.out_edges(lb.id, EdgeKind.SECURED_BY)
+        fronted = g.out_edges(lb.id, EdgeKind.FRONTS)
+        assert placed and {e.target for e in placed} <= subnet_ids
+        assert secured and {e.target for e in secured} <= sg_ids
+        assert len(fronted) >= 2, "a load balancer should front more than one instance"
+        assert {e.target for e in fronted} <= instance_ids
+
+
+def test_load_balancer_spans_every_subnet_of_its_tier():
+    plan, g = _graph()
+    for lb in g.nodes_of(NodeKind.LOAD_BALANCER):
+        expected = {
+            n.id for n in g.nodes_of(NodeKind.SUBNET)
+            if n.attributes["tier"] == lb.attributes["subnet_tier"]
+        }
+        actual = {e.target for e in g.out_edges(lb.id, EdgeKind.PLACED_IN)}
+        assert actual == expected

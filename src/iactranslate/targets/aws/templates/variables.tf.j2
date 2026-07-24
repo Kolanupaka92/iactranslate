@@ -20,3 +20,15 @@ variable "ami_overrides" {
   type    = map(string)
   default = {}
 }
+
+{% if has_https_listener %}
+variable "acm_certificate_arn" {
+  description = <<-EOT
+    Required for HTTPS load balancer listeners (loadbalancer.tf) - no ACM
+    certificate can be known at generation time. Request/import one in ACM
+    and set its ARN here before deploying.
+  EOT
+  type    = string
+  default = ""
+}
+{% endif %}

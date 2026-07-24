@@ -72,11 +72,73 @@ def test_pulumi_covers_core_resources_gcp(rvtools_path):
     assert main.count("gcp.compute.Instance(") == plan.vm_count
 
 
+def test_pulumi_emits_load_balancers_aws(rvtools_path):
+    plan, _ = _plan(rvtools_path, target="aws")
+    main = render("pulumi", plan, get_target("aws"))["__main__.py"]
+    assert main.count("aws.lb.LoadBalancer(") == len(plan.network.load_balancers)
+    assert "aws.lb.TargetGroup(" in main
+    assert "aws.lb.Listener(" in main
+
+
+def test_pulumi_emits_load_balancers_azure(rvtools_path):
+    plan, _ = _plan(rvtools_path, target="azure")
+    main = render("pulumi", plan, get_target("azure"))["__main__.py"]
+    assert main.count("azure.lb.LoadBalancer(") == len(plan.network.load_balancers)
+    assert "azure.lb.BackendAddressPool(" in main
+    fronted = {vm for lb in plan.network.load_balancers for vm in lb.targets}
+    for c in plan.compute:
+        if c.vm_name in fronted and c.subnet_tier.value == "public":
+            assert f'pip_{c.resource_name} = azure.network.PublicIp(' not in main
+
+
+def test_pulumi_emits_load_balancers_gcp(rvtools_path):
+    plan, _ = _plan(rvtools_path, target="gcp")
+    main = render("pulumi", plan, get_target("gcp"))["__main__.py"]
+    has_internal = any(not lb.internet_facing for lb in plan.network.load_balancers)
+    has_external = any(lb.internet_facing for lb in plan.network.load_balancers)
+    if has_external:
+        assert "gcp.compute.TargetPool(" in main
+    if has_internal:
+        assert "gcp.compute.RegionBackendService(" in main
+        assert "gcp.compute.InstanceGroup(" in main
+    assert "gcp.compute.ForwardingRule(" in main
+
+
 def test_terraform_renderer_matches_generator(rvtools_path):
     from iactranslate.generator import build_files
 
     plan, _ = _plan(rvtools_path)
     assert render("terraform", plan, get_target("aws")) == build_files(plan, get_target("aws"))
+
+
+@pytest.mark.parametrize("cloud", ["aws", "azure", "gcp"])
+def test_terraform_emits_load_balancers(rvtools_path, cloud):
+    plan, _ = _plan(rvtools_path, target=cloud)
+    files = render("terraform", plan, get_target(cloud))
+    assert plan.network.load_balancers, f"fixture should exercise load balancers for {cloud}"
+    assert "loadbalancer.tf" in files
+    lb_tf = files["loadbalancer.tf"]
+    for lb in plan.network.load_balancers:
+        assert lb.resource_name in lb_tf
+
+
+def test_terraform_aws_instances_have_no_individual_eip(rvtools_path):
+    # AWS assigns public IPs at the subnet level (map_public_ip_on_launch), not
+    # per-instance - confirm compute.tf never declares an aws_eip of its own
+    # (the only aws_eip in the project is the NAT gateway's, in networking.tf).
+    plan, _ = _plan(rvtools_path, target="aws")
+    files = render("terraform", plan, get_target("aws"))
+    assert "aws_eip" not in files["compute.tf"]
+
+
+def test_terraform_azure_skips_individual_public_ip_for_fronted_instances(rvtools_path):
+    plan, _ = _plan(rvtools_path, target="azure")
+    compute_tf = render("terraform", plan, get_target("azure"))["compute.tf"]
+    fronted = {vm for lb in plan.network.load_balancers for vm in lb.targets}
+    for c in plan.compute:
+        if c.vm_name in fronted and c.subnet_tier.value == "public":
+            assert f'resource "azurerm_public_ip" "{c.resource_name}"' not in compute_tf
+            assert "load_balancer_backend_address_pools_ids" in compute_tf
 
 
 def test_cloudformation_unsupported_targets_raise(rvtools_path):
@@ -166,6 +228,19 @@ def test_cloudformation_is_deterministic(rvtools_path):
     assert a == b
 
 
+def test_cloudformation_emits_load_balancers(rvtools_path):
+    plan, _ = _plan(rvtools_path)
+    template = json.loads(render("cloudformation", plan, get_target("aws"))["template.json"])
+    types = [res["Type"] for res in template["Resources"].values()]
+    assert types.count("AWS::ElasticLoadBalancingV2::LoadBalancer") == len(plan.network.load_balancers)
+    assert "AWS::ElasticLoadBalancingV2::TargetGroup" in types
+    assert "AWS::ElasticLoadBalancingV2::Listener" in types
+    for res in template["Resources"].values():
+        if res["Type"] == "AWS::ElasticLoadBalancingV2::TargetGroup":
+            for target in res["Properties"]["Targets"]:
+                assert target["Id"]["Ref"] in template["Resources"]
+
+
 def _assert_balanced_braces(text: str) -> None:
     depth = 0
     for ch in text:
@@ -239,6 +314,18 @@ def test_bicep_is_deterministic(rvtools_path):
     assert a == b
 
 
+def test_bicep_emits_load_balancers_and_skips_individual_public_ip(rvtools_path):
+    plan, _ = _plan(rvtools_path, target="azure")
+    resources = render("bicep", plan, get_target("azure"))["resources.bicep"]
+    assert resources.count("Microsoft.Network/loadBalancers@") == len(plan.network.load_balancers)
+    assert "loadBalancerBackendAddressPools" in resources
+    fronted = {vm for lb in plan.network.load_balancers for vm in lb.targets}
+    for c in plan.compute:
+        if c.vm_name in fronted and c.subnet_tier.value == "public":
+            pip_name = f"'{c.resource_name}-pip'"
+            assert pip_name not in resources, f"{c.vm_name} should not get its own public IP"
+
+
 def test_cdk_unsupported_targets_raise(rvtools_path):
     from iactranslate.renderers.cdk import RendererNotSupportedError
 
@@ -290,6 +377,14 @@ def test_cdk_is_deterministic(rvtools_path):
     a = render("cdk", plan, get_target("aws"))
     b = render("cdk", plan, get_target("aws"))
     assert a == b
+
+
+def test_cdk_emits_load_balancers(rvtools_path):
+    plan, _ = _plan(rvtools_path)
+    stack = render("cdk", plan, get_target("aws"))["stack.py"]
+    assert stack.count("elbv2.CfnLoadBalancer(") == len(plan.network.load_balancers)
+    assert "elbv2.CfnTargetGroup(" in stack
+    assert "elbv2.CfnListener(" in stack
 
 
 def _k8s_items(files, name):
@@ -359,3 +454,22 @@ def test_kubernetes_is_deterministic(rvtools_path):
     a = render("kubernetes", plan, get_target("aws"))
     b = render("kubernetes", plan, get_target("aws"))
     assert a == b
+
+
+def test_kubernetes_groups_fronted_instances_into_one_service(rvtools_path):
+    """Instances behind a load balancer share one Service (by tier+environment
+    label), not one Service each — mirroring the real LB fronting the group."""
+    plan, _ = _plan(rvtools_path)
+    files = render("kubernetes", plan, get_target("aws"))
+    services = _k8s_items(files, "services.json")
+    lb_names = {lb.name.replace("_", "-") for lb in plan.network.load_balancers}
+    lb_services = [s for s in services if s["metadata"]["name"] in lb_names]
+    assert len(lb_services) == len(plan.network.load_balancers)
+    for svc in lb_services:
+        assert "iactranslate.io/tier" in svc["spec"]["selector"]
+        assert "iactranslate.io/environment" in svc["spec"]["selector"]
+
+    fronted = {vm for lb in plan.network.load_balancers for vm in lb.targets}
+    per_instance_names = {c.resource_name.replace("_", "-") for c in plan.compute if c.vm_name in fronted}
+    service_names = {s["metadata"]["name"] for s in services}
+    assert not (per_instance_names & service_names), "fronted instances should not also get their own Service"

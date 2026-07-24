@@ -180,10 +180,43 @@ class Subnet(BaseModel):
     availability_zone_index: int = 0
 
 
+class LoadBalancerListener(BaseModel):
+    """One listener/target-port pair, derived from the fronted tier's SG ingress."""
+
+    protocol: str = "HTTP"
+    listener_port: int
+    target_port: int
+
+
+class LoadBalancerPlan(BaseModel):
+    """An internet-facing or internal load balancer fronting a multi-instance tier.
+
+    Modeled whenever an (tier, environment) group has more than one instance —
+    a single web-tier VM has nothing to front; two or more is exactly the case
+    real production traffic is architected behind a load balancer, not pointed
+    at an individual instance.
+    """
+
+    name: str
+    resource_name: str
+    tier: Tier
+    environment: Environment
+    subnet_tier: SubnetTier  # PUBLIC -> internet-facing, PRIVATE -> internal
+    security_group: str
+    listeners: List[LoadBalancerListener] = Field(default_factory=list)
+    health_check_path: str = "/"
+    targets: List[str] = Field(default_factory=list, description="vm_name of each fronted instance")
+
+    @property
+    def internet_facing(self) -> bool:
+        return self.subnet_tier == SubnetTier.PUBLIC
+
+
 class NetworkPlan(BaseModel):
     vpc_cidr: str = "10.0.0.0/16"
     subnets: List[Subnet] = Field(default_factory=list)
     security_groups: List[SecurityGroup] = Field(default_factory=list)
+    load_balancers: List[LoadBalancerPlan] = Field(default_factory=list)
     internet_gateway: bool = True
     nat_gateway: bool = True
 
