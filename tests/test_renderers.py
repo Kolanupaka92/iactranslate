@@ -117,7 +117,7 @@ def test_cloudformation_instances_reference_valid_logical_ids(rvtools_path):
     plan, _ = _plan(rvtools_path)
     template = json.loads(render("cloudformation", plan, get_target("aws"))["template.json"])
     resources = template["Resources"]
-    for logical_id, res in resources.items():
+    for _logical_id, res in resources.items():
         if res["Type"] != "AWS::EC2::Instance":
             continue
         props = res["Properties"]
@@ -139,7 +139,7 @@ def test_cloudformation_per_os_image_resolution(rvtools_path):
     ssm_keys = {k for k in image_keys if _ami_dynamic_ref(k) is not None}
     param_keys = image_keys - ssm_keys
 
-    for iid, res in template["Resources"].items():
+    for _iid, res in template["Resources"].items():
         if res["Type"] != "AWS::EC2::Instance":
             continue
         image_id = res["Properties"]["ImageId"]
