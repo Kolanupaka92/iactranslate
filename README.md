@@ -33,8 +33,8 @@ time — and CI proves the output is valid against the real cloud providers
 - **A full migration-platform layer.** Pre-migration **assessment** (readiness +
   risks), **confidence** scoring, an **executive report**, **architecture
   diagrams**, **infrastructure diff**, **brownfield** adoption (import blocks),
-  **Pulumi**, **CloudFormation** (AWS-only), and **Bicep** (Azure-only) renderers
-  — the latter two walking the
+  **Pulumi**, **CloudFormation** (AWS-only), **Bicep** (Azure-only), and
+  **AWS CDK** (Python, AWS-only) renderers — the latter three walking the
   [Infrastructure Graph](docs/adr/0010-infrastructure-graph.md) — and opt-in
   **GitOps** CI/CD.
 - **Policy engine.** Enforce org rules — no public subnets, approved instance
@@ -55,7 +55,7 @@ iactranslate translate tests/fixtures/rvtools_sample.xlsx --target aws --out ./o
 ```
 
 Other clouds and formats are auto-detected: `--target azure|gcp`,
-`--source auto`, `--renderer terraform|pulumi|cloudformation|bicep`, `--gitops`.
+`--source auto`, `--renderer terraform|pulumi|cloudformation|bicep|cdk`, `--gitops`.
 See the [Operations Guide](docs/operations-guide.md) for the full CLI, API, and web UI.
 
 ## Example: input → output

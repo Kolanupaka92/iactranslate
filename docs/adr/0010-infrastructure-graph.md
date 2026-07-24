@@ -24,10 +24,11 @@ renders **from the graph** (its natural consumer), and the graph ships as
 
 - Structure is defined once. A renderer walks the graph instead of re-deriving
   topology from the plan — proven by the CloudFormation
-  ([0013](0013-cloudformation-from-graph.md)) and Bicep
-  ([0014](0014-bicep-from-graph.md)) renderers, both of which consume
-  `build_graph(plan)` rather than the plan directly. CDK / Kubernetes are the
-  same seam.
+  ([0013](0013-cloudformation-from-graph.md)), Bicep
+  ([0014](0014-bicep-from-graph.md)), and AWS CDK
+  ([0015](0015-cdk-from-graph.md)) renderers, all three of which consume
+  `build_graph(plan)` rather than the plan directly. Kubernetes is the same
+  seam.
 - `graph.json` is a reproducible, tool-agnostic description of the target
   topology — useful for diffing, external visualization, or policy tooling.
 - **Scope, honestly:** Terraform and Pulumi still render from the `MigrationPlan`

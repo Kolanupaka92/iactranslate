@@ -20,8 +20,8 @@ def _plan(path, target="aws"):
     return build_migration_plan(vms, "r", get_target(target)), vms
 
 
-def test_registry_lists_all_four():
-    assert set(list_renderers()) == {"terraform", "pulumi", "cloudformation", "bicep"}
+def test_registry_lists_all_five():
+    assert set(list_renderers()) == {"terraform", "pulumi", "cloudformation", "bicep", "cdk"}
 
 
 def test_unknown_renderer_raises(rvtools_path):
@@ -234,4 +234,57 @@ def test_bicep_is_deterministic(rvtools_path):
     plan, _ = _plan(rvtools_path, target="azure")
     a = render("bicep", plan, get_target("azure"))
     b = render("bicep", plan, get_target("azure"))
+    assert a == b
+
+
+def test_cdk_unsupported_targets_raise(rvtools_path):
+    from iactranslate.renderers.cdk import RendererNotSupportedError
+
+    for cloud in ("azure", "gcp"):
+        plan, _ = _plan(rvtools_path, target=cloud)
+        with pytest.raises(RendererNotSupportedError):
+            render("cdk", plan, get_target(cloud))
+
+
+def test_cdk_files_are_valid_python(rvtools_path):
+    plan, _ = _plan(rvtools_path)
+    files = render("cdk", plan, get_target("aws"))
+    assert set(files) == {"app.py", "stack.py", "requirements.txt", "cdk.json", "README.md"}
+    compile(files["app.py"], "app.py", "exec")
+    compile(files["stack.py"], "stack.py", "exec")
+    json.loads(files["cdk.json"])
+
+
+def test_cdk_covers_core_constructs(rvtools_path):
+    plan, _ = _plan(rvtools_path)
+    stack = render("cdk", plan, get_target("aws"))["stack.py"]
+    for construct in (
+        "ec2.CfnVPC(",
+        "ec2.CfnSubnet(",
+        "ec2.CfnSecurityGroup(",
+        "ec2.CfnInstance(",
+    ):
+        assert construct in stack
+    assert stack.count("ec2.CfnInstance(") == plan.vm_count
+
+
+def test_cdk_uses_ami_resolution_matching_cloudformation(rvtools_path):
+    from iactranslate.renderers.cloudformation import _ami_dynamic_ref, _ami_parameter_name
+
+    plan, _ = _plan(rvtools_path)
+    stack = render("cdk", plan, get_target("aws"))["stack.py"]
+    image_keys = {c.image_key for c in plan.compute}
+    for key in image_keys:
+        dyn = _ami_dynamic_ref(key)
+        if dyn is not None:
+            assert dyn in stack
+        else:
+            assert _ami_parameter_name(key) in stack
+            assert "CfnParameter(" in stack
+
+
+def test_cdk_is_deterministic(rvtools_path):
+    plan, _ = _plan(rvtools_path)
+    a = render("cdk", plan, get_target("aws"))
+    b = render("cdk", plan, get_target("aws"))
     assert a == b

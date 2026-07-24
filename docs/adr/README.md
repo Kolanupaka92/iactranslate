@@ -22,5 +22,6 @@ Format: [Michael Nygard's ADR template](https://cognitect.com/blog/2011/11/15/do
 | [0012](0012-async-jobs-event-bus-audit.md) | Async jobs, an event bus, and an audit trail | Accepted |
 | [0013](0013-cloudformation-from-graph.md) | CloudFormation renders from the graph; AMIs via SSM | Accepted |
 | [0014](0014-bicep-from-graph.md) | Bicep renders from the graph; subscription-scope + module | Accepted |
+| [0015](0015-cdk-from-graph.md) | AWS CDK renders from the graph via L1 constructs, reusing CloudFormation's AMI logic | Accepted |
 
 See also the [Architecture & Design](../architecture.md) overview.
