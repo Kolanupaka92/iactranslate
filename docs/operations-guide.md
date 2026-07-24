@@ -52,9 +52,10 @@ bespoke parser — so it works for every company, not just VMware shops.
 **Status.** CLI + FastAPI + Next.js web UI. On top of the core translator it ships a full
 migration-platform layer — assessment, confidence scoring, executive reports, architecture
 diagrams, infrastructure diff, brownfield adoption, load balancer topology,
+managed-DB re-platforming advice, a Kubernetes discovery source,
 Pulumi/CloudFormation/Bicep/CDK/Kubernetes renderers, a policy engine, an
 Infrastructure Graph IR, async jobs + audit, and opt-in GitOps.
-~237 tests, 7 green CI jobs (lint, pytest 3.9/3.11/3.12, Docker health, web build, real
+~250 tests, 7 green CI jobs (lint, pytest 3.9/3.11/3.12, Docker health, web build, real
 Terraform validate). Repo: `github.com/Kolanupaka92/iactranslate` (private).
 
 ---
@@ -139,7 +140,7 @@ iactranslate/
 |---|---|---|
 | **NormalizedVM** | The canonical unit of a workload (name, cpu, memory_gib, disks, os, ip, …). Every source produces these; everything downstream consumes them. | `models.py` |
 | **MigrationPlan** | The validated object the generator renders: `network` + `compute[]` + `app_groups[]` + `source_platform` + `target` + `region`. | `models.py` |
-| **Source** | Reads one inventory format → raw records that `normalize.py` understands. Has `detect(path)→confidence` and `parse(path, column_map)`. | `sources/base.py` |
+| **Source** | Reads one inventory format → raw records that `normalize.py` understands. Has `detect(path)→confidence` and `parse(path, column_map)`. VMware/Hyper-V/CMDB/cloud are tabular; **Kubernetes** reads `kubectl -o json` (containers sized from resource requests). | `sources/base.py` |
 | **Target** | One cloud: an instance **catalog**, tier→family/subnet/security **mappings**, OS→image detection, and Jinja2 **templates**. | `targets/base.py` |
 | **Provider** | Makes the *structured decisions* (grouping, instance choice). `rule` (deterministic, default) or `anthropic` (Claude). Always re-checked by validation. | `agents/providers/` |
 | **Recommender** | Runs all clouds on one inventory and scores cost (0.45) + fit (0.30) + OS-affinity (0.25). 2.0 adds decisiveness (clear/moderate/close), annualized cost, and estate notes. | `recommend.py` |
@@ -151,6 +152,7 @@ iactranslate/
 | **Infrastructure Diff** | Drift between two inventory snapshots (added/removed/modified + aggregate deltas). | `diff.py` |
 | **Renderer** | Swappable IaC output: `terraform` (default, HCL, all 3 clouds), `pulumi` (Python, all 3 clouds), `cloudformation` (JSON, AWS-only), `bicep` (Azure-only), `cdk` (Python, AWS-only), or `kubernetes` (JSON/KubeVirt, any cloud) — the latter four render from the Infrastructure Graph, not the plan. | `renderers/` |
 | **Brownfield** | Existing cloud fleet with resource ids → Terraform/Pulumi `import` blocks (adopt, don't recreate). | `sources/cloud`, `renderers/` |
+| **Re-platforming advisor** | Flags database-tier workloads as managed-DB candidates (RDS/Cloud SQL/Azure SQL) with engine detection + caveats. Advisory-only — never changes the plan. Emits `replatforming.json`. | `replatform.py` |
 | **GitOps** | Opt-in CI/CD workflow (plan on PR, apply on merge) + .gitignore, target/renderer-aware. | `gitops.py` |
 | **Validation layer** | Never trusts provider output: checks catalog membership, CIDR overlap/containment, duplicate names, referential integrity. | `validation/validators.py` |
 
@@ -169,7 +171,8 @@ iactranslate/
    explicit `--source`); `get_target(name)` picks the cloud.
 2. **Parse.** `source.parse(path, column_map)` → raw records. (VMware reads RVTools sheets;
    Hyper-V converts bytes→MiB; generic maps columns; cloud looks instance types up in the
-   target catalogs to recover vCPU/mem.)
+   target catalogs to recover vCPU/mem; **Kubernetes** reads `kubectl -o json` and sizes each
+   workload from its containers' `resources.requests`, with StatefulSet volume claims as disks.)
 3. **Normalize.** `normalize()` coerces units to canonical (MiB→GiB), parses IPs, dedupes by
    name → `List[NormalizedVM]`. Guardrails: empty → error; > `MAX_VMS` → error.
 4. **Classify** (`agents/classifier.py`). Provider groups VMs into applications, detecting
@@ -198,8 +201,10 @@ iactranslate/
     and (optionally) a `.zip`.
 
 Output tree (per cloud): `versions.tf, provider.tf, variables.tf, terraform.tfvars,
-networking.tf, security.tf, compute.tf, storage.tf, outputs.tf, main.tf, README.md,
-documentation/migration-summary.md, modules/`.
+networking.tf, security.tf, loadbalancer.tf, compute.tf, storage.tf, outputs.tf, main.tf,
+README.md, graph.json, assessment.json, confidence.json, decisions.json,
+documentation/migration-summary.md, modules/` — plus `replatforming.json` when any
+database-tier workloads are detected.
 
 ---
 
@@ -265,8 +270,12 @@ iactranslate translate rvtools.xlsx --target aws --renderer cdk --out ./out-cdk
 
 # Kubernetes/KubeVirt output, works for any target (cloud-agnostic)
 iactranslate translate rvtools.xlsx --target gcp --renderer kubernetes --out ./out-k8s
+
+# Read containerized workloads off a cluster (kubectl -o json) as the source
+kubectl get deployments,statefulsets -A -o json > k8s.json
+iactranslate translate k8s.json --source kubernetes --target aws --out ./out-from-k8s
 ```
-Flags: `--target aws|azure|gcp`, `--source auto|vmware|hyperv|generic|cloud`, `--map`,
+Flags: `--target aws|azure|gcp`, `--source auto|vmware|hyperv|kubernetes|generic|cloud`, `--map`,
 `--region`, `--name`, `--zip`, `--renderer terraform|pulumi|cloudformation|bicep|cdk|kubernetes`
 (CloudFormation and CDK are AWS-only; Bicep is Azure-only; Kubernetes has no
 target restriction), `--gitops` (adds `.github/workflows/*` + `.gitignore`).
@@ -489,7 +498,7 @@ OpenTofu, validates aws/azure/gcp output against real providers).
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| **CLI**: `unknown target '…'` / `unknown source '…'` | Typo / unsupported name. | Use `aws\|azure\|gcp` and `auto\|vmware\|hyperv\|generic\|cloud`. |
+| **CLI**: `unknown target '…'` / `unknown source '…'` | Typo / unsupported name. | Use `aws\|azure\|gcp` and `auto\|vmware\|hyperv\|kubernetes\|generic\|cloud`. |
 | **CLI**: `No workloads found …` | Source parsed 0 rows — wrong source, or the generic auto-detect missed the name/cpu columns. | Pass `--source generic --map "name=…,cpu=…,memory_gib=…"` with your real headers. |
 | **API**: browser `CORS` error / network fail | API started without CORS for the frontend origin. | Start API with `IACTRANSLATE_CORS_ORIGINS=http://localhost:3000`. |
 | **API**: upload returns `413` | File over `IACTRANSLATE_MAX_UPLOAD_MB` (25 by default). | Raise the env var, or trim the export. |

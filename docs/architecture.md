@@ -261,6 +261,7 @@ platform services layered on top.
 
 - ✅ VMware VMs (RVTools `.xlsx`, vSphere CSV)
 - ✅ Microsoft Hyper-V (Get-VM export)
+- ✅ Kubernetes workloads (`kubectl get … -o json` — containers sized from resource requests)
 - ✅ Generic CMDB / spreadsheet exports (ServiceNow, Device42, Lansweeper, hand-rolled)
 - ✅ Existing AWS inventories (re-platform / cross-cloud, with import for brownfield)
 - ✅ Existing Azure inventories
@@ -268,15 +269,15 @@ platform services layered on top.
   Bicep, AWS CDK, Kubernetes/KubeVirt
 - ✅ Load balancer topology (multi-instance tiers front behind an ALB /
   Standard LB / Network LB, per cloud)
+- ✅ Managed-DB re-platforming **advice** (database tiers flagged as RDS / Cloud
+  SQL / Azure SQL candidates — advisory, does not change the plan)
 
 **Not yet supported**
 
-- ✗ Kubernetes / managed Kubernetes (EKS/AKS/GKE) workloads *as a migration source*
-  (the Kubernetes *renderer* above is an output target, not a source reader)
 - ✗ VMware NSX (overlay networking, micro-segmentation)
-- ✗ Database schema / data migration
+- ✗ Database schema / data migration (re-platforming advice above is advisory only)
 - ✗ IAM / identity migration
-- ✗ Serverless (Lambda/Functions) and PaaS databases (RDS/Cloud SQL/Cosmos)
+- ✗ Serverless (Lambda/Functions) and PaaS databases as *migration targets*
 
 The network model is deliberately VM-centric: VPC/VNet, subnets, tier-scoped
 security groups, and — where a tier has more than one instance — a load

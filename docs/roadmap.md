@@ -7,7 +7,7 @@ in CI on `main`.
 
 **Core pipeline**
 - ✅ Deterministic `parse → normalize → agents → validate → render → package`
-- ✅ Source registry: VMware, Hyper-V, generic CMDB/spreadsheet, existing cloud fleet
+- ✅ Source registry: VMware, Hyper-V, Kubernetes, generic CMDB/spreadsheet, existing cloud fleet
 - ✅ Target registry: AWS, Azure, GCP (Terraform)
 - ✅ Rule-engine and Anthropic providers behind one interface (offline default)
 - ✅ Validation layer (catalog membership, CIDR overlap, referential integrity)
@@ -30,6 +30,12 @@ in CI on `main`.
 - ✅ **Load balancer topology** — multi-instance tiers front behind a load
   balancer (ALB / Standard LB / Network LB per cloud), modeled once in
   `NetworkPlan.load_balancers` and rendered by all 6 renderers + the diagram
+- ✅ **Kubernetes workload discovery** — read `kubectl get … -o json` exports
+  as a discovery *source* (containers sized from resource requests) — the input
+  mirror of the KubeVirt renderer (see [ADR 0019](adr/0019-kubernetes-source.md))
+- ✅ **Managed-database re-platforming (advisory)** — flags database-tier
+  workloads as RDS / Cloud SQL / Azure SQL candidates in `replatforming.json`
+  without changing the plan (see [ADR 0020](adr/0020-managed-db-replatforming.md))
 - ✅ GitOps: opt-in CI/CD workflow (plan on PR, apply on merge)
 - ✅ **Policy engine** — pluggable, read-only org rules (`deny`/`warn`) before rendering
 - ✅ **Capability flags** — targets advertise supported features (`GET /targets`)
@@ -50,10 +56,6 @@ in CI on `main`.
 **New targets & renderers**
 - ◻ OCI (Oracle Cloud) target
 - ◻ DigitalOcean target
-
-**Deeper migration coverage**
-- ◻ Managed-database re-platforming (RDS / Cloud SQL / Azure SQL) recommendations
-- ◻ Kubernetes workload discovery
 
 **Enterprise-platform maturity** (the runtime seams — events, jobs, audit, stages,
 capability flags, the `ProjectStore` interface — now exist; these are the durable

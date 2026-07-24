@@ -14,6 +14,7 @@ from .gitops import gitops_files
 from .graph import build_graph
 from .models import MigrationPlan, NormalizedVM
 from .renderers import render
+from .replatform import analyze_replatforming
 from .targets.base import Target
 
 
@@ -81,6 +82,34 @@ def migration_summary(plan: MigrationPlan, vms: Optional[List[NormalizedVM]] = N
         f"- **NAT gateway:** {'yes' if net.nat_gateway else 'no'}",
         "",
     ]
+    if net.load_balancers:
+        lines += ["## Load balancers", ""]
+        for lb in net.load_balancers:
+            scheme = "internet-facing" if lb.internet_facing else "internal"
+            ports = ", ".join(f"{listener.protocol}:{listener.listener_port}" for listener in lb.listeners)
+            lines.append(f"- **{lb.name}** ({scheme}) → {', '.join(lb.targets)} · listeners: {ports}")
+        lines.append("")
+
+    # Managed-DB re-platforming advice (advisory only — the plan still
+    # lift-and-shifts these; see replatforming.json).
+    report = analyze_replatforming(plan, vms)
+    if report.candidates:
+        lines += [
+            "## Managed-database re-platforming (advisory)",
+            "",
+            report.summary,
+            "",
+            "| Database VM | Engine | Lift-and-shift | Managed alternative |",
+            "|---|---|---|---|",
+        ]
+        for cand in report.candidates:
+            lines.append(
+                f"| {cand.vm_name} | {cand.engine} | {cand.current_instance_type} | {cand.managed_service} |"
+            )
+        lines.append("")
+        lines.append("> The generated IaC still provisions VMs for these — re-platforming is a "
+                     "data-migration project, out of scope here. See `replatforming.json` for caveats.")
+        lines.append("")
     return "\n".join(lines) + "\n"
 
 
@@ -153,6 +182,14 @@ def build_project(
     (out / "graph.json").write_text(
         json.dumps(build_graph(plan).model_dump(mode="json"), indent=2)
     )
+
+    # Managed-DB re-platforming advice (advisory only) — written whenever there
+    # are database-tier candidates; the plan itself is unchanged.
+    replatform = analyze_replatforming(plan, vms)
+    if replatform.candidates:
+        (out / "replatforming.json").write_text(
+            json.dumps(replatform.model_dump(mode="json"), indent=2)
+        )
 
     # Architecture diagram — SVG (portable) + Mermaid (renders in GitHub/markdown).
     (docs / "architecture.svg").write_text(architecture_svg(plan))

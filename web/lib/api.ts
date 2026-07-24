@@ -4,7 +4,7 @@ export const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 export type Target = "aws" | "azure" | "gcp";
-export type Source = "auto" | "vmware" | "hyperv" | "cloud" | "generic";
+export type Source = "auto" | "vmware" | "hyperv" | "kubernetes" | "cloud" | "generic";
 
 export interface InstanceRow {
   vm: string;

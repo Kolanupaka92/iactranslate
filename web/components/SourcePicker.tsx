@@ -6,6 +6,7 @@ const SOURCES: { id: Source; label: string }[] = [
   { id: "auto", label: "Auto-detect" },
   { id: "vmware", label: "VMware (RVTools)" },
   { id: "hyperv", label: "Microsoft Hyper-V" },
+  { id: "kubernetes", label: "Kubernetes (kubectl JSON)" },
   { id: "generic", label: "CMDB / spreadsheet" },
   { id: "cloud", label: "Existing cloud fleet" },
 ];

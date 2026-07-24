@@ -202,8 +202,8 @@ export default function Home() {
       <header className="mb-8">
         <h1 className="text-2xl font-bold">IaCTranslate</h1>
         <p className="mt-1 text-sm opacity-70">
-          Convert any infrastructure inventory — VMware, Hyper-V, a CMDB export,
-          or an existing cloud fleet — into production-ready Terraform for AWS,
+          Convert any infrastructure inventory — VMware, Hyper-V, Kubernetes, a
+          CMDB export, or an existing cloud fleet — into production-ready Terraform for AWS,
           Azure, or GCP, in minutes.
         </p>
       </header>

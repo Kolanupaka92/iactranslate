@@ -14,7 +14,7 @@ from iactranslate.sources import (
 
 
 def test_registry_lists_all_sources():
-    assert set(list_sources()) == {"vmware", "hyperv", "cloud", "generic"}
+    assert set(list_sources()) == {"vmware", "hyperv", "kubernetes", "cloud", "generic"}
 
 
 def test_unknown_source_raises():
@@ -30,11 +30,32 @@ def test_unknown_source_raises():
         ("hyperv_path", "hyperv"),
         ("cmdb_path", "generic"),
         ("cloud_path", "cloud"),
+        ("k8s_path", "kubernetes"),
     ],
 )
 def test_auto_detection(request, fixture, expected):
     path = request.getfixturevalue(fixture)
     assert detect_source(path).name == expected
+
+
+def test_kubernetes_source_reads_container_requests(k8s_path):
+    vms = {v.vm_name: v for v in normalize(resolve_source(k8s_path).parse(k8s_path))}
+    # namespace-qualified names, cpu/mem from resources.requests (millicores + Gi).
+    assert vms["prod/prod-web-01"].cpu == 4
+    assert vms["prod/prod-web-01"].memory_gib == 16.0
+    # StatefulSet volumeClaimTemplates storage becomes the workload's disk.
+    assert vms["prod/prod-db-01"].disks_gib == [1000.0]
+
+
+def test_kubernetes_workloads_classify_by_name(k8s_path, tmp_path):
+    result = run_pipeline(
+        input_path=k8s_path, project_name="k8s", out_dir=str(tmp_path / "k8s"), target="aws",
+    )
+    assert result.plan.source_platform == "kubernetes"
+    by_name = {c.vm_name: c for c in result.plan.compute}
+    assert by_name["prod/prod-db-01"].tier.value == "database"
+    assert by_name["prod/prod-web-01"].tier.value == "web"
+    assert by_name["prod/prod-web-01"].environment.value == "production"
 
 
 @pytest.mark.parametrize("fixture", ["hyperv_path", "cmdb_path", "cloud_path"])

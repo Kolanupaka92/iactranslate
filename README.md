@@ -22,9 +22,9 @@ time — and CI proves the output is valid against the real cloud providers
 
 ## Key features
 
-- **Any source → any cloud.** Source registry (VMware · Hyper-V · generic CMDB ·
-  existing cloud fleet) and target registry (AWS · Azure · GCP), both behind
-  protocols — new ones need no pipeline changes.
+- **Any source → any cloud.** Source registry (VMware · Hyper-V · Kubernetes ·
+  generic CMDB · existing cloud fleet) and target registry (AWS · Azure · GCP),
+  both behind protocols — new ones need no pipeline changes.
 - **Unbiased cloud recommendation.** Ranks all three clouds on cost, sizing fit,
   and OS affinity, with explicit weights and plain-English rationale. No vendor
   gets a thumb on the scale.
@@ -33,6 +33,9 @@ time — and CI proves the output is valid against the real cloud providers
 - **Load balancer topology.** Any tier with more than one instance gets fronted
   by a load balancer (ALB / Standard LB / Network LB, per cloud) — modeled
   once, rendered by all six IaC formats and the diagram.
+- **Managed-DB re-platforming advice.** Database-tier workloads are flagged as
+  RDS / Cloud SQL / Azure SQL candidates (`replatforming.json`) — advisory only;
+  the plan still lift-and-shifts them, because data migration is out of scope.
 - **A full migration-platform layer.** Pre-migration **assessment** (readiness +
   risks), **confidence** scoring, an **executive report**, **architecture
   diagrams**, **infrastructure diff**, **brownfield** adoption (import blocks),
@@ -59,8 +62,8 @@ iactranslate translate tests/fixtures/rvtools_sample.xlsx --target aws --out ./o
 ```
 
 Other clouds and formats are auto-detected: `--target azure|gcp`,
-`--source auto`, `--renderer terraform|pulumi|cloudformation|bicep|cdk|kubernetes`,
-`--gitops`.
+`--source auto|vmware|hyperv|kubernetes|generic|cloud`,
+`--renderer terraform|pulumi|cloudformation|bicep|cdk|kubernetes`, `--gitops`.
 See the [Operations Guide](docs/operations-guide.md) for the full CLI, API, and web UI.
 
 ## Example: input → output

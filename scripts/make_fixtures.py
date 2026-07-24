@@ -8,6 +8,7 @@ Run:  python scripts/make_fixtures.py
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pandas as pd
@@ -178,6 +179,52 @@ def build_cloud(path: Path) -> None:
     pd.DataFrame(rows).to_csv(path, index=False)
 
 
+def build_k8s(path: Path) -> None:
+    """A `kubectl get deployments,statefulsets -A -o json`-shaped export."""
+    def _cpu(cores: int) -> str:
+        return f"{cores * 1000}m"  # exercise millicore parsing
+
+    def _mem(gib: int) -> str:
+        return f"{gib}Gi"
+
+    items = []
+    for (vm, cpu, mem, disk, *_rest) in VMS:
+        namespace = "prod" if vm.startswith("prod") else "dev"
+        is_db = "db" in vm
+        kind = "StatefulSet" if is_db else "Deployment"
+        replicas = 2 if vm.endswith(("web-01", "app-01")) else 1
+        image = (
+            "postgres:16" if is_db else
+            ("nginx:1.27" if "web" in vm else "registry.local/app:1.4")
+        )
+        container = {
+            "name": vm.split("-", 1)[-1],
+            "image": image,
+            "resources": {
+                "requests": {"cpu": _cpu(cpu), "memory": _mem(mem)},
+                "limits": {"cpu": _cpu(cpu), "memory": _mem(mem)},
+            },
+        }
+        obj = {
+            "apiVersion": "apps/v1",
+            "kind": kind,
+            "metadata": {"name": vm, "namespace": namespace},
+            "spec": {
+                "replicas": replicas,
+                "template": {"spec": {"containers": [container]}},
+            },
+        }
+        if is_db:
+            obj["spec"]["volumeClaimTemplates"] = [
+                {"metadata": {"name": "data"},
+                 "spec": {"resources": {"requests": {"storage": f"{disk}Gi"}}}}
+            ]
+        items.append(obj)
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"apiVersion": "v1", "kind": "List", "items": items}, indent=2))
+
+
 def main() -> None:
     builders = {
         "rvtools_sample.xlsx": build_rvtools,
@@ -186,6 +233,7 @@ def main() -> None:
         "cmdb_sample.csv": build_cmdb,
         "cmdb_util_sample.csv": build_cmdb_util,
         "cloud_sample.csv": build_cloud,
+        "k8s_sample.json": build_k8s,
     }
     for name, builder in builders.items():
         builder(FIXTURES / name)

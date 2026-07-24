@@ -97,9 +97,9 @@
     <div class="wrap">
       <div class="eyebrow">IaCTranslate</div>
       <h1>Any inventory in.<br>Any cloud out.<br><span class="accent">A migration platform.</span></h1>
-      <p class="lead" style="margin-top:22px">The AI migration platform that turns a company's existing infrastructure inventory — VMware, Hyper-V, a CMDB, or an existing cloud fleet — into production-ready, provider-validated Terraform (or Pulumi) for AWS, Azure, or GCP. It assesses the estate, recommends the cloud, enforces policy, and explains every decision.</p>
+      <p class="lead" style="margin-top:22px">The AI migration platform that turns a company's existing infrastructure inventory — VMware, Hyper-V, Kubernetes, a CMDB, or an existing cloud fleet — into production-ready, provider-validated IaC (Terraform, Pulumi, CloudFormation, Bicep, CDK, or Kubernetes) for AWS, Azure, or GCP. It assesses the estate, recommends the cloud, enforces policy, and explains every decision.</p>
       <div class="flow">
-        <span class="node">VMware</span><span class="node">Hyper-V</span><span class="node">CMDB</span><span class="node">Cloud</span>
+        <span class="node">VMware</span><span class="node">Hyper-V</span><span class="node">Kubernetes</span><span class="node">CMDB</span><span class="node">Cloud</span>
         <span class="arrow"><span class="dash">──▶</span></span>
         <span class="node hot">IaCTranslate</span>
         <span class="arrow"><span class="dash">──▶</span></span>
@@ -147,8 +147,8 @@
         <span class="accent">parse</span> → <span class="accent">normalize</span> → agents(<span class="amber">classify → rightsize → network</span>) → <span class="accent">validate</span> → <span class="accent">policy</span> → render → <span class="accent">package</span></p>
       </div>
       <div class="grid" style="grid-template-columns:1fr 1fr;margin-top:14px">
-        <div class="card"><h3 class="kicker">Sources (input) · 4</h3><p style="margin-top:6px;color:var(--ink)">VMware · Hyper-V · <b class="accent">Generic CMDB</b> · Cloud fleet — auto-detected. The generic reader ingests <em>any</em> spreadsheet with no bespoke parser.</p></div>
-        <div class="card"><h3 class="kicker">Targets (output) · 3</h3><p style="margin-top:6px;color:var(--ink)">AWS · Azure · GCP — each a catalog + tier mapping + templates. Terraform <em>or</em> Pulumi from the same plan. New clouds slot in without touching the pipeline.</p></div>
+        <div class="card"><h3 class="kicker">Sources (input) · 5</h3><p style="margin-top:6px;color:var(--ink)">VMware · Hyper-V · <b class="accent">Kubernetes</b> · <b class="accent">Generic CMDB</b> · Cloud fleet — auto-detected. The generic reader ingests <em>any</em> spreadsheet with no bespoke parser.</p></div>
+        <div class="card"><h3 class="kicker">Targets · 3 clouds × 6 IaC formats</h3><p style="margin-top:6px;color:var(--ink)">AWS · Azure · GCP — each a catalog + tier mapping + templates. Terraform, Pulumi, CloudFormation, Bicep, CDK, or Kubernetes from the same plan. New clouds slot in without touching the pipeline.</p></div>
       </div>
       <p class="lead" style="margin-top:18px">The AI is optional and behind an interface — it defaults to a deterministic rule engine, so it runs offline with zero keys and is fully reproducible.</p>
     </div>
@@ -166,6 +166,7 @@
         <div class="card"><h3 class="kicker">Govern</h3><p style="margin-top:5px">A <b class="accent">policy engine</b> blocks rendering on org rules — no public IPs, budget caps, approved families, naming.</p></div>
         <div class="card"><h3 class="kicker">Report</h3><p style="margin-top:5px">A client-ready <b class="accent">executive report</b> + architecture diagrams, generated with the project.</p></div>
         <div class="card"><h3 class="kicker">Ship</h3><p style="margin-top:5px"><b class="accent">Brownfield</b> import for existing fleets, <b class="accent">GitOps</b> CI/CD, infra diff, async jobs + audit trail.</p></div>
+        <div class="card"><h3 class="kicker">Re-platform</h3><p style="margin-top:5px">Database tiers flagged as <b class="accent">managed-DB candidates</b> (RDS / Cloud SQL / Azure SQL); multi-instance tiers auto-fronted by a <b class="accent">load balancer</b>.</p></div>
       </div>
     </div>
   </section>
@@ -180,11 +181,11 @@
         <thead><tr><th>Capability</th><th>IaCTranslate</th><th>AWS Migration Hub</th><th>Azure Migrate</th><th>Google Migrate</th></tr></thead>
         <tbody>
           <tr>
-            <td>Multi-source (VMware / Hyper-V / CMDB / cloud)</td>
+            <td>Multi-source (VMware / Hyper-V / Kubernetes / CMDB / cloud)</td>
             <td class="us">Yes ✓</td><td class="part">Agents</td><td class="part">Agents</td><td class="part">Agents</td>
           </tr>
           <tr>
-            <td>Portable IaC output (Terraform / Pulumi)</td>
+            <td>Portable IaC output (Terraform / Pulumi / CFN / Bicep / CDK / K8s)</td>
             <td class="us">Yes ✓</td><td class="no">No</td><td class="no">No</td><td class="no">No</td>
           </tr>
           <tr>
@@ -216,15 +217,15 @@
       <div class="eyebrow">Proof, not slideware</div>
       <h2>The product is built — and the output actually validates.</h2>
       <div class="row" style="margin-top:8px;gap:26px">
-        <div class="stat"><b>4→3</b><span>sources → clouds, live</span></div>
-        <div class="stat"><b>184</b><span>automated tests</span></div>
+        <div class="stat"><b>5→3</b><span>sources → clouds, live</span></div>
+        <div class="stat"><b>250</b><span>automated tests</span></div>
         <div class="stat"><b>7/7</b><span>CI jobs green</span></div>
         <div class="stat"><b class="accent">tofu&nbsp;✓</b><span>real provider validate</span></div>
       </div>
       <ul class="clean" style="margin-top:24px">
         <li>Generated Terraform passes <b>real <code>tofu validate</code></b> against the actual AWS, azurerm, and google providers — enforced continuously in CI.</li>
-        <li>Shipping today: a <b>CLI</b>, a hardened <b>FastAPI</b> service (sync + <b>async jobs</b> + audit), and a <b>Next.js web app</b> — plus assessment, confidence, executive reports, diagrams, infra diff, a <b>policy engine</b>, an Infrastructure-Graph IR, and <b>Pulumi</b> output for all three clouds.</li>
-        <li>Engineered like a platform: <b>12 architecture decision records</b>, deterministic + offline + reproducible, non-root Docker, streamed upload caps.</li>
+        <li>Shipping today: a <b>CLI</b>, a hardened <b>FastAPI</b> service (sync + <b>async jobs</b> + audit), and a <b>Next.js web app</b> — plus assessment, confidence, executive reports, diagrams, infra diff, a <b>policy engine</b>, an Infrastructure-Graph IR, load-balancer topology, managed-DB re-platforming advice, and <b>six IaC formats</b> (Terraform, Pulumi, CloudFormation, Bicep, CDK, Kubernetes).</li>
+        <li>Engineered like a platform: <b>20 architecture decision records</b>, deterministic + offline + reproducible, non-root Docker, streamed upload caps.</li>
       </ul>
     </div>
   </section>
@@ -298,8 +299,9 @@
         <div class="card">
           <h3 class="kicker">Done — today</h3>
           <ul class="clean" style="margin-top:10px">
-            <li>4 sources → 3 clouds · Terraform + Pulumi renderers</li>
+            <li>5 sources → 3 clouds · 6 IaC formats (TF · Pulumi · CFN · Bicep · CDK · K8s)</li>
             <li>Assessment · recommendation · confidence · reports · diagrams · diff</li>
+            <li>Load-balancer topology · managed-DB re-platforming advice</li>
             <li>Policy engine · brownfield import · GitOps · async jobs + audit</li>
           </ul>
         </div>
@@ -308,7 +310,7 @@
           <ul class="clean" style="margin-top:10px">
             <li>Persistence (Postgres) + object storage + durable job queue</li>
             <li>Auth (OIDC/SAML) + RBAC → multi-tenant SaaS</li>
-            <li>Notifications, ticketing (Jira/ServiceNow), Bicep/CDK renderers</li>
+            <li>Notifications, ticketing (Jira/ServiceNow), OCI / DigitalOcean targets</li>
           </ul>
         </div>
       </div>

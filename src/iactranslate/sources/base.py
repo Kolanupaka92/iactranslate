@@ -7,6 +7,7 @@ they only describe *where the estate came from*, never where it's going.
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Dict, List, Optional, Protocol, runtime_checkable
 
@@ -46,6 +47,19 @@ def is_xlsx(path: str) -> bool:
 
 def is_csv(path: str) -> bool:
     return suffix(path) == ".csv"
+
+
+def is_json(path: str) -> bool:
+    return suffix(path) == ".json"
+
+
+def load_json(path: str) -> object:
+    """Parse a JSON file (returns None on any failure — detection must never raise)."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def sheet_names(path: str) -> List[str]:

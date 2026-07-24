@@ -7,12 +7,14 @@ from .base import RawRecord, Source  # noqa: F401
 from .cloud import CloudSource
 from .generic import GenericSource
 from .hyperv import HypervSource
+from .kubernetes import KubernetesSource
 from .vmware import VmwareSource
 
 # Order matters only for stable tie-breaks; detection uses confidence scores.
 _REGISTRY: Dict[str, Source] = {
     VmwareSource.name: VmwareSource(),
     HypervSource.name: HypervSource(),
+    KubernetesSource.name: KubernetesSource(),
     CloudSource.name: CloudSource(),
     GenericSource.name: GenericSource(),  # always-eligible floor
 }

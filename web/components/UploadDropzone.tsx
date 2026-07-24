@@ -2,7 +2,7 @@
 
 import { useCallback, useRef, useState } from "react";
 
-const ACCEPTED = [".xlsx", ".xls", ".xlsm", ".csv"];
+const ACCEPTED = [".xlsx", ".xls", ".xlsm", ".csv", ".json"];
 const MAX_MB = 25;
 
 export default function UploadDropzone({
@@ -24,7 +24,7 @@ export default function UploadDropzone({
       const suffix = `.${file.name.split(".").pop()?.toLowerCase()}`;
       if (!ACCEPTED.includes(suffix)) {
         setLocalError(
-          `Unsupported file type "${suffix}" — expected an RVTools .xlsx or a VMware .csv export.`,
+          `Unsupported file type "${suffix}" — expected an .xlsx/.csv inventory export or a Kubernetes .json export.`,
         );
         return;
       }
@@ -65,7 +65,7 @@ export default function UploadDropzone({
           {fileName ? `Uploaded: ${fileName}` : "Drop your discovery export here"}
         </p>
         <p className="mt-1 text-sm opacity-70">
-          Any inventory export (.xlsx / .csv) — max {MAX_MB} MB. Click to browse.
+          Any inventory export (.xlsx / .csv / .json) — max {MAX_MB} MB. Click to browse.
         </p>
         <input
           ref={inputRef}
