@@ -4,9 +4,10 @@
 for any major cloud — deterministically, offline, and unbiased.**
 
 Feed it a VMware (RVTools) export, a Hyper-V dump, a CMDB/spreadsheet, or an
-existing AWS/Azure fleet. Get back reviewable **Terraform or Pulumi** for **AWS,
-Azure, or GCP**, plus a migration assessment, a cloud recommendation, and a
-client-ready report — without ever connecting to the customer environment.
+existing AWS/Azure fleet. Get back reviewable **Terraform, Pulumi, or
+CloudFormation** for **AWS, Azure, or GCP**, plus a migration assessment, a
+cloud recommendation, and a client-ready report — without ever connecting to
+the customer environment.
 
 It's **not** "an LLM writes Terraform." It's a deterministic translation layer:
 
@@ -32,7 +33,9 @@ time — and CI proves the output is valid against the real cloud providers
 - **A full migration-platform layer.** Pre-migration **assessment** (readiness +
   risks), **confidence** scoring, an **executive report**, **architecture
   diagrams**, **infrastructure diff**, **brownfield** adoption (import blocks),
-  a **Pulumi** renderer, and opt-in **GitOps** CI/CD.
+  **Pulumi** and **CloudFormation** renderers (the latter walking the
+  [Infrastructure Graph](docs/adr/0010-infrastructure-graph.md), AWS-only), and
+  opt-in **GitOps** CI/CD.
 - **Policy engine.** Enforce org rules — no public subnets, approved instance
   families, budget caps, naming conventions — as pluggable, read-only policies
   (`deny` blocks rendering, `warn` reports) before any IaC is written.
@@ -51,8 +54,8 @@ iactranslate translate tests/fixtures/rvtools_sample.xlsx --target aws --out ./o
 ```
 
 Other clouds and formats are auto-detected: `--target azure|gcp`,
-`--source auto`, `--renderer terraform|pulumi`, `--gitops`. See the
-[Operations Guide](docs/operations-guide.md) for the full CLI, API, and web UI.
+`--source auto`, `--renderer terraform|pulumi|cloudformation`, `--gitops`. See
+the [Operations Guide](docs/operations-guide.md) for the full CLI, API, and web UI.
 
 ## Example: input → output
 

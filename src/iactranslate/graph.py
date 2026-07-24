@@ -117,7 +117,19 @@ def build_graph(plan: MigrationPlan) -> InfrastructureGraph:
         sg_id_by_name[sg.name] = sid
         nodes.append(GraphNode(
             id=sid, kind=NodeKind.SECURITY_GROUP, name=sg.name,
-            attributes={"ingress_rules": len(sg.ingress)},
+            attributes={
+                "description": sg.description,
+                "ingress": [
+                    {
+                        "description": r.description,
+                        "protocol": r.protocol,
+                        "from_port": r.from_port,
+                        "to_port": r.to_port,
+                        "cidr_blocks": list(r.cidr_blocks),
+                    }
+                    for r in sg.ingress
+                ],
+            },
         ))
 
     # Instances, placed in a subnet of their tier and secured by their SG.
@@ -133,6 +145,9 @@ def build_graph(plan: MigrationPlan) -> InfrastructureGraph:
                 "subnet_tier": c.subnet_tier.value,
                 "vcpu": c.vcpu,
                 "memory_gib": c.memory_gib,
+                "image_key": c.image_key,
+                "root_volume_gib": c.root_volume_gib,
+                "extra_volumes_gib": list(c.extra_volumes_gib),
             },
         ))
         subnet_target = first_subnet_of_tier.get(c.subnet_tier.value, any_subnet)

@@ -52,6 +52,25 @@ def test_instance_attributes_carry_topology():
     assert inst.attributes["tier"] in {"web", "app", "database", "cache", "other"}
 
 
+def test_instance_attributes_carry_render_detail():
+    plan, g = _graph()
+    for c, inst in zip(plan.compute, g.nodes_of(NodeKind.INSTANCE)):
+        assert inst.attributes["image_key"] == c.image_key
+        assert inst.attributes["root_volume_gib"] == c.root_volume_gib
+        assert inst.attributes["extra_volumes_gib"] == list(c.extra_volumes_gib)
+
+
+def test_security_group_attributes_carry_ingress_rules():
+    plan, g = _graph()
+    for sg, node in zip(plan.network.security_groups, g.nodes_of(NodeKind.SECURITY_GROUP)):
+        assert len(node.attributes["ingress"]) == len(sg.ingress)
+        for rule, r in zip(node.attributes["ingress"], sg.ingress):
+            assert rule["protocol"] == r.protocol
+            assert rule["from_port"] == r.from_port
+            assert rule["to_port"] == r.to_port
+            assert rule["cidr_blocks"] == r.cidr_blocks
+
+
 def test_diagram_consumes_graph_identically():
     plan, g = _graph()
     # The convenience wrapper builds the graph; both paths must agree.

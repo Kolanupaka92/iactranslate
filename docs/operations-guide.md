@@ -51,8 +51,8 @@ bespoke parser — so it works for every company, not just VMware shops.
 
 **Status.** CLI + FastAPI + Next.js web UI. On top of the core translator it ships a full
 migration-platform layer — assessment, confidence scoring, executive reports, architecture
-diagrams, infrastructure diff, brownfield adoption, a Pulumi renderer, a policy engine, an
-Infrastructure Graph IR, async jobs + audit, and opt-in GitOps.
+diagrams, infrastructure diff, brownfield adoption, Pulumi and CloudFormation renderers, a
+policy engine, an Infrastructure Graph IR, async jobs + audit, and opt-in GitOps.
 ~184 tests, 7 green CI jobs (lint, pytest 3.9/3.11/3.12, Docker health, web build, real
 Terraform validate). Repo: `github.com/Kolanupaka92/iactranslate` (private).
 
@@ -147,7 +147,7 @@ iactranslate/
 | **Executive Report** | One client-facing HTML page composing plan + cost + assessment + confidence + recommendation + architecture diagram. | `exec_report.py` |
 | **Architecture Diagram** | Deterministic SVG + Mermaid of the target topology (VPC → subnets → tiered instances). | `diagram.py` |
 | **Infrastructure Diff** | Drift between two inventory snapshots (added/removed/modified + aggregate deltas). | `diff.py` |
-| **Renderer** | Swappable IaC output for the same plan: `terraform` (default, HCL) or `pulumi` (Python, AWS). | `renderers/` |
+| **Renderer** | Swappable IaC output: `terraform` (default, HCL, all 3 clouds), `pulumi` (Python, all 3 clouds), or `cloudformation` (JSON, AWS-only — the first to render from the Infrastructure Graph). | `renderers/` |
 | **Brownfield** | Existing cloud fleet with resource ids → Terraform/Pulumi `import` blocks (adopt, don't recreate). | `sources/cloud`, `renderers/` |
 | **GitOps** | Opt-in CI/CD workflow (plan on PR, apply on merge) + .gitignore, target/renderer-aware. | `gitops.py` |
 | **Validation layer** | Never trusts provider output: checks catalog membership, CIDR overlap/containment, duplicate names, referential integrity. | `validation/validators.py` |
@@ -251,10 +251,13 @@ iactranslate translate my-cmdb.csv --source generic \
 ```bash
 # Pulumi output (AWS) instead of Terraform, with a GitOps CI/CD workflow
 iactranslate translate rvtools.xlsx --target aws --renderer pulumi --gitops --out ./out-pl
+
+# CloudFormation output (AWS-only), rendered from the Infrastructure Graph
+iactranslate translate rvtools.xlsx --target aws --renderer cloudformation --out ./out-cfn
 ```
 Flags: `--target aws|azure|gcp`, `--source auto|vmware|hyperv|generic|cloud`, `--map`,
-`--region`, `--name`, `--zip`, `--renderer terraform|pulumi` (Pulumi is AWS-only),
-`--gitops` (adds `.github/workflows/*` + `.gitignore`).
+`--region`, `--name`, `--zip`, `--renderer terraform|pulumi|cloudformation`
+(CloudFormation is AWS-only), `--gitops` (adds `.github/workflows/*` + `.gitignore`).
 
 Every generated project also ships, under `documentation/`, an executive report
 (`executive-report.html`), an architecture diagram (`architecture.svg`/`.md`), the

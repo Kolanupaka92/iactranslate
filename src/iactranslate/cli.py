@@ -272,7 +272,8 @@ def build_parser() -> argparse.ArgumentParser:
     t.add_argument("--region", default=None, help="Target region/location (defaults per cloud).")
     t.add_argument("--name", default=None, help="Project name (defaults to input filename).")
     t.add_argument("--renderer", default="terraform",
-                   help=f"IaC output format ({', '.join(list_renderers())}). Pulumi is AWS-only.")
+                   help=f"IaC output format ({', '.join(list_renderers())}). "
+                        "CloudFormation is AWS-only.")
     t.add_argument("--gitops", action="store_true",
                    help="Include a GitOps CI/CD workflow (plan on PR, apply on merge) + .gitignore.")
     t.add_argument("--policy", default=None,

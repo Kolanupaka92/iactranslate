@@ -25,6 +25,8 @@ in CI on `main`.
 - ✅ Infrastructure diff (drift between two snapshots)
 - ✅ Brownfield support (Terraform/Pulumi `import` for existing fleets)
 - ✅ Multi-renderer: Pulumi (AWS, Azure, GCP) alongside Terraform
+- ✅ **CloudFormation renderer** (AWS-only) — the first renderer that consumes the
+  Infrastructure Graph directly rather than the plan, proving the IR seam (ADR 0010)
 - ✅ GitOps: opt-in CI/CD workflow (plan on PR, apply on merge)
 - ✅ **Policy engine** — pluggable, read-only org rules (`deny`/`warn`) before rendering
 - ✅ **Capability flags** — targets advertise supported features (`GET /targets`)
@@ -45,7 +47,7 @@ in CI on `main`.
 **New targets & renderers**
 - ◻ OCI (Oracle Cloud) target
 - ◻ DigitalOcean target
-- ◻ Bicep renderer
+- ◻ Bicep renderer (Azure)
 - ◻ AWS CDK renderer
 
 **Deeper migration coverage**
@@ -68,8 +70,9 @@ backends and integrations that plug into them, via the
 | v2.6 | Ticketing (Jira/ServiceNow/Azure DevOps) from the assessment | assessment (shipped) |
 | v3.0 | Multi-tenant SaaS + plugin ecosystem + OPA-compatible policy | policy engine, source/target registries (shipped) |
 
-**Renderers via the Infrastructure Graph** (the IR seam now exists):
-- ◻ CloudFormation, Bicep, AWS CDK, Kubernetes back-ends consuming `graph.json`
+**Renderers via the Infrastructure Graph** (the IR seam now proven):
+- ✅ CloudFormation (AWS) — walks `graph.json`, not the plan
+- ◻ Bicep, AWS CDK, Kubernetes back-ends consuming `graph.json`
 - ◻ Migrate the Terraform/Pulumi renderers onto the graph
 
 **Considered, deliberately deferred** (tracked so the reasoning is explicit):

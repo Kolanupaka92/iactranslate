@@ -13,12 +13,14 @@ from typing import Callable, Dict, List
 from ..generator import build_files as _build_terraform
 from ..models import MigrationPlan
 from ..targets.base import Target
+from .cloudformation import build_cloudformation_files as _build_cloudformation
 from .pulumi import build_pulumi_files as _build_pulumi
 
 # name -> (fn(plan, target) -> {filename: content}, human label)
 _RENDERERS: Dict[str, tuple] = {
     "terraform": (_build_terraform, "Terraform (HCL)"),
     "pulumi": (_build_pulumi, "Pulumi (Python)"),
+    "cloudformation": (_build_cloudformation, "CloudFormation (JSON, AWS-only)"),
 }
 
 
