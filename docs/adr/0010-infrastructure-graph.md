@@ -28,7 +28,9 @@ renders **from the graph** (its natural consumer), and the graph ships as
   ([0014](0014-bicep-from-graph.md)), and AWS CDK
   ([0015](0015-cdk-from-graph.md)) renderers, all three of which consume
   `build_graph(plan)` rather than the plan directly. Kubernetes is the same
-  seam.
+  seam. Terraform/Pulumi now share the graph's placement decision too — see
+  [0016](0016-terraform-pulumi-placement-from-graph.md), which also documents
+  a real bug that auditing this shared seam caught.
 - `graph.json` is a reproducible, tool-agnostic description of the target
   topology — useful for diffing, external visualization, or policy tooling.
 - **Scope, honestly:** Terraform and Pulumi still render from the `MigrationPlan`

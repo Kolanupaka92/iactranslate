@@ -89,15 +89,16 @@ This is why "any source → any cloud, any IaC tool" is a small amount of code
 rather than an N×M explosion: the pipeline in the middle is written **once**
 against the two canonical types.
 
-**The Infrastructure Graph.** Between the plan and the renderers sits a third,
-optional artifact: a renderer-neutral **topology IR** (`graph.build_graph`) —
-typed nodes (VPC, subnet, security group, instance) and edges (`contains`,
+**The Infrastructure Graph.** Between the plan and the renderers sits a third
+artifact: a renderer-neutral **topology IR** (`graph.build_graph`) — typed
+nodes (VPC, subnet, security group, instance) and edges (`contains`,
 `placed_in`, `secured_by`) derived from the plan and shipped as `graph.json`.
-The architecture diagram renders *from this graph*, and it is the intended seam
-for future renderers (CloudFormation, Bicep, CDK, Kubernetes) that would rather
-walk a topology than re-derive one. Terraform and Pulumi render from the plan
-today and migrate to the graph incrementally — see
-[ADR 0010](adr/0010-infrastructure-graph.md).
+The architecture diagram, CloudFormation, Bicep, and CDK all render *from this
+graph*. Terraform and Pulumi still render their resources from the plan, but
+get subnet placement from the graph too (`graph.assign_subnets`) — one
+placement decision every renderer shares, not six independent ones — see
+[ADR 0010](adr/0010-infrastructure-graph.md) and
+[ADR 0016](adr/0016-terraform-pulumi-placement-from-graph.md).
 
 ---
 

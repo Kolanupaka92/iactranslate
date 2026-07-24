@@ -4,7 +4,8 @@ from iactranslate.diagram import (
     architecture_svg,
     architecture_svg_from_graph,
 )
-from iactranslate.graph import EdgeKind, NodeKind, build_graph
+from iactranslate.generator.renderer import _assign_subnets as terraform_assign_subnets
+from iactranslate.graph import EdgeKind, NodeKind, assign_subnets, build_graph
 from iactranslate.normalize import normalize
 from iactranslate.sources import resolve_source
 from iactranslate.targets import get_target
@@ -88,3 +89,28 @@ def test_graph_serializes():
     data = g.model_dump(mode="json")
     assert data["schema_version"] == 1
     assert data["nodes"] and data["edges"]
+
+
+def test_instances_spread_across_subnets_of_the_same_tier():
+    """Regression: instances of one tier must not all collapse onto a single
+    subnet when more than one subnet of that tier exists (ADR 0016)."""
+    plan, g = _graph()
+    public_subnets = {n.id for n in g.nodes_of(NodeKind.SUBNET) if n.attributes["tier"] == "public"}
+    used_public_subnets = {
+        e.target
+        for inst in g.nodes_of(NodeKind.INSTANCE)
+        if inst.attributes["subnet_tier"] == "public"
+        for e in g.out_edges(inst.id, EdgeKind.PLACED_IN)
+    }
+    assert len(public_subnets) > 1, "fixture should exercise multiple public subnets"
+    assert len(used_public_subnets) > 1, "public instances all landed on the same subnet"
+    assert used_public_subnets <= public_subnets
+
+
+def test_terraform_and_graph_agree_on_subnet_placement():
+    """Terraform/Pulumi's subnet_of must exactly match the graph's placed_in
+    edges — one placement decision, not two independent ones (ADR 0016)."""
+    plan, g = _graph()
+    from_graph = assign_subnets(plan)
+    from_terraform = terraform_assign_subnets(plan)
+    assert from_graph == from_terraform

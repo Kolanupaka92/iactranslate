@@ -72,8 +72,10 @@ backends and integrations that plug into them, via the
 - ✅ CloudFormation (AWS) — walks `graph.json`, not the plan
 - ✅ Bicep (Azure) — subscription-scope + module, also walks `graph.json`
 - ✅ AWS CDK (Python) — L1 `Cfn*` constructs, also walks `graph.json`
+- ✅ Terraform/Pulumi placement (subnet assignment) unified onto the graph —
+  fixed a subnet-collapse bug this surfaced (see [ADR 0016](adr/0016-terraform-pulumi-placement-from-graph.md))
 - ◻ Kubernetes back-ends consuming `graph.json`
-- ◻ Migrate the Terraform/Pulumi renderers onto the graph
+- ◻ Migrate the rest of Terraform/Pulumi's resource generation onto the graph
 
 **Considered, deliberately deferred** (tracked so the reasoning is explicit):
 

@@ -11,6 +11,7 @@ from typing import Dict, List
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
+from ..graph import EdgeKind, NodeKind, build_graph
 from ..models import ComputePlan, MigrationPlan, SubnetTier, terraform_safe_name
 from ..targets.base import Target
 
@@ -34,19 +35,27 @@ def _env(template_dir: Path) -> Environment:
 
 
 def _assign_subnets(plan: MigrationPlan) -> Dict[str, str]:
-    """Map each compute vm_name -> a subnet resource name, spread across AZs."""
-    public = [s.resource_name for s in plan.network.subnets if s.tier == SubnetTier.PUBLIC]
-    private = [s.resource_name for s in plan.network.subnets if s.tier == SubnetTier.PRIVATE]
-    counters = {SubnetTier.PUBLIC: 0, SubnetTier.PRIVATE: 0}
+    """Map each compute vm_name -> a subnet resource name.
+
+    Derived from the Infrastructure Graph's `placed_in` edges (see
+    `graph.assign_subnets` / ADR 0016) rather than re-deriving placement here,
+    so Terraform/Pulumi and the graph-based renderers (CloudFormation, Bicep,
+    CDK) and the diagram can never disagree about where an instance lands.
+    """
+    graph = build_graph(plan)
+    subnet_resource_by_id = {n.id: n.id.split(":", 1)[1] for n in graph.nodes_of(NodeKind.SUBNET)}
     mapping: Dict[str, str] = {}
-    for c in plan.compute:
-        pool = public if c.subnet_tier == SubnetTier.PUBLIC else private
-        if not pool:  # no subnet of that tier; fall back to any subnet
-            pool = [s.resource_name for s in plan.network.subnets]
-        idx = counters[c.subnet_tier] % len(pool)
-        counters[c.subnet_tier] += 1
-        mapping[c.vm_name] = pool[idx]
+    for inst in graph.nodes_of(NodeKind.INSTANCE):
+        placed_in = graph.out_edges(inst.id, EdgeKind.PLACED_IN)
+        if placed_in:
+            mapping[inst.name] = subnet_resource_by_id[placed_in[0].target]
     return mapping
+
+
+def _sg_resource_map(plan: MigrationPlan) -> Dict[str, str]:
+    """Map each security-group name -> its resource name, via the graph."""
+    graph = build_graph(plan)
+    return {n.name: n.id.split(":", 1)[1] for n in graph.nodes_of(NodeKind.SECURITY_GROUP)}
 
 
 def _image_keys(compute: List[ComputePlan]) -> List[str]:
@@ -76,7 +85,7 @@ def _data_volumes(compute: List[ComputePlan]) -> List[dict]:
 def build_files(plan: MigrationPlan, target: Target) -> Dict[str, str]:
     env = _env(target.template_dir)
     subnet_of = _assign_subnets(plan)
-    sg_resource = {sg.name: sg.resource_name for sg in plan.network.security_groups}
+    sg_resource = _sg_resource_map(plan)
     # Resolve each used OS image via the target (data source / marketplace ref /
     # image family) so output deploys with no manual AMI/image editing.
     image_refs = {

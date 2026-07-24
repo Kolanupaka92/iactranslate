@@ -6,11 +6,10 @@ instances) and edges (containment, placement, security). It is deterministic and
 carries no cloud syntax.
 
 Why a separate IR: it decouples planning from code generation. The architecture
-diagram already renders **from this graph** (its natural consumer), and it is the
-intended seam for future renderers (CloudFormation, Bicep, CDK, Kubernetes) that
-would rather walk a topology than re-derive one from the plan. Terraform and
-Pulumi still render from the plan today and migrate to the graph incrementally —
-see ADR 0010.
+diagram, CloudFormation, Bicep, and CDK render from this graph; Terraform and
+Pulumi get their subnet placement from it too (`assign_subnets`, below) so every
+renderer agrees on where an instance actually lands — see ADR 0010 and
+ADR 0016 (Terraform/Pulumi placement migrated onto the graph).
 """
 from __future__ import annotations
 
@@ -19,7 +18,7 @@ from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
-from .models import MigrationPlan
+from .models import MigrationPlan, SubnetTier
 
 
 class NodeKind(str, Enum):
@@ -82,6 +81,31 @@ def _instance_id(resource_name: str) -> str:
     return f"instance:{resource_name}"
 
 
+def assign_subnets(plan: MigrationPlan) -> Dict[str, str]:
+    """Map each compute vm_name -> a subnet resource_name, spread round-robin
+    across that tier's subnets (e.g. across availability zones) rather than
+    collapsing every instance of a tier onto a single subnet.
+
+    This is the one place placement is decided — every renderer (Terraform,
+    Pulumi, CloudFormation, Bicep, CDK) and the diagram gets it from here via
+    the graph's `placed_in` edges, so they can't disagree with each other.
+    """
+    public = [s.resource_name for s in plan.network.subnets if s.tier == SubnetTier.PUBLIC]
+    private = [s.resource_name for s in plan.network.subnets if s.tier == SubnetTier.PRIVATE]
+    counters = {SubnetTier.PUBLIC: 0, SubnetTier.PRIVATE: 0}
+    mapping: Dict[str, str] = {}
+    for c in plan.compute:
+        pool = public if c.subnet_tier == SubnetTier.PUBLIC else private
+        if not pool:  # no subnet of that tier; fall back to any subnet
+            pool = [s.resource_name for s in plan.network.subnets]
+        if not pool:  # no subnets at all (e.g. a subnet-less plan in a unit test)
+            continue
+        idx = counters[c.subnet_tier] % len(pool)
+        counters[c.subnet_tier] += 1
+        mapping[c.vm_name] = pool[idx]
+    return mapping
+
+
 def build_graph(plan: MigrationPlan) -> InfrastructureGraph:
     """Derive the topology graph from a validated MigrationPlan."""
     net = plan.network
@@ -99,7 +123,6 @@ def build_graph(plan: MigrationPlan) -> InfrastructureGraph:
     ))
 
     # Subnets, contained by the VPC.
-    first_subnet_of_tier: Dict[str, str] = {}
     for sn in net.subnets:
         sid = _subnet_id(sn.resource_name)
         nodes.append(GraphNode(
@@ -108,7 +131,6 @@ def build_graph(plan: MigrationPlan) -> InfrastructureGraph:
                         "availability_zone_index": sn.availability_zone_index},
         ))
         edges.append(GraphEdge(source=_vpc_id(), target=sid, kind=EdgeKind.CONTAINS))
-        first_subnet_of_tier.setdefault(sn.tier.value, sid)
 
     # Security groups.
     sg_id_by_name: Dict[str, str] = {}
@@ -132,8 +154,9 @@ def build_graph(plan: MigrationPlan) -> InfrastructureGraph:
             },
         ))
 
-    # Instances, placed in a subnet of their tier and secured by their SG.
-    any_subnet = _subnet_id(net.subnets[0].resource_name) if net.subnets else None
+    # Instances, placed in a subnet of their tier (spread across AZs via
+    # assign_subnets) and secured by their SG.
+    subnet_of = assign_subnets(plan)
     for c in plan.compute:
         iid = _instance_id(c.resource_name)
         nodes.append(GraphNode(
@@ -150,9 +173,11 @@ def build_graph(plan: MigrationPlan) -> InfrastructureGraph:
                 "extra_volumes_gib": list(c.extra_volumes_gib),
             },
         ))
-        subnet_target = first_subnet_of_tier.get(c.subnet_tier.value, any_subnet)
-        if subnet_target:
-            edges.append(GraphEdge(source=iid, target=subnet_target, kind=EdgeKind.PLACED_IN))
+        subnet_resource_name = subnet_of.get(c.vm_name)
+        if subnet_resource_name:
+            edges.append(GraphEdge(
+                source=iid, target=_subnet_id(subnet_resource_name), kind=EdgeKind.PLACED_IN
+            ))
         sg_target = sg_id_by_name.get(c.security_group)
         if sg_target:
             edges.append(GraphEdge(source=iid, target=sg_target, kind=EdgeKind.SECURED_BY))
