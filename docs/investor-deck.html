@@ -97,7 +97,7 @@
     <div class="wrap">
       <div class="eyebrow">IaCTranslate</div>
       <h1>Any inventory in.<br>Any cloud out.<br><span class="accent">A migration platform.</span></h1>
-      <p class="lead" style="margin-top:22px">The AI migration platform that turns a company's existing infrastructure inventory — VMware, Hyper-V, Kubernetes, a CMDB, or an existing cloud fleet — into production-ready, provider-validated IaC (Terraform, Pulumi, CloudFormation, Bicep, CDK, or Kubernetes) for AWS, Azure, or GCP. It assesses the estate, recommends the cloud, enforces policy, and explains every decision.</p>
+      <p class="lead" style="margin-top:22px">The AI migration platform that turns a company's existing infrastructure inventory — VMware, Hyper-V, Kubernetes, a CMDB, or an existing cloud fleet — into production-ready, provider-validated IaC (Terraform, Pulumi, CloudFormation, Bicep, CDK, or Kubernetes) for AWS, Azure, GCP, or OCI. It assesses the estate, recommends the cloud, enforces policy, and explains every decision.</p>
       <div class="flow">
         <span class="node">VMware</span><span class="node">Hyper-V</span><span class="node">Kubernetes</span><span class="node">CMDB</span><span class="node">Cloud</span>
         <span class="arrow"><span class="dash">──▶</span></span>
@@ -148,7 +148,7 @@
       </div>
       <div class="grid" style="grid-template-columns:1fr 1fr;margin-top:14px">
         <div class="card"><h3 class="kicker">Sources (input) · 5</h3><p style="margin-top:6px;color:var(--ink)">VMware · Hyper-V · <b class="accent">Kubernetes</b> · <b class="accent">Generic CMDB</b> · Cloud fleet — auto-detected. The generic reader ingests <em>any</em> spreadsheet with no bespoke parser.</p></div>
-        <div class="card"><h3 class="kicker">Targets · 3 clouds × 6 IaC formats</h3><p style="margin-top:6px;color:var(--ink)">AWS · Azure · GCP — each a catalog + tier mapping + templates. Terraform, Pulumi, CloudFormation, Bicep, CDK, or Kubernetes from the same plan. New clouds slot in without touching the pipeline.</p></div>
+        <div class="card"><h3 class="kicker">Targets · 4 clouds × 6 IaC formats</h3><p style="margin-top:6px;color:var(--ink)">AWS · Azure · GCP · OCI — each a catalog + tier mapping + templates. Terraform on all four; Pulumi/CloudFormation/Bicep/CDK/Kubernetes where built. New clouds slot in without touching the pipeline — OCI proved it.</p></div>
       </div>
       <p class="lead" style="margin-top:18px">The AI is optional and behind an interface — it defaults to a deterministic rule engine, so it runs offline with zero keys and is fully reproducible. Toggle it on per-run from the CLI, the API, or the web UI; an AI-written executive summary follows automatically when it does.</p>
     </div>
@@ -219,14 +219,14 @@
       <h2>The product is built — and the output actually validates.</h2>
       <div class="row" style="margin-top:8px;gap:26px">
         <div class="stat"><b>5→3</b><span>sources → clouds, live</span></div>
-        <div class="stat"><b>264</b><span>automated tests</span></div>
+        <div class="stat"><b>281</b><span>automated tests</span></div>
         <div class="stat"><b>7/7</b><span>CI jobs green</span></div>
         <div class="stat"><b class="accent">tofu&nbsp;✓</b><span>real provider validate</span></div>
       </div>
       <ul class="clean" style="margin-top:24px">
         <li>Generated Terraform passes <b>real <code>tofu validate</code></b> against the actual AWS, azurerm, and google providers — enforced continuously in CI.</li>
         <li>Shipping today: a <b>CLI</b>, a hardened <b>FastAPI</b> service (sync + <b>async jobs</b> + audit), and a <b>Next.js web app</b> — plus assessment, confidence, executive reports, diagrams, infra diff, a <b>policy engine</b>, an Infrastructure-Graph IR, load-balancer topology, managed-DB re-platforming advice, and <b>six IaC formats</b> (Terraform, Pulumi, CloudFormation, Bicep, CDK, Kubernetes).</li>
-        <li>Engineered like a platform: <b>21 architecture decision records</b>, deterministic + offline + reproducible, non-root Docker, streamed upload caps.</li>
+        <li>Engineered like a platform: <b>22 architecture decision records</b>, deterministic + offline + reproducible, non-root Docker, streamed upload caps.</li>
       </ul>
     </div>
   </section>
@@ -300,7 +300,7 @@
         <div class="card">
           <h3 class="kicker">Done — today</h3>
           <ul class="clean" style="margin-top:10px">
-            <li>5 sources → 3 clouds · 6 IaC formats (TF · Pulumi · CFN · Bicep · CDK · K8s)</li>
+            <li>5 sources → 4 clouds · 6 IaC formats (TF · Pulumi · CFN · Bicep · CDK · K8s)</li>
             <li>Assessment · recommendation · confidence · reports · diagrams · diff</li>
             <li>Load-balancer topology · managed-DB re-platforming advice</li>
             <li>Policy engine · brownfield import · GitOps · async jobs + audit</li>
@@ -311,7 +311,7 @@
           <ul class="clean" style="margin-top:10px">
             <li>Persistence (Postgres) + object storage + durable job queue</li>
             <li>Auth (OIDC/SAML) + RBAC → multi-tenant SaaS</li>
-            <li>Notifications, ticketing (Jira/ServiceNow), OCI / DigitalOcean targets</li>
+            <li>Notifications, ticketing (Jira/ServiceNow), DigitalOcean target</li>
           </ul>
         </div>
       </div>

@@ -7,11 +7,13 @@ from .aws import AwsTarget
 from .azure import AzureTarget
 from .base import InstanceSpec, Target, smallest_fit  # noqa: F401
 from .gcp import GcpTarget
+from .oci import OciTarget
 
 _REGISTRY: Dict[str, Target] = {
     AwsTarget.name: AwsTarget(),
     AzureTarget.name: AzureTarget(),
     GcpTarget.name: GcpTarget(),
+    OciTarget.name: OciTarget(),
 }
 
 

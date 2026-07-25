@@ -54,6 +54,6 @@ def test_load_balancers_are_deterministic():
 
 
 def test_load_balancers_work_for_every_target():
-    for cloud in ("aws", "azure", "gcp"):
+    for cloud in ("aws", "azure", "gcp", "oci"):
         plan = _plan(target=cloud)
         assert plan.network.load_balancers, f"expected load balancers for {cloud}"

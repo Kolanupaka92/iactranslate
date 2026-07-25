@@ -92,7 +92,7 @@ _CACHE = Path(os.getenv("TF_PLUGIN_CACHE_DIR", "/tmp/iactranslate_tf_plugin_cach
 
 
 @pytest.mark.skipif(not _ENABLED, reason="set IACTRANSLATE_E2E_TOFU=1 and install tofu/terraform")
-@pytest.mark.parametrize("target", ["aws", "azure", "gcp"])
+@pytest.mark.parametrize("target", ["aws", "azure", "gcp", "oci"])
 def test_generated_terraform_validates(target, rvtools_path, tmp_path):
     out = tmp_path / target
     run_pipeline(input_path=rvtools_path, project_name="tofu", out_dir=str(out), target=target)

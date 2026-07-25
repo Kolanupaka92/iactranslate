@@ -272,10 +272,10 @@ platform services layered on top.
 - ✅ Generic CMDB / spreadsheet exports (ServiceNow, Device42, Lansweeper, hand-rolled)
 - ✅ Existing AWS inventories (re-platform / cross-cloud, with import for brownfield)
 - ✅ Existing Azure inventories
-- ✅ Targets: AWS, Azure, GCP · Renderers: Terraform, Pulumi, CloudFormation,
-  Bicep, AWS CDK, Kubernetes/KubeVirt
+- ✅ Targets: AWS, Azure, GCP, OCI · Renderers: Terraform (all 4), Pulumi (AWS/Azure/GCP),
+  CloudFormation, Bicep, AWS CDK, Kubernetes/KubeVirt
 - ✅ Load balancer topology (multi-instance tiers front behind an ALB /
-  Standard LB / Network LB, per cloud)
+  Standard LB / Network LB / OCI flexible LB, per cloud)
 - ✅ Managed-DB re-platforming **advice** (database tiers flagged as RDS / Cloud
   SQL / Azure SQL candidates — advisory, does not change the plan)
 

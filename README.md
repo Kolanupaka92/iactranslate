@@ -24,7 +24,7 @@ CI proves the output is valid against the real cloud providers (`tofu validate`)
 ## Key features
 
 - **Any source → any cloud.** Source registry (VMware · Hyper-V · Kubernetes ·
-  generic CMDB · existing cloud fleet) and target registry (AWS · Azure · GCP),
+  generic CMDB · existing cloud fleet) and target registry (AWS · Azure · GCP · OCI),
   both behind protocols — new ones need no pipeline changes.
 - **Unbiased cloud recommendation.** Ranks all three clouds on cost, sizing fit,
   and OS affinity, with explicit weights and plain-English rationale. No vendor
@@ -62,7 +62,7 @@ python scripts/make_fixtures.py            # sample inventories for testing
 iactranslate translate tests/fixtures/rvtools_sample.xlsx --target aws --out ./out --zip
 ```
 
-Other clouds and formats are auto-detected: `--target azure|gcp`,
+Other clouds and formats are auto-detected: `--target azure|gcp|oci`,
 `--source auto|vmware|hyperv|kubernetes|generic|cloud`,
 `--renderer terraform|pulumi|cloudformation|bicep|cdk|kubernetes`, `--gitops`.
 See the [Operations Guide](docs/operations-guide.md) for the full CLI, API, and web UI.

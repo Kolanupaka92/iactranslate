@@ -111,7 +111,7 @@ def test_terraform_renderer_matches_generator(rvtools_path):
     assert render("terraform", plan, get_target("aws")) == build_files(plan, get_target("aws"))
 
 
-@pytest.mark.parametrize("cloud", ["aws", "azure", "gcp"])
+@pytest.mark.parametrize("cloud", ["aws", "azure", "gcp", "oci"])
 def test_terraform_emits_load_balancers(rvtools_path, cloud):
     plan, _ = _plan(rvtools_path, target=cloud)
     files = render("terraform", plan, get_target(cloud))
@@ -405,7 +405,7 @@ def test_kubernetes_files_are_valid_json(rvtools_path):
 
 def test_kubernetes_works_for_every_cloud(rvtools_path):
     """Unlike CloudFormation/Bicep/CDK, Kubernetes has no target restriction."""
-    for cloud in ("aws", "azure", "gcp"):
+    for cloud in ("aws", "azure", "gcp", "oci"):
         plan, _ = _plan(rvtools_path, target=cloud)
         files = render("kubernetes", plan, get_target(cloud))
         assert json.loads(files["virtualmachines.json"])["items"]

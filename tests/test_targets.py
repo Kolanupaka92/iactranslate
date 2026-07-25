@@ -8,7 +8,7 @@ from iactranslate.validation import validate_plan
 
 
 def test_registry_lists_all_clouds():
-    assert set(list_targets()) == {"aws", "azure", "gcp"}
+    assert set(list_targets()) == {"aws", "azure", "gcp", "oci"}
 
 
 def test_unknown_target_raises():
@@ -16,7 +16,7 @@ def test_unknown_target_raises():
         get_target("oracle")
 
 
-@pytest.mark.parametrize("target_name", ["aws", "azure", "gcp"])
+@pytest.mark.parametrize("target_name", ["aws", "azure", "gcp", "oci"])
 def test_target_produces_valid_plan(rvtools_path, target_name):
     target = get_target(target_name)
     vms = normalize(parse(rvtools_path))
@@ -35,6 +35,8 @@ def test_targets_pick_distinct_instance_families(rvtools_path):
     aws_types = {c.instance_type for c in build_migration_plan(vms, "t", get_target("aws")).compute}
     az_types = {c.instance_type for c in build_migration_plan(vms, "t", get_target("azure")).compute}
     gcp_types = {c.instance_type for c in build_migration_plan(vms, "t", get_target("gcp")).compute}
+    oci_types = {c.instance_type for c in build_migration_plan(vms, "t", get_target("oci")).compute}
     assert all(t.startswith(("t3.", "m5.", "r5.")) for t in aws_types)
     assert all(t.startswith("Standard_") for t in az_types)
     assert all(t.startswith(("e2-", "n2-")) for t in gcp_types)
+    assert all(t.startswith("VM.Standard.") for t in oci_types)

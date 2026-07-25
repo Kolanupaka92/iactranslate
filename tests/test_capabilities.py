@@ -13,16 +13,31 @@ from iactranslate.targets.base import (
 )
 
 
-def test_every_target_advertises_core_capabilities():
+def test_every_target_advertises_terraform_and_gitops():
     for name in list_targets():
         caps = get_target(name).capabilities
+        assert {CAP_TERRAFORM, CAP_GITOPS} <= caps
+
+
+def test_aws_azure_gcp_have_the_full_mature_capability_set():
+    for name in ("aws", "azure", "gcp"):
+        caps = get_target(name).capabilities
         assert {CAP_TERRAFORM, CAP_PULUMI, CAP_GITOPS, CAP_LIVE_PRICING} <= caps
+
+
+def test_oci_has_no_pulumi_or_live_pricing_yet():
+    # Honest, not a gap masked as parity: no Pulumi renderer and no live
+    # pricing integration exist for OCI, so it doesn't claim either.
+    caps = get_target("oci").capabilities
+    assert CAP_PULUMI not in caps
+    assert CAP_LIVE_PRICING not in caps
 
 
 def test_only_aws_supports_brownfield_import_today():
     assert CAP_BROWNFIELD_IMPORT in get_target("aws").capabilities
     assert CAP_BROWNFIELD_IMPORT not in get_target("azure").capabilities
     assert CAP_BROWNFIELD_IMPORT not in get_target("gcp").capabilities
+    assert CAP_BROWNFIELD_IMPORT not in get_target("oci").capabilities
 
 
 def test_targets_endpoint_exposes_capabilities():

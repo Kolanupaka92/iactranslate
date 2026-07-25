@@ -32,9 +32,9 @@
 ## 1. Executive summary
 
 **What it is.** IaCTranslate converts **any** infrastructure inventory — VMware (RVTools),
-Microsoft Hyper-V, a CMDB/spreadsheet export (ServiceNow, Device42, Lansweeper, or
+Microsoft Hyper-V, Kubernetes, a CMDB/spreadsheet export (ServiceNow, Device42, Lansweeper, or
 hand-rolled), or an existing AWS/Azure fleet — into **production-ready Terraform** for
-**AWS, Azure, or GCP**, and can **recommend the best-fit cloud**. It never connects to the
+**AWS, Azure, GCP, or OCI**, and can **recommend the best-fit cloud**. It never connects to the
 customer environment; it works entirely from exported inventory files.
 
 **The core idea (why it's trustworthy).** It is *not* "an LLM writes Terraform." It's a
@@ -55,7 +55,7 @@ diagrams, infrastructure diff, brownfield adoption, load balancer topology,
 managed-DB re-platforming advice, a Kubernetes discovery source,
 Pulumi/CloudFormation/Bicep/CDK/Kubernetes renderers, a policy engine, an
 Infrastructure Graph IR, async jobs + audit, and opt-in GitOps.
-~264 tests, 7 green CI jobs (lint, pytest 3.9/3.11/3.12, Docker health, web build, real
+~281 tests, 7 green CI jobs (lint, pytest 3.9/3.11/3.12, Docker health, web build, real
 Terraform validate). Repo: `github.com/Kolanupaka92/iactranslate` (private).
 
 ---
@@ -149,9 +149,9 @@ iactranslate/
 | **Confidence Engine** | Scores how sure each decision is (sizing/classification/image/cost) per workload + plan-level, from observable signals. | `confidence.py` |
 | **Executive Report** | One client-facing HTML page composing plan + cost + assessment + confidence + recommendation + architecture diagram. | `exec_report.py` |
 | **Architecture Diagram** | Deterministic SVG + Mermaid of the target topology (VPC → subnets → tiered instances → load balancers). | `diagram.py` |
-| **Load Balancer** | Any `(tier, environment, subnet_tier)` group with >1 instance gets one, with listeners from the tier's own security-group ingress (AWS ALB, Azure Standard LB, GCP Network/Internal LB). | `agents/network.py`, `models.py` |
+| **Load Balancer** | Any `(tier, environment, subnet_tier)` group with >1 instance gets one, with listeners from the tier's own security-group ingress (AWS ALB, Azure Standard LB, GCP Network/Internal LB, OCI flexible LB). | `agents/network.py`, `models.py` |
 | **Infrastructure Diff** | Drift between two inventory snapshots (added/removed/modified + aggregate deltas). | `diff.py` |
-| **Renderer** | Swappable IaC output: `terraform` (default, HCL, all 3 clouds), `pulumi` (Python, all 3 clouds), `cloudformation` (JSON, AWS-only), `bicep` (Azure-only), `cdk` (Python, AWS-only), or `kubernetes` (JSON/KubeVirt, any cloud) — the latter four render from the Infrastructure Graph, not the plan. | `renderers/` |
+| **Renderer** | Swappable IaC output: `terraform` (default, HCL, all 4 clouds), `pulumi` (Python, AWS/Azure/GCP — not yet OCI), `cloudformation` (JSON, AWS-only), `bicep` (Azure-only), `cdk` (Python, AWS-only), or `kubernetes` (JSON/KubeVirt, any cloud) — the latter four render from the Infrastructure Graph, not the plan. | `renderers/` |
 | **Brownfield** | Existing cloud fleet with resource ids → Terraform/Pulumi `import` blocks (adopt, don't recreate). | `sources/cloud`, `renderers/` |
 | **Re-platforming advisor** | Flags database-tier workloads as managed-DB candidates (RDS/Cloud SQL/Azure SQL) with engine detection + caveats. Advisory-only — never changes the plan. Emits `replatforming.json`. | `replatform.py` |
 | **GitOps** | Opt-in CI/CD workflow (plan on PR, apply on merge) + .gitignore, target/renderer-aware. | `gitops.py` |
@@ -276,7 +276,7 @@ iactranslate translate rvtools.xlsx --target gcp --renderer kubernetes --out ./o
 kubectl get deployments,statefulsets -A -o json > k8s.json
 iactranslate translate k8s.json --source kubernetes --target aws --out ./out-from-k8s
 ```
-Flags: `--target aws|azure|gcp`, `--source auto|vmware|hyperv|kubernetes|generic|cloud`, `--map`,
+Flags: `--target aws|azure|gcp|oci`, `--source auto|vmware|hyperv|kubernetes|generic|cloud`, `--map`,
 `--region`, `--name`, `--zip`, `--renderer terraform|pulumi|cloudformation|bicep|cdk|kubernetes`
 (CloudFormation and CDK are AWS-only; Bicep is Azure-only; Kubernetes has no
 target restriction), `--gitops` (adds `.github/workflows/*` + `.gitignore`).
@@ -528,7 +528,7 @@ OpenTofu, validates aws/azure/gcp output against real providers).
 | **API**: upload returns `413` | File over `IACTRANSLATE_MAX_UPLOAD_MB` (25 by default). | Raise the env var, or trim the export. |
 | **API**: upload/recommend returns `400 "could not parse…"` | Corrupt file, wrong extension, or a source forced on a mismatched file (e.g. Hyper-V source on an RVTools xlsx). | Use `source: "auto"`, or match the source to the file. Confirm the file opens in Excel. |
 | **API**: `run` returns `422` with `issues[]` | The plan failed validation (bad instance type, CIDR overlap, undefined SG). | Read the `issues` — usually a source producing odd specs; check the offending VM's cpu/mem. |
-| **run** succeeds but `terraform apply` fails on AMI/image | Images resolve automatically (AWS `aws_ami` data sources, Azure `source_image_reference`, GCP public image families), but the account/region may lack a match. | AWS: pin a known-good AMI via `ami_overrides` in `terraform.tfvars`. Azure/GCP: adjust the `source_image_reference` / `image` in `compute.tf`. GCP still needs a real `gcp_project`. |
+| **run** succeeds but `terraform apply` fails on AMI/image | Images resolve automatically (AWS `aws_ami` data sources, Azure `source_image_reference`, GCP public image families, OCI `data "oci_core_images"`), but the account/region may lack a match. | AWS: pin a known-good AMI via `ami_overrides` in `terraform.tfvars`. Azure/GCP/OCI: adjust the image reference / `data` filter in `compute.tf`. GCP needs a real `gcp_project`; OCI needs `compartment_id` + API signing key. |
 | **Generic source** picks wrong/blank columns | Headers don't match the synonym table. | Provide an explicit `column_map` / `--map`. Canonical keys: `name, cpu, memory_gib\|memory_mib, disk_gib\|disk_mib, os, network, ip, cluster`. |
 | **Cloud source**: vCPU/mem come out as defaults | Instance type not in the AWS/Azure catalogs. | Add the type to the relevant `targets/*/catalog.py`, or include explicit `vCPUs`/`Memory` columns in the export. |
 | **`tofu validate`** fails locally | `tofu`/`terraform` not installed, or provider download blocked. | `brew install opentofu`; ensure network for `tofu init`. Set `TF_PLUGIN_CACHE_DIR` to reuse providers. |
@@ -550,9 +550,10 @@ needed when *you* run `terraform apply` on the output.
 the AI is an optional refinement, always re-validated.
 
 **Can output be deployed as-is?** Essentially yes — OS images resolve automatically
-(AWS `aws_ami` data sources, Azure `source_image_reference`, GCP public image families),
-so there are no AMI IDs to hand-fill. AWS/Azure need only cloud credentials; GCP also
-needs a real `gcp_project`. The HCL is provider-valid (CI proves it with `tofu validate`).
+(AWS `aws_ami` data sources, Azure `source_image_reference`, GCP public image families, OCI
+`data "oci_core_images"`), so there are no image IDs to hand-fill. AWS/Azure need only cloud
+credentials; GCP also needs a real `gcp_project`; OCI needs a compartment OCID + API signing
+key (see the generated README). The HCL is provider-valid (CI proves it with `tofu validate`).
 
 **Glossary:** *RVTools* = popular VMware vSphere inventory exporter (.xlsx). *CMDB* =
 Configuration Management Database (ServiceNow/Device42/Lansweeper). *Rightsizing* = choosing
