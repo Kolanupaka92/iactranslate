@@ -3,7 +3,7 @@
 export const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
-export type Target = "aws" | "azure" | "gcp" | "oci";
+export type Target = "aws" | "azure" | "gcp" | "oci" | "digitalocean";
 export type Source = "auto" | "vmware" | "hyperv" | "kubernetes" | "cloud" | "generic";
 export type Provider = "rule" | "anthropic";
 

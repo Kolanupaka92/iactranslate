@@ -84,7 +84,7 @@ def _os_affinity(cloud: str, windows_fraction: float) -> float:
         return round(0.5 + 0.5 * windows_fraction, 4)
     if cloud == "gcp":
         return round(0.5 + 0.5 * linux_fraction, 4)
-    # aws, oci: neutral, no first-party OS licensing bias either way
+    # aws, oci, digitalocean: neutral, no first-party OS licensing bias either way
     return _AWS_OS_BASELINE
 
 

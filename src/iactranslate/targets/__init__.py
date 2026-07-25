@@ -6,6 +6,7 @@ from typing import Dict, List
 from .aws import AwsTarget
 from .azure import AzureTarget
 from .base import InstanceSpec, Target, smallest_fit  # noqa: F401
+from .digitalocean import DigitalOceanTarget
 from .gcp import GcpTarget
 from .oci import OciTarget
 
@@ -14,6 +15,7 @@ _REGISTRY: Dict[str, Target] = {
     AzureTarget.name: AzureTarget(),
     GcpTarget.name: GcpTarget(),
     OciTarget.name: OciTarget(),
+    DigitalOceanTarget.name: DigitalOceanTarget(),
 }
 
 

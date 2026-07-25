@@ -7,6 +7,7 @@ const TARGETS: { id: Target; label: string; blurb: string }[] = [
   { id: "azure", label: "Azure", blurb: "VM · VNet · NSG" },
   { id: "gcp", label: "GCP", blurb: "Compute Engine · VPC · Firewalls" },
   { id: "oci", label: "OCI", blurb: "Compute · VCN · Network Security Groups" },
+  { id: "digitalocean", label: "DigitalOcean", blurb: "Droplets · VPC · Firewalls" },
 ];
 
 export default function TargetPicker({
@@ -19,7 +20,7 @@ export default function TargetPicker({
   disabled?: boolean;
 }) {
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4" role="radiogroup" aria-label="Target cloud">
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3" role="radiogroup" aria-label="Target cloud">
       {TARGETS.map((t) => {
         const selected = t.id === value;
         return (

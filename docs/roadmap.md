@@ -8,9 +8,10 @@ in CI on `main`.
 **Core pipeline**
 - ✅ Deterministic `parse → normalize → agents → validate → render → package`
 - ✅ Source registry: VMware, Hyper-V, Kubernetes, generic CMDB/spreadsheet, existing cloud fleet
-- ✅ Target registry: AWS, Azure, GCP, **OCI** (Terraform) — OCI's Flex-shape
-  sizing and honest, narrower capability set are documented in
-  [ADR 0022](adr/0022-oci-target.md)
+- ✅ Target registry: AWS, Azure, GCP, **OCI**, **DigitalOcean** (Terraform) —
+  OCI's Flex-shape sizing, honest capability sets, and DigitalOcean's real
+  platform gaps (no subnets, no Windows images) are documented in
+  [ADR 0022](adr/0022-oci-target.md) and [ADR 0023](adr/0023-digitalocean-target.md)
 - ✅ Rule-engine and Anthropic providers behind one interface (offline default),
   reachable from CLI/API/web (not just an env var) with an honest
   `provider_used` record and an AI-written executive-report narrative when
@@ -57,9 +58,6 @@ in CI on `main`.
 - ✅ CI: lint, pytest (3.9/3.11/3.12), Docker, web build, real `tofu validate`
 
 ## Planned
-
-**New targets & renderers**
-- ◻ DigitalOcean target
 
 **Enterprise-platform maturity** (the runtime seams — events, jobs, audit, stages,
 capability flags, the `ProjectStore` interface — now exist; these are the durable

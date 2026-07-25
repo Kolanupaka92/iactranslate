@@ -30,5 +30,6 @@ Format: [Michael Nygard's ADR template](https://cognitect.com/blog/2011/11/15/do
 | [0020](0020-managed-db-replatforming.md) | Managed-database re-platforming is advisory, not automated | Accepted |
 | [0021](0021-ai-integration-reachable-and-honest.md) | AI made reachable end-to-end (CLI/API/web), and always honestly labeled | Accepted |
 | [0022](0022-oci-target.md) | OCI target: Flex shapes need a synthetic catalog key, capabilities stay honest | Accepted |
+| [0023](0023-digitalocean-target.md) | DigitalOcean target: real platform gaps (no subnets, no Windows) stated, not papered over | Accepted |
 
 See also the [Architecture & Design](../architecture.md) overview.
