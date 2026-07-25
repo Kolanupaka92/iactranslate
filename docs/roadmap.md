@@ -71,9 +71,9 @@ backends and integrations that plug into them, via the
 
 | Milestone | Focus | Builds on |
 |---|---|---|
-| v2.1 | PostgreSQL store + object-storage artifact store + **durable** job queue (Redis/Celery) | in-memory store, `JobQueue`, event bus (shipped seams) |
+| v2.1 | PostgreSQL store + object-storage artifact store + **durable** job queue (Redis/Celery) — ✅ *metadata* persistence shipped now via an opt-in `SqliteProjectStore` (`IACTRANSLATE_STORE=sqlite`), a real stdlib-only stepping stone verified with an actual kill-and-restart, not just Postgres itself (see [ADR 0025](adr/0025-persistent-store-and-bearer-auth.md)) | in-memory store, `JobQueue`, event bus (shipped seams) |
 | v2.2 | Desktop app (Tauri) over the same core engine | CLI/API (shipped) |
-| v2.3 | AuthN (OIDC/SAML) + RBAC + persistent audit | audit trail (shipped in-memory) |
+| v2.3 | AuthN (OIDC/SAML) + RBAC + persistent audit — ✅ opt-in bearer-token auth (`IACTRANSLATE_API_KEY`) shipped now as a real, tested stopgap; not a substitute for OIDC/RBAC (see [ADR 0025](adr/0025-persistent-store-and-bearer-auth.md)) | audit trail (shipped in-memory) |
 | v2.4 | Notifications (Slack/Teams/Email) + metrics (Prometheus/Grafana/OTel) | event bus + `pipeline-trace` (shipped) |
 | v2.5 | CI/CD pipeline generation (Jenkins/GitHub/GitLab/Azure DevOps) | GitOps workflow (shipped for GH Actions) |
 | v2.6 | Ticketing (Jira/ServiceNow/Azure DevOps) from the assessment | assessment (shipped) |

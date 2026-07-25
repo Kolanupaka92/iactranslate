@@ -42,6 +42,11 @@ CI proves the output is valid against the real cloud providers (`tofu validate`)
   `depends_on` chains, rollback strategy, and validation checks per wave
   (`waves.json`) — honest about not discovering cross-application dependencies
   it has no signal for.
+- **Persistent store + bearer auth (stopgap).** Project metadata survives a
+  process restart via an opt-in SQLite store (`IACTRANSLATE_STORE=sqlite`),
+  and endpoints require `Authorization: Bearer <key>` when
+  `IACTRANSLATE_API_KEY` is set — both stdlib-only, both verified with a real
+  kill-and-restart, neither pretending to be Postgres or OIDC/RBAC.
 - **A full migration-platform layer.** Pre-migration **assessment** (readiness +
   risks), **confidence** scoring, an **executive report**, **architecture
   diagrams**, **infrastructure diff**, **brownfield** adoption (import blocks),

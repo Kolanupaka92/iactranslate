@@ -22,7 +22,7 @@ import re
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from fastapi import FastAPI, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pydantic import BaseModel, field_validator
@@ -42,14 +42,15 @@ from ..sources import list_sources, resolve_source
 from ..targets import get_target, list_targets
 from ..validation import PlanValidationError
 from .audit import AuditLog
+from .auth import require_api_key
 from .events import Event, EventBus, EventType
 from .jobs import JobQueue
-from .store import Project, ProjectStore
+from .store import Project, create_store
 
 logger = logging.getLogger("iactranslate.api")
 
 app = FastAPI(title="IaCTranslate", version="0.1.0")
-store = ProjectStore()
+store = create_store()
 
 # Runtime orchestration layer (single-node realization; swap for Redis/Celery +
 # Postgres in production — same interfaces). The pipeline stays a pure function.
@@ -148,7 +149,7 @@ def health() -> dict:
     return {"status": "ok"}
 
 
-@app.post("/projects", status_code=201)
+@app.post("/projects", status_code=201, dependencies=[Depends(require_api_key)])
 def create_project(body: CreateProject) -> dict:
     if body.target not in list_targets():
         raise HTTPException(400, f"target '{body.target}' not supported (available: {', '.join(list_targets())})")
@@ -187,12 +188,12 @@ def targets() -> list:
     ]
 
 
-@app.get("/projects/{pid}")
+@app.get("/projects/{pid}", dependencies=[Depends(require_api_key)])
 def get_project(pid: str) -> dict:
     return _summary(_require_project(pid))
 
 
-@app.delete("/projects/{pid}", status_code=204)
+@app.delete("/projects/{pid}", status_code=204, dependencies=[Depends(require_api_key)])
 def delete_project(pid: str) -> None:
     if not store.delete(pid):
         raise HTTPException(404, "project not found")
@@ -200,7 +201,7 @@ def delete_project(pid: str) -> None:
     bus.publish(Event(EventType.PROJECT_DELETED, project_id=pid))
 
 
-@app.post("/projects/{pid}/upload")
+@app.post("/projects/{pid}/upload", dependencies=[Depends(require_api_key)])
 async def upload(pid: str, file: UploadFile) -> dict:
     project = _require_project(pid)
 
@@ -223,6 +224,7 @@ async def upload(pid: str, file: UploadFile) -> dict:
 
     project.upload_path = dest
     project.status = "uploaded"
+    store.save(project)
     logger.info("project %s uploaded %d bytes", project.id, total)
     bus.publish(Event(EventType.PROJECT_UPLOADED, project_id=project.id, detail={"bytes": total}))
     return _summary(project)
@@ -257,6 +259,7 @@ def _execute_run(project: Project) -> None:
             project.error = "; ".join(f"[{v.policy}] {v.message}" for v in e.violations)
         else:
             project.error = str(e)
+        store.save(project)
         raise
 
     confidence = score_plan(result.plan, result.vms)
@@ -290,10 +293,11 @@ def _execute_run(project: Project) -> None:
             for c in result.plan.compute
         ],
     }
+    store.save(project)
     logger.info("project %s generated %d instances", project.id, result.plan.vm_count)
 
 
-@app.post("/projects/{pid}/run")
+@app.post("/projects/{pid}/run", dependencies=[Depends(require_api_key)])
 def run(pid: str) -> dict:
     """Synchronous run — generates in-request. See POST /jobs for the async path."""
     project = _require_project(pid)
@@ -311,18 +315,19 @@ def run(pid: str) -> dict:
     return _summary(project)
 
 
-@app.post("/projects/{pid}/jobs", status_code=202)
+@app.post("/projects/{pid}/jobs", status_code=202, dependencies=[Depends(require_api_key)])
 def create_job(pid: str) -> dict:
     """Asynchronous run — enqueue the pipeline and return a job id to poll."""
     project = _require_project(pid)
     if project.upload_path is None:
         raise HTTPException(400, "no file uploaded for this project")
     project.status = "queued"
+    store.save(project)
     job = jobs.submit(project.id, lambda: _execute_run(project))
     return job.to_dict()
 
 
-@app.get("/jobs/{job_id}")
+@app.get("/jobs/{job_id}", dependencies=[Depends(require_api_key)])
 def get_job(job_id: str) -> dict:
     job = jobs.get(job_id)
     if job is None:
@@ -334,13 +339,13 @@ def get_job(job_id: str) -> dict:
     return data
 
 
-@app.get("/audit")
+@app.get("/audit", dependencies=[Depends(require_api_key)])
 def get_audit(project_id: Optional[str] = None, limit: int = 100) -> list:
     """Recent audit events (newest first), optionally scoped to one project."""
     return [e.to_dict() for e in audit.recent(project_id=project_id, limit=min(limit, 1000))]
 
 
-@app.post("/projects/{pid}/recommend")
+@app.post("/projects/{pid}/recommend", dependencies=[Depends(require_api_key)])
 def recommend_cloud(pid: str) -> dict:
     project = _require_project(pid)
     if project.upload_path is None:
@@ -353,7 +358,7 @@ def recommend_cloud(pid: str) -> dict:
         raise HTTPException(400, str(e)) from e
 
 
-@app.post("/projects/{pid}/assess")
+@app.post("/projects/{pid}/assess", dependencies=[Depends(require_api_key)])
 def assess_estate(pid: str) -> dict:
     project = _require_project(pid)
     if project.upload_path is None:
@@ -365,7 +370,7 @@ def assess_estate(pid: str) -> dict:
     return a.model_dump(mode="json")
 
 
-@app.post("/projects/{pid}/report", response_class=HTMLResponse)
+@app.post("/projects/{pid}/report", response_class=HTMLResponse, dependencies=[Depends(require_api_key)])
 def executive_report(pid: str, include_recommendation: bool = True) -> HTMLResponse:
     project = _require_project(pid)
     if project.upload_path is None:
@@ -382,7 +387,7 @@ def executive_report(pid: str, include_recommendation: bool = True) -> HTMLRespo
     return HTMLResponse(build_executive_report(plan, vms, recommendation=rec))
 
 
-@app.get("/projects/{pid}/download")
+@app.get("/projects/{pid}/download", dependencies=[Depends(require_api_key)])
 def download(pid: str) -> FileResponse:
     project = _require_project(pid)
     if not project.zip_path or not Path(project.zip_path).exists():

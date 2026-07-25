@@ -350,6 +350,16 @@ curl -s -X POST localhost:8000/projects/$PID/run
 curl -s -o out.zip localhost:8000/projects/$PID/download
 ```
 
+**Beyond a laptop** — a persistent store and a bearer token (see ADR 0025; neither is a
+substitute for the real Postgres/OIDC roadmap items, both are real and tested today):
+```bash
+IACTRANSLATE_STORE=sqlite IACTRANSLATE_DB_PATH=./iactranslate.db \
+IACTRANSLATE_API_KEY=$(openssl rand -hex 24) \
+  uvicorn iactranslate.api.main:app --port 8000
+# every project-touching request now needs:
+curl -s localhost:8000/projects/$PID -H "Authorization: Bearer $IACTRANSLATE_API_KEY"
+```
+
 ### 6.5 Web UI
 ```bash
 # terminal 1 (API with CORS)
@@ -436,7 +446,10 @@ All env vars (see `src/iactranslate/config.py`):
 | `IACTRANSLATE_ANTHROPIC_MODEL` | `claude-opus-4-8` | Model for classify/rightsize. |
 | `IACTRANSLATE_MAX_UPLOAD_MB` | `25` | Upload cap → `413`. Streamed, never buffered whole. |
 | `IACTRANSLATE_MAX_VMS` | `5000` | Inventory size cap → `400`. |
-| `IACTRANSLATE_MAX_PROJECTS` | `200` | In-memory store cap; oldest evicted (temp dirs deleted). |
+| `IACTRANSLATE_MAX_PROJECTS` | `200` | Store capacity cap; oldest evicted (temp dirs deleted). |
+| `IACTRANSLATE_STORE` | `memory` | `memory` (dies on restart, zero setup) or `sqlite` (persists metadata to `IACTRANSLATE_DB_PATH`, survives a restart — see ADR 0025). |
+| `IACTRANSLATE_DB_PATH` | `./iactranslate.db` | SQLite file path when `IACTRANSLATE_STORE=sqlite`. |
+| `IACTRANSLATE_API_KEY` | (none) | Set to require `Authorization: Bearer <key>` on every project-touching endpoint. Unset = no auth (today's default). Not OIDC/SSO — see ADR 0025. |
 | `IACTRANSLATE_TARGET_UTILIZATION` | `0.65` | When a source carries utilization, size instances so they run at ~this utilization (right-sizing). |
 | `IACTRANSLATE_PRICING` | `static` | `static` (curated catalog rates, offline) or `live` (real market prices, cached, falls back to static). |
 | `IACTRANSLATE_GCP_BILLING_API_KEY` | (none) | API key for GCP live pricing (Cloud Billing Catalog). Without it, GCP live falls back to static. |

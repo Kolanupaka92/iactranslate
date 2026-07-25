@@ -282,6 +282,12 @@ platform services layered on top.
   `depends_on` chains, rollback strategy, LB-aware downtime estimates —
   advisory; does not discover cross-application dependencies it has no
   signal for, see [ADR 0024](adr/0024-migration-wave-planning.md))
+- ✅ Persistent store + bearer auth, both opt-in and stdlib-only: project
+  metadata survives a restart via `SqliteProjectStore`
+  (`IACTRANSLATE_STORE=sqlite`), and `IACTRANSLATE_API_KEY` gates
+  project-touching endpoints with a bearer token — real, tested stopgaps for
+  the in-memory-store and zero-auth gaps, not Postgres or OIDC/RBAC
+  (see [ADR 0025](adr/0025-persistent-store-and-bearer-auth.md))
 
 **Not yet supported**
 
