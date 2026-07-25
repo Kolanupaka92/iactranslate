@@ -37,6 +37,11 @@ CI proves the output is valid against the real cloud providers (`tofu validate`)
 - **Managed-DB re-platforming advice.** Database-tier workloads are flagged as
   RDS / Cloud SQL / Azure SQL candidates (`replatforming.json`) — advisory only;
   the plan still lift-and-shifts them, because data migration is out of scope.
+- **Migration wave planning.** Workloads are sequenced by tier dependency
+  (data/cache → app → web) and environment order (dev → staging → prod), with
+  `depends_on` chains, rollback strategy, and validation checks per wave
+  (`waves.json`) — honest about not discovering cross-application dependencies
+  it has no signal for.
 - **A full migration-platform layer.** Pre-migration **assessment** (readiness +
   risks), **confidence** scoring, an **executive report**, **architecture
   diagrams**, **infrastructure diff**, **brownfield** adoption (import blocks),

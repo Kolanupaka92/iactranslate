@@ -19,6 +19,7 @@ from .diagram import architecture_svg
 from .models import MigrationPlan, NormalizedVM
 from .narrative import generate_narrative
 from .recommend import Recommendation
+from .waves import WaveReport, plan_waves
 
 _SEV_COLOR = {
     Severity.CRITICAL: "#dc2626",
@@ -60,6 +61,32 @@ def _cost_by_tier(plan: MigrationPlan) -> List[tuple]:
     return rows
 
 
+def _wave_section(waves: WaveReport) -> str:
+    if not waves.waves:
+        return ""
+    rows = "\n".join(
+        f"""<tr>
+          <td class="num">{w.sequence}</td>
+          <td class="cap">{_esc(w.name)}</td>
+          <td>{_esc(', '.join(w.workloads))}</td>
+          <td>{_esc(', '.join(d.split('-')[1] for d in w.depends_on) or '—')}</td>
+          <td class="num">{w.estimated_downtime_minutes} min</td>
+        </tr>"""
+        for w in waves.waves
+    )
+    notes = "".join(f"<li>{_esc(n)}</li>" for n in waves.notes)
+    return f"""  <section>
+    <h2>Migration waves</h2>
+    <p class="lead">{_esc(waves.summary)}</p>
+    <div class="scroll"><table>
+      <thead><tr><th class="num">Wave</th><th>Layer</th><th>Workloads</th>
+        <th>Depends on</th><th class="num">Est. downtime</th></tr></thead>
+      <tbody>{rows}</tbody>
+    </table></div>
+    <ul class="muted">{notes}</ul>
+  </section>"""
+
+
 def _recommendation_section(rec: Recommendation) -> str:
     rows = "\n".join(
         f"""<tr class="{'winner' if s.cloud == rec.recommended else ''}">
@@ -98,6 +125,8 @@ def build_executive_report(
     vms = vms or []
     assessment = assess(vms, project_name=plan.project_name, source_platform=plan.source_platform)
     confidence = score_plan(plan, vms)
+    waves = plan_waves(plan)
+    wave_section = _wave_section(waves)
     narrative = generate_narrative(plan, assessment, confidence)
     narrative_badge = (
         '<span class="ai-badge">✨ AI-generated (Claude)</span>' if narrative.source == "ai"
@@ -238,6 +267,8 @@ def build_executive_report(
     <h2>Target architecture</h2>
     <div class="scroll">{arch_svg}</div>
   </section>
+
+{wave_section}
 
 {rec_section}
 

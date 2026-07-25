@@ -52,10 +52,10 @@ bespoke parser — so it works for every company, not just VMware shops.
 **Status.** CLI + FastAPI + Next.js web UI. On top of the core translator it ships a full
 migration-platform layer — assessment, confidence scoring, executive reports, architecture
 diagrams, infrastructure diff, brownfield adoption, load balancer topology,
-managed-DB re-platforming advice, a Kubernetes discovery source,
+managed-DB re-platforming advice, migration wave planning, a Kubernetes discovery source,
 Pulumi/CloudFormation/Bicep/CDK/Kubernetes renderers, a policy engine, an
 Infrastructure Graph IR, async jobs + audit, and opt-in GitOps.
-~295 tests, 7 green CI jobs (lint, pytest 3.9/3.11/3.12, Docker health, web build, real
+~307 tests, 7 green CI jobs (lint, pytest 3.9/3.11/3.12, Docker health, web build, real
 Terraform validate). Repo: `github.com/Kolanupaka92/iactranslate` (private).
 
 ---
@@ -154,6 +154,7 @@ iactranslate/
 | **Renderer** | Swappable IaC output: `terraform` (default, HCL, all 5 clouds), `pulumi` (Python, AWS/Azure/GCP — not yet OCI/DigitalOcean), `cloudformation` (JSON, AWS-only), `bicep` (Azure-only), `cdk` (Python, AWS-only), or `kubernetes` (JSON/KubeVirt, any cloud) — the latter four render from the Infrastructure Graph, not the plan. | `renderers/` |
 | **Brownfield** | Existing cloud fleet with resource ids → Terraform/Pulumi `import` blocks (adopt, don't recreate). | `sources/cloud`, `renderers/` |
 | **Re-platforming advisor** | Flags database-tier workloads as managed-DB candidates (RDS/Cloud SQL/Azure SQL) with engine detection + caveats. Advisory-only — never changes the plan. Emits `replatforming.json`. | `replatform.py` |
+| **Migration wave planner** | Sequences workloads by tier dependency (data/cache → app → web) + environment order (dev → staging → prod), with `depends_on` chains, rollback strategy, validation checks, LB-aware downtime estimates. Advisory-only. Emits `waves.json`. | `waves.py` |
 | **GitOps** | Opt-in CI/CD workflow (plan on PR, apply on merge) + .gitignore, target/renderer-aware. | `gitops.py` |
 | **Validation layer** | Never trusts provider output: checks catalog membership, CIDR overlap/containment, duplicate names, referential integrity. | `validation/validators.py` |
 
@@ -203,7 +204,7 @@ iactranslate/
 
 Output tree (per cloud): `versions.tf, provider.tf, variables.tf, terraform.tfvars,
 networking.tf, security.tf, loadbalancer.tf, compute.tf, storage.tf, outputs.tf, main.tf,
-README.md, graph.json, assessment.json, confidence.json, decisions.json,
+README.md, graph.json, assessment.json, confidence.json, decisions.json, waves.json,
 documentation/migration-summary.md, modules/` — plus `replatforming.json` when any
 database-tier workloads are detected.
 

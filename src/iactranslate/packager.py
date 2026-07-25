@@ -16,6 +16,7 @@ from .models import MigrationPlan, NormalizedVM
 from .renderers import render
 from .replatform import analyze_replatforming
 from .targets.base import Target
+from .waves import plan_waves
 
 
 def migration_summary(plan: MigrationPlan, vms: Optional[List[NormalizedVM]] = None) -> str:
@@ -88,6 +89,24 @@ def migration_summary(plan: MigrationPlan, vms: Optional[List[NormalizedVM]] = N
             scheme = "internet-facing" if lb.internet_facing else "internal"
             ports = ", ".join(f"{listener.protocol}:{listener.listener_port}" for listener in lb.listeners)
             lines.append(f"- **{lb.name}** ({scheme}) → {', '.join(lb.targets)} · listeners: {ports}")
+        lines.append("")
+
+    # Migration wave plan (advisory only — see waves.json).
+    wave_report = plan_waves(plan)
+    if wave_report.waves:
+        lines += ["## Migration waves", "", wave_report.summary, "",
+                   "| Wave | Environment | Layer | Workloads | Depends on | Est. downtime |",
+                   "|---|---|---|---|---|---:|"]
+        for w in wave_report.waves:
+            deps = ", ".join(d.split("-", 2)[1] for d in w.depends_on) or "—"
+            lines.append(
+                f"| {w.sequence} | {w.environment.value} | {w.name.split('— ')[-1]} | "
+                f"{', '.join(w.workloads)} | {deps} | {w.estimated_downtime_minutes} min |"
+            )
+        lines.append("")
+        lines.append("> Ordering is inferred from tier dependency and environment promotion order — "
+                     "see `waves.json` for rollback strategy and validation checks per wave, and its "
+                     "notes for what this does *not* model (cross-application dependencies).")
         lines.append("")
 
     # Managed-DB re-platforming advice (advisory only — the plan still
@@ -190,6 +209,13 @@ def build_project(
         (out / "replatforming.json").write_text(
             json.dumps(replatform.model_dump(mode="json"), indent=2)
         )
+
+    # Migration wave plan — deterministic sequencing by environment + tier
+    # dependency depth (see waves.py). Advisory: informs execution order, does
+    # not change what's rendered.
+    (out / "waves.json").write_text(
+        json.dumps(plan_waves(plan).model_dump(mode="json"), indent=2)
+    )
 
     # Architecture diagram — SVG (portable) + Mermaid (renders in GitHub/markdown).
     (docs / "architecture.svg").write_text(architecture_svg(plan))

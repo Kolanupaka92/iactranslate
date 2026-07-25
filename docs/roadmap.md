@@ -42,6 +42,11 @@ in CI on `main`.
 - ✅ **Managed-database re-platforming (advisory)** — flags database-tier
   workloads as RDS / Cloud SQL / Azure SQL candidates in `replatforming.json`
   without changing the plan (see [ADR 0020](adr/0020-managed-db-replatforming.md))
+- ✅ **Migration wave planning** — sequences workloads by tier dependency
+  (data/cache → app → web) and environment promotion order (dev/test →
+  staging → production), with `depends_on` chains, rollback strategy,
+  validation checks, and LB-aware downtime estimates in `waves.json` +
+  the executive report (see [ADR 0024](adr/0024-migration-wave-planning.md))
 - ✅ GitOps: opt-in CI/CD workflow (plan on PR, apply on merge)
 - ✅ **Policy engine** — pluggable, read-only org rules (`deny`/`warn`) before rendering
 - ✅ **Capability flags** — targets advertise supported features (`GET /targets`)

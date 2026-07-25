@@ -167,6 +167,7 @@
         <div class="card"><h3 class="kicker">Report</h3><p style="margin-top:5px">A client-ready <b class="accent">executive report</b> + architecture diagrams, generated with the project.</p></div>
         <div class="card"><h3 class="kicker">Ship</h3><p style="margin-top:5px"><b class="accent">Brownfield</b> import for existing fleets, <b class="accent">GitOps</b> CI/CD, infra diff, async jobs + audit trail.</p></div>
         <div class="card"><h3 class="kicker">Re-platform</h3><p style="margin-top:5px">Database tiers flagged as <b class="accent">managed-DB candidates</b> (RDS / Cloud SQL / Azure SQL); multi-instance tiers auto-fronted by a <b class="accent">load balancer</b>.</p></div>
+        <div class="card"><h3 class="kicker">Sequence</h3><p style="margin-top:5px"><b class="accent">Migration waves</b> ordered by tier dependency and environment risk, with rollback strategy, validation checks, and LB-aware downtime estimates per wave.</p></div>
         <div class="card"><h3 class="kicker">AI, on demand</h3><p style="margin-top:5px">Claude-powered classification &amp; sizing, toggled per-run from the <b class="accent">CLI, API, or web UI</b> — with an honest fallback record and an AI-written executive summary when it runs.</p></div>
       </div>
     </div>
@@ -219,14 +220,14 @@
       <h2>The product is built — and the output actually validates.</h2>
       <div class="row" style="margin-top:8px;gap:26px">
         <div class="stat"><b>5→5</b><span>sources → clouds, live</span></div>
-        <div class="stat"><b>295</b><span>automated tests</span></div>
+        <div class="stat"><b>307</b><span>automated tests</span></div>
         <div class="stat"><b>7/7</b><span>CI jobs green</span></div>
         <div class="stat"><b class="accent">tofu&nbsp;✓</b><span>real provider validate</span></div>
       </div>
       <ul class="clean" style="margin-top:24px">
         <li>Generated Terraform passes <b>real <code>tofu validate</code></b> against the actual AWS, azurerm, and google providers — enforced continuously in CI.</li>
-        <li>Shipping today: a <b>CLI</b>, a hardened <b>FastAPI</b> service (sync + <b>async jobs</b> + audit), and a <b>Next.js web app</b> — plus assessment, confidence, executive reports, diagrams, infra diff, a <b>policy engine</b>, an Infrastructure-Graph IR, load-balancer topology, managed-DB re-platforming advice, and <b>six IaC formats</b> (Terraform, Pulumi, CloudFormation, Bicep, CDK, Kubernetes).</li>
-        <li>Engineered like a platform: <b>23 architecture decision records</b>, deterministic + offline + reproducible, non-root Docker, streamed upload caps.</li>
+        <li>Shipping today: a <b>CLI</b>, a hardened <b>FastAPI</b> service (sync + <b>async jobs</b> + audit), and a <b>Next.js web app</b> — plus assessment, confidence, executive reports, diagrams, infra diff, a <b>policy engine</b>, an Infrastructure-Graph IR, load-balancer topology, managed-DB re-platforming advice, migration wave planning, and <b>six IaC formats</b> (Terraform, Pulumi, CloudFormation, Bicep, CDK, Kubernetes).</li>
+        <li>Engineered like a platform: <b>24 architecture decision records</b>, deterministic + offline + reproducible, non-root Docker, streamed upload caps.</li>
       </ul>
     </div>
   </section>
@@ -302,7 +303,7 @@
           <ul class="clean" style="margin-top:10px">
             <li>5 sources → 5 clouds · 6 IaC formats (TF · Pulumi · CFN · Bicep · CDK · K8s)</li>
             <li>Assessment · recommendation · confidence · reports · diagrams · diff</li>
-            <li>Load-balancer topology · managed-DB re-platforming advice</li>
+            <li>Load-balancer topology · managed-DB re-platforming advice · migration waves</li>
             <li>Policy engine · brownfield import · GitOps · async jobs + audit</li>
           </ul>
         </div>

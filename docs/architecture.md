@@ -278,6 +278,10 @@ platform services layered on top.
   Standard LB / Network LB / OCI flexible LB / DigitalOcean LB, per cloud)
 - ✅ Managed-DB re-platforming **advice** (database tiers flagged as RDS / Cloud
   SQL / Azure SQL candidates — advisory, does not change the plan)
+- ✅ Migration wave planning (tier dependency + environment promotion order,
+  `depends_on` chains, rollback strategy, LB-aware downtime estimates —
+  advisory; does not discover cross-application dependencies it has no
+  signal for, see [ADR 0024](adr/0024-migration-wave-planning.md))
 
 **Not yet supported**
 
