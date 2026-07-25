@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from "react";
 
+import AIToggle from "@/components/AIToggle";
 import AssessmentPanel from "@/components/AssessmentPanel";
 import RecommendTable from "@/components/RecommendTable";
 import RunSummary from "@/components/RunSummary";
@@ -19,6 +20,7 @@ import {
   runProject,
   uploadFile,
   type Assessment,
+  type Provider,
   type ProjectSummary,
   type Recommendation,
   type RunResult,
@@ -60,6 +62,7 @@ export default function Home() {
   const [name, setName] = useState("");
   const [target, setTarget] = useState<Target>("aws");
   const [source, setSource] = useState<Source>("auto");
+  const [provider, setProvider] = useState<Provider>("rule");
   const [project, setProject] = useState<ProjectSummary | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [uploaded, setUploaded] = useState(false);
@@ -76,13 +79,13 @@ export default function Home() {
     setBusy("create");
     setError(null);
     try {
-      setProject(await createProject(name.trim(), target, source));
+      setProject(await createProject(name.trim(), target, source, undefined, provider));
     } catch (e) {
       fail(e);
     } finally {
       setBusy(null);
     }
-  }, [name, target, source]);
+  }, [name, target, source, provider]);
 
   const handleFile = useCallback(
     async (f: File) => {
@@ -138,7 +141,7 @@ export default function Home() {
       setBusy("switch");
       setError(null);
       try {
-        const fresh = await createProject(project.name, t, source);
+        const fresh = await createProject(project.name, t, source, undefined, provider);
         await uploadFile(fresh.id, file);
         void deleteProject(project.id).catch(() => {});
         setProject(fresh);
@@ -150,7 +153,7 @@ export default function Home() {
         setBusy(null);
       }
     },
-    [project, file, source],
+    [project, file, source, provider],
   );
 
   const handleRun = useCallback(async () => {
@@ -230,6 +233,7 @@ export default function Home() {
             />
             <TargetPicker value={target} onChange={setTarget} />
             <SourcePicker value={source} onChange={setSource} />
+            <AIToggle value={provider} onChange={setProvider} />
             <button
               type="button"
               onClick={handleCreate}

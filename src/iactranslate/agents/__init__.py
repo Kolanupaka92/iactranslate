@@ -38,4 +38,5 @@ def build_migration_plan(
         network=network,
         compute=compute,
         app_groups=app_groups,
+        provider_used=provider.name,
     )

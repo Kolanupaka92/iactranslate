@@ -55,7 +55,7 @@ diagrams, infrastructure diff, brownfield adoption, load balancer topology,
 managed-DB re-platforming advice, a Kubernetes discovery source,
 Pulumi/CloudFormation/Bicep/CDK/Kubernetes renderers, a policy engine, an
 Infrastructure Graph IR, async jobs + audit, and opt-in GitOps.
-~250 tests, 7 green CI jobs (lint, pytest 3.9/3.11/3.12, Docker health, web build, real
+~264 tests, 7 green CI jobs (lint, pytest 3.9/3.11/3.12, Docker health, web build, real
 Terraform validate). Repo: `github.com/Kolanupaka92/iactranslate` (private).
 
 ---
@@ -142,7 +142,8 @@ iactranslate/
 | **MigrationPlan** | The validated object the generator renders: `network` + `compute[]` + `app_groups[]` + `source_platform` + `target` + `region`. | `models.py` |
 | **Source** | Reads one inventory format → raw records that `normalize.py` understands. Has `detect(path)→confidence` and `parse(path, column_map)`. VMware/Hyper-V/CMDB/cloud are tabular; **Kubernetes** reads `kubectl -o json` (containers sized from resource requests). | `sources/base.py` |
 | **Target** | One cloud: an instance **catalog**, tier→family/subnet/security **mappings**, OS→image detection, and Jinja2 **templates**. | `targets/base.py` |
-| **Provider** | Makes the *structured decisions* (grouping, instance choice). `rule` (deterministic, default) or `anthropic` (Claude). Always re-checked by validation. | `agents/providers/` |
+| **Provider** | Makes the *structured decisions* (grouping, instance choice). `rule` (deterministic, default) or `anthropic` (Claude) — reachable via `--provider`/API `provider` field/web toggle, not just an env var. Always re-checked by validation; `plan.provider_used` honestly records which one ran. | `agents/providers/` |
+| **Narrative** | The executive report's AI-written summary paragraph — only when the plan itself was AI-assisted, else a deterministic paragraph from the same facts. Presentation-layer only; never changes the plan. | `narrative.py` |
 | **Recommender** | Runs all clouds on one inventory and scores cost (0.45) + fit (0.30) + OS-affinity (0.25). 2.0 adds decisiveness (clear/moderate/close), annualized cost, and estate notes. | `recommend.py` |
 | **Assessment** | Pre-migration read of the estate: risk/cost/data-quality/capacity findings + a 0-100 readiness score. Deterministic, no AI. Emits JSON + a standalone HTML report. | `assessment/` |
 | **Confidence Engine** | Scores how sure each decision is (sizing/classification/image/cost) per workload + plan-level, from observable signals. | `confidence.py` |
@@ -366,13 +367,36 @@ docker run -p 8000:8000 iactranslate        # non-root, healthchecked on /health
 ```
 
 ### 6.7 Use Claude instead of the rule engine
+The Anthropic provider (Claude-powered classification + instance sizing) is reachable from
+every surface, per-invocation — not just via environment variable (see ADR 0021):
+
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
-export IACTRANSLATE_LLM_PROVIDER=anthropic
 export IACTRANSLATE_ANTHROPIC_MODEL=claude-opus-4-8   # optional
+
+# CLI: explicit per-run, overrides the env-configured default
+iactranslate translate rvtools.xlsx --target aws --out ./out --provider anthropic
+
+# API: per-request, so different callers can choose independently
+curl -X POST http://localhost:8000/projects \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"acme","target":"aws","provider":"anthropic"}'
+
+# Web UI: "Use AI (Claude) for classification & sizing" toggle in step 1
 ```
-Without a key it silently falls back to `rule`. The validation layer + catalog guardrail run
-regardless, so a bad LLM answer degrades gracefully.
+Without a key it silently falls back to `rule` — but never silently: the CLI prints which
+engine actually ran (`AI: rule engine (deterministic) [requested 'anthropic' but fell back —
+check ANTHROPIC_API_KEY]`), the API's run result carries both `provider_requested` and
+`provider_used`, and the web UI shows an amber fallback banner. `MigrationPlan.provider_used`
+is the one place this is recorded — read it if you need to confirm what actually ran.
+The validation layer + catalog guardrail run regardless, so a bad LLM answer degrades
+gracefully either way.
+
+The executive report's "Summary" section is also AI-written when (and only when) the plan
+itself was AI-assisted (`plan.provider_used == "anthropic"`) — otherwise it's a deterministic
+paragraph built from the same facts. The report always shows which mode produced it; see
+`narrative.py` and ADR 0021. This narrative is presentation-layer prose only — it cannot
+change the plan or any rendered IaC.
 
 ---
 
@@ -406,8 +430,8 @@ All env vars (see `src/iactranslate/config.py`):
 
 | Env var | Default | Purpose |
 |---|---|---|
-| `IACTRANSLATE_LLM_PROVIDER` | `rule` | `rule` (deterministic) or `anthropic` (Claude). |
-| `ANTHROPIC_API_KEY` | — | Required for `anthropic`; absent → auto-fallback to `rule`. |
+| `IACTRANSLATE_LLM_PROVIDER` | `rule` | Default engine when `--provider`/`provider` isn't given: `rule` or `anthropic`. |
+| `ANTHROPIC_API_KEY` | — | Required for `anthropic`; absent → auto-fallback to `rule` (see §6.7, ADR 0021). |
 | `IACTRANSLATE_ANTHROPIC_MODEL` | `claude-opus-4-8` | Model for classify/rightsize. |
 | `IACTRANSLATE_MAX_UPLOAD_MB` | `25` | Upload cap → `413`. Streamed, never buffered whole. |
 | `IACTRANSLATE_MAX_VMS` | `5000` | Inventory size cap → `400`. |
@@ -509,7 +533,7 @@ OpenTofu, validates aws/azure/gcp output against real providers).
 | **Cloud source**: vCPU/mem come out as defaults | Instance type not in the AWS/Azure catalogs. | Add the type to the relevant `targets/*/catalog.py`, or include explicit `vCPUs`/`Memory` columns in the export. |
 | **`tofu validate`** fails locally | `tofu`/`terraform` not installed, or provider download blocked. | `brew install opentofu`; ensure network for `tofu init`. Set `TF_PLUGIN_CACHE_DIR` to reuse providers. |
 | **git push** rejected: "…without `workflow` scope" | Pushing `.github/workflows/*` with a token lacking `workflow` scope. | `gh auth refresh -h github.com -s workflow` then push (full path `/opt/homebrew/bin/gh` if not on PATH), or edit the file via GitHub's web UI. |
-| **Anthropic provider** seems ignored | No `ANTHROPIC_API_KEY`, or SDK not installed. | It auto-falls back to `rule`. Install `anthropic` (in `[dev]`) and export the key. |
+| **Anthropic provider** seems ignored | No `ANTHROPIC_API_KEY`, or SDK not installed. | It auto-falls back to `rule` — check `provider_used` in the run result (CLI prints it, API/UI show a fallback banner) rather than assuming. Install `anthropic` (in `[dev]`) and export the key. |
 | **`iactranslate: command not found`** | venv not activated / package not installed. | `. .venv/bin/activate && pip install -e ".[dev]"`. |
 | **Web build/lint fails on a hook dep** | A `useCallback`/`useEffect` missing a dependency. | Add the dep to the array (ESLint names it). |
 

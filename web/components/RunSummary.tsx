@@ -43,6 +43,19 @@ export default function RunSummary({ result }: { result: RunResult }) {
         </p>
       ) : null}
 
+      {result.provider_requested === "anthropic" ? (
+        result.provider_used === "anthropic" ? (
+          <p className="rounded-lg border border-emerald-600/30 bg-emerald-600/10 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-400">
+            ✨ Classified &amp; sized by Claude (Anthropic).
+          </p>
+        ) : (
+          <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
+            AI was requested but the server has no <code>ANTHROPIC_API_KEY</code> — fell back to
+            the deterministic rule engine.
+          </p>
+        )
+      ) : null}
+
       {conf ? (
         <div className="rounded-lg border border-neutral-200 px-3 py-2 text-sm dark:border-neutral-800">
           <span className="opacity-70">Translation confidence: </span>

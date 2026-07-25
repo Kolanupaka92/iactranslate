@@ -5,6 +5,7 @@ export const API_URL =
 
 export type Target = "aws" | "azure" | "gcp";
 export type Source = "auto" | "vmware" | "hyperv" | "kubernetes" | "cloud" | "generic";
+export type Provider = "rule" | "anthropic";
 
 export interface InstanceRow {
   vm: string;
@@ -26,6 +27,8 @@ export interface RunResult {
   right_sized_count?: number;
   confidence?: ConfidenceSummary;
   instances: InstanceRow[];
+  provider_requested?: Provider;
+  provider_used?: Provider;
 }
 
 export interface ProjectSummary {
@@ -33,6 +36,7 @@ export interface ProjectSummary {
   name: string;
   target: Target;
   region: string | null;
+  provider?: Provider;
   status: "created" | "uploaded" | "completed" | "failed";
   error?: string;
   result?: RunResult;
@@ -139,11 +143,12 @@ export function createProject(
   target: Target,
   source: Source = "auto",
   region?: string,
+  provider: Provider = "rule",
 ): Promise<ProjectSummary> {
   return request("/projects", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, target, source, region: region || null }),
+    body: JSON.stringify({ name, target, source, region: region || null, provider }),
   });
 }
 

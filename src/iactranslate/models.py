@@ -235,6 +235,15 @@ class MigrationPlan(BaseModel):
     network: NetworkPlan
     compute: List[ComputePlan]
     app_groups: List[AppGroup] = Field(default_factory=list)
+    provider_used: str = Field(
+        default="rule",
+        description=(
+            "The decision engine that actually classified/sized this plan: "
+            "'rule' (deterministic) or 'anthropic' (Claude). Requesting 'anthropic' "
+            "without an API key silently falls back to 'rule' (see agents/providers) — "
+            "this field is the honest record of what actually ran, not what was asked for."
+        ),
+    )
 
     @property
     def total_estimated_monthly_cost_usd(self) -> float:

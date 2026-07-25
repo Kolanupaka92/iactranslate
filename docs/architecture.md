@@ -46,7 +46,14 @@ would violate one, that's a signal the change is wrong — not the principle.
 
 7. **AI is optional.** AI may improve a structured decision (grouping, instance
    choice) but never bypasses validation and never writes Terraform. Turning AI
-   off changes quality, never correctness.
+   off changes quality, never correctness. It's reachable per-invocation from
+   the CLI, the API, and the web UI (`--provider`/`provider`/a toggle, not just
+   an environment variable), and `MigrationPlan.provider_used` always records
+   which engine actually ran — a request for AI that silently fell back to the
+   rule engine is never reported as AI having run (see
+   [ADR 0021](adr/0021-ai-integration-reachable-and-honest.md)). The executive
+   report's summary paragraph is AI-written under the same condition and
+   clearly labeled either way.
 
 ---
 

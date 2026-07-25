@@ -17,6 +17,7 @@ from .assessment.models import Severity
 from .confidence import score_plan
 from .diagram import architecture_svg
 from .models import MigrationPlan, NormalizedVM
+from .narrative import generate_narrative
 from .recommend import Recommendation
 
 _SEV_COLOR = {
@@ -97,6 +98,11 @@ def build_executive_report(
     vms = vms or []
     assessment = assess(vms, project_name=plan.project_name, source_platform=plan.source_platform)
     confidence = score_plan(plan, vms)
+    narrative = generate_narrative(plan, assessment, confidence)
+    narrative_badge = (
+        '<span class="ai-badge">✨ AI-generated (Claude)</span>' if narrative.source == "ai"
+        else '<span class="ai-badge muted">Deterministic summary — enable <code>--provider anthropic</code> for an AI narrative</span>'
+    )
 
     total_cost = plan.total_estimated_monthly_cost_usd
     right_sized = [c for c in plan.compute if c.right_sized]
@@ -159,9 +165,11 @@ def build_executive_report(
 <title>Migration Report — {_esc(plan.project_name)}</title>
 <style>
   :root {{ color-scheme: light dark;
-    --bg:#f6f7f9; --card:#ffffff; --ink:#0f172a; --muted:#64748b; --line:#e2e8f0; --accent:#0f766e; }}
+    --bg:#f6f7f9; --card:#ffffff; --ink:#0f172a; --muted:#64748b; --line:#e2e8f0; --accent:#0f766e;
+    --accent-soft:#0f766e14; }}
   @media (prefers-color-scheme: dark) {{ :root {{
-    --bg:#0b1120; --card:#111827; --ink:#e2e8f0; --muted:#94a3b8; --line:#1e293b; --accent:#5eead4; }} }}
+    --bg:#0b1120; --card:#111827; --ink:#e2e8f0; --muted:#94a3b8; --line:#1e293b; --accent:#5eead4;
+    --accent-soft:#5eead41f; }} }}
   * {{ box-sizing: border-box; }}
   body {{ margin:0; background:var(--bg); color:var(--ink);
     font-family:-apple-system,Segoe UI,Roboto,sans-serif; line-height:1.5; }}
@@ -178,6 +186,11 @@ def build_executive_report(
   .up {{ text-transform:uppercase; }}
   .cap {{ text-transform:capitalize; }}
   .muted {{ color:var(--muted); }}
+  .narrative {{ font-size:.95rem; line-height:1.7; white-space:pre-line; }}
+  .ai-badge {{ display:inline-block; font-size:.68rem; font-weight:600; letter-spacing:.02em;
+    padding:2px 9px; border-radius:999px; background:var(--accent-soft); color:var(--accent);
+    vertical-align:middle; margin-left:8px; }}
+  .ai-badge.muted {{ background:var(--line); color:var(--muted); font-weight:500; }}
   table {{ width:100%; border-collapse:collapse; font-size:.9rem; }}
   th,td {{ padding:8px 10px; border-bottom:1px solid var(--line); text-align:left; }}
   th.num,td.num {{ text-align:right; font-variant-numeric:tabular-nums; }}
@@ -203,6 +216,11 @@ def build_executive_report(
   </header>
 
   <div class="stats">{"".join(stats)}</div>
+
+  <section>
+    <h2>Summary {narrative_badge}</h2>
+    <p class="narrative">{_esc(narrative.text)}</p>
+  </section>
 
   <section>
     <h2>Cost breakdown by tier</h2>

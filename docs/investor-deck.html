@@ -130,7 +130,7 @@
       <h2>Exported inventory → deployable IaC, plus an <span class="accent">unbiased</span> cloud recommendation.</h2>
       <ul class="clean">
         <li><b>Secure by design.</b> Works entirely from exported files — never connects to the customer environment. Runs offline, no keys.</li>
-        <li><b>Not "an LLM writes Terraform."</b> A deterministic engine: AI makes only structured decisions; templates emit the <code>.tf</code>; a validation layer re-checks everything.</li>
+        <li><b>Not "an LLM writes Terraform."</b> A deterministic engine: AI makes only structured decisions; templates emit the <code>.tf</code>; a validation layer re-checks everything — and the plan always records honestly which engine actually ran.</li>
         <li><b>Reproducible &amp; auditable.</b> Output is provider-validated HCL — proven in CI, not a demo. Every decision carries a reason and a confidence score.</li>
         <li><b>Days of engineering → minutes.</b> Upload, assess, recommend, generate, download a ready-to-apply project.</li>
       </ul>
@@ -150,7 +150,7 @@
         <div class="card"><h3 class="kicker">Sources (input) · 5</h3><p style="margin-top:6px;color:var(--ink)">VMware · Hyper-V · <b class="accent">Kubernetes</b> · <b class="accent">Generic CMDB</b> · Cloud fleet — auto-detected. The generic reader ingests <em>any</em> spreadsheet with no bespoke parser.</p></div>
         <div class="card"><h3 class="kicker">Targets · 3 clouds × 6 IaC formats</h3><p style="margin-top:6px;color:var(--ink)">AWS · Azure · GCP — each a catalog + tier mapping + templates. Terraform, Pulumi, CloudFormation, Bicep, CDK, or Kubernetes from the same plan. New clouds slot in without touching the pipeline.</p></div>
       </div>
-      <p class="lead" style="margin-top:18px">The AI is optional and behind an interface — it defaults to a deterministic rule engine, so it runs offline with zero keys and is fully reproducible.</p>
+      <p class="lead" style="margin-top:18px">The AI is optional and behind an interface — it defaults to a deterministic rule engine, so it runs offline with zero keys and is fully reproducible. Toggle it on per-run from the CLI, the API, or the web UI; an AI-written executive summary follows automatically when it does.</p>
     </div>
   </section>
 
@@ -167,6 +167,7 @@
         <div class="card"><h3 class="kicker">Report</h3><p style="margin-top:5px">A client-ready <b class="accent">executive report</b> + architecture diagrams, generated with the project.</p></div>
         <div class="card"><h3 class="kicker">Ship</h3><p style="margin-top:5px"><b class="accent">Brownfield</b> import for existing fleets, <b class="accent">GitOps</b> CI/CD, infra diff, async jobs + audit trail.</p></div>
         <div class="card"><h3 class="kicker">Re-platform</h3><p style="margin-top:5px">Database tiers flagged as <b class="accent">managed-DB candidates</b> (RDS / Cloud SQL / Azure SQL); multi-instance tiers auto-fronted by a <b class="accent">load balancer</b>.</p></div>
+        <div class="card"><h3 class="kicker">AI, on demand</h3><p style="margin-top:5px">Claude-powered classification &amp; sizing, toggled per-run from the <b class="accent">CLI, API, or web UI</b> — with an honest fallback record and an AI-written executive summary when it runs.</p></div>
       </div>
     </div>
   </section>
@@ -218,14 +219,14 @@
       <h2>The product is built — and the output actually validates.</h2>
       <div class="row" style="margin-top:8px;gap:26px">
         <div class="stat"><b>5→3</b><span>sources → clouds, live</span></div>
-        <div class="stat"><b>250</b><span>automated tests</span></div>
+        <div class="stat"><b>264</b><span>automated tests</span></div>
         <div class="stat"><b>7/7</b><span>CI jobs green</span></div>
         <div class="stat"><b class="accent">tofu&nbsp;✓</b><span>real provider validate</span></div>
       </div>
       <ul class="clean" style="margin-top:24px">
         <li>Generated Terraform passes <b>real <code>tofu validate</code></b> against the actual AWS, azurerm, and google providers — enforced continuously in CI.</li>
         <li>Shipping today: a <b>CLI</b>, a hardened <b>FastAPI</b> service (sync + <b>async jobs</b> + audit), and a <b>Next.js web app</b> — plus assessment, confidence, executive reports, diagrams, infra diff, a <b>policy engine</b>, an Infrastructure-Graph IR, load-balancer topology, managed-DB re-platforming advice, and <b>six IaC formats</b> (Terraform, Pulumi, CloudFormation, Bicep, CDK, Kubernetes).</li>
-        <li>Engineered like a platform: <b>20 architecture decision records</b>, deterministic + offline + reproducible, non-root Docker, streamed upload caps.</li>
+        <li>Engineered like a platform: <b>21 architecture decision records</b>, deterministic + offline + reproducible, non-root Docker, streamed upload caps.</li>
       </ul>
     </div>
   </section>

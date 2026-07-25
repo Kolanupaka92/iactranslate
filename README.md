@@ -15,10 +15,11 @@ It's **not** "an LLM writes Terraform." It's a deterministic translation layer:
 parse → normalize → agents(classify · rightsize · network) → validate → render → package
 ```
 
-AI (optional) makes only *structured decisions*; templates emit the actual IaC;
-a validation layer re-checks every decision. Same input → same output, every
-time — and CI proves the output is valid against the real cloud providers
-(`tofu validate`).
+AI (optional — `--provider anthropic`, per-request via the API, or a web UI
+toggle) makes only *structured decisions*; templates emit the actual IaC; a
+validation layer re-checks every decision, and `plan.provider_used` always
+reports which engine actually ran. Same input → same output, every time — and
+CI proves the output is valid against the real cloud providers (`tofu validate`).
 
 ## Key features
 

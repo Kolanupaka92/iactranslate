@@ -28,6 +28,7 @@ class Project:
     column_map: Optional[dict] = None
     region: Optional[str] = None
     policy: Optional[dict] = None
+    provider: str = "rule"
     status: str = "created"  # created -> uploaded -> completed / failed
     workspace: Path = field(default_factory=lambda: Path(tempfile.mkdtemp(prefix="iactranslate_")))
     upload_path: Optional[Path] = None
@@ -51,11 +52,12 @@ class ProjectStore:
         column_map: Optional[dict] = None,
         region: Optional[str] = None,
         policy: Optional[dict] = None,
+        provider: str = "rule",
     ) -> Project:
         pid = uuid.uuid4().hex[:12]
         project = Project(
             id=pid, name=name, target=target, source=source,
-            column_map=column_map, region=region, policy=policy,
+            column_map=column_map, region=region, policy=policy, provider=provider,
         )
         with self._lock:
             self._projects[pid] = project

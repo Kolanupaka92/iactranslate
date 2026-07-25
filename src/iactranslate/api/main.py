@@ -29,6 +29,7 @@ from pydantic import BaseModel, field_validator
 from starlette.requests import Request
 
 from ..agents import build_migration_plan
+from ..agents.providers import get_provider
 from ..assessment import assess
 from ..confidence import score_plan
 from ..config import MAX_UPLOAD_BYTES, cors_origins
@@ -78,6 +79,14 @@ class CreateProject(BaseModel):
     column_map: Optional[Dict[str, str]] = None
     region: Optional[str] = None
     policy: Optional[Dict[str, dict]] = None
+    provider: str = "rule"
+
+    @field_validator("provider")
+    @classmethod
+    def _valid_provider(cls, v: str) -> str:
+        if v not in {"rule", "anthropic"}:
+            raise ValueError("provider must be 'rule' or 'anthropic'")
+        return v
 
     @field_validator("name")
     @classmethod
@@ -102,6 +111,7 @@ def _summary(project: Project) -> dict:
         "target": project.target,
         "source": project.source,
         "region": project.region,
+        "provider": project.provider,
         "status": project.status,
     }
     if project.error:
@@ -154,6 +164,7 @@ def create_project(body: CreateProject) -> dict:
     project = store.create(
         name=body.name, target=body.target, source=body.source,
         column_map=body.column_map, region=body.region, policy=body.policy,
+        provider=body.provider,
     )
     logger.info("created project %s (target=%s source=%s)", project.id, project.target, project.source)
     bus.publish(Event(EventType.PROJECT_CREATED, project_id=project.id,
@@ -234,6 +245,7 @@ def _execute_run(project: Project) -> None:
             source=project.source,
             column_map=project.column_map,
             region=project.region,
+            provider=get_provider(get_target(project.target), name=project.provider),
             make_zip=True,
             policy_config=project.policy,
         )
@@ -256,6 +268,8 @@ def _execute_run(project: Project) -> None:
         "estimated_monthly_cost_usd": result.plan.total_estimated_monthly_cost_usd,
         "pricing_source": result.plan.pricing_source,
         "right_sized_count": sum(1 for c in result.plan.compute if c.right_sized),
+        "provider_requested": project.provider,
+        "provider_used": result.plan.provider_used,
         "confidence": {
             "overall": confidence.overall,
             "level": confidence.level,

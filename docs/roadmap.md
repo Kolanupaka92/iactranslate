@@ -9,7 +9,10 @@ in CI on `main`.
 - ✅ Deterministic `parse → normalize → agents → validate → render → package`
 - ✅ Source registry: VMware, Hyper-V, Kubernetes, generic CMDB/spreadsheet, existing cloud fleet
 - ✅ Target registry: AWS, Azure, GCP (Terraform)
-- ✅ Rule-engine and Anthropic providers behind one interface (offline default)
+- ✅ Rule-engine and Anthropic providers behind one interface (offline default),
+  reachable from CLI/API/web (not just an env var) with an honest
+  `provider_used` record and an AI-written executive-report narrative when
+  AI actually ran (see [ADR 0021](adr/0021-ai-integration-reachable-and-honest.md))
 - ✅ Validation layer (catalog membership, CIDR overlap, referential integrity)
 - ✅ Cloud recommender (cost / fit / OS-affinity, unbiased) — and **Recommendation 2.0**
   (decisiveness, annualized cost, estate notes)

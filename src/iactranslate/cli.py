@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Dict, Optional
 
 from .agents import build_migration_plan
+from .agents.providers import get_provider
 from .assessment import assess, to_html, to_json
 from .confidence import score_plan
 from .diff import diff_inventories
@@ -48,6 +49,12 @@ def _cmd_translate(args: argparse.Namespace) -> int:
         return 2
 
     try:
+        provider = get_provider(get_target(args.target), name=args.provider) if args.provider else None
+    except UnknownTargetError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+
+    try:
         result = run_pipeline(
             input_path=args.input,
             project_name=project_name,
@@ -56,6 +63,7 @@ def _cmd_translate(args: argparse.Namespace) -> int:
             source=args.source,
             column_map=_parse_column_map(args.map),
             region=args.region,
+            provider=provider,
             make_zip=args.zip,
             renderer=args.renderer,
             gitops=args.gitops,
@@ -83,6 +91,11 @@ def _cmd_translate(args: argparse.Namespace) -> int:
     print(f"Migration:  {plan.source_platform} -> {plan.target} ({plan.region})")
     print(f"VMs:        {plan.vm_count}")
     print(f"Est. cost:  ${plan.total_estimated_monthly_cost_usd:.2f}/month")
+    if args.provider:
+        engine = "Claude (Anthropic)" if plan.provider_used == "anthropic" else "rule engine (deterministic)"
+        print(f"AI:         {engine}"
+              + ("  [requested 'anthropic' but fell back — check ANTHROPIC_API_KEY]"
+                 if args.provider == "anthropic" and plan.provider_used != "anthropic" else ""))
     print(f"Confidence: {conf.overall * 100:.0f}% ({conf.level})"
           + (f" — {len(conf.low_confidence())} low-confidence VM(s)"
              if conf.low_confidence() else ""))
@@ -279,6 +292,10 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Include a GitOps CI/CD workflow (plan on PR, apply on merge) + .gitignore.")
     t.add_argument("--policy", default=None,
                    help="Path to a JSON policy config; `deny` violations abort, `warn` are reported.")
+    t.add_argument("--provider", default=None, choices=("rule", "anthropic"),
+                   help="Decision engine for classification/sizing (default: $IACTRANSLATE_LLM_PROVIDER "
+                        "or 'rule'). 'anthropic' needs ANTHROPIC_API_KEY, else silently falls back to "
+                        "'rule' — the summary line reports which one actually ran.")
     t.add_argument("--zip", action="store_true", help="Also write a <out>.zip archive.")
     t.set_defaults(func=_cmd_translate)
 

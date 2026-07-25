@@ -28,5 +28,6 @@ Format: [Michael Nygard's ADR template](https://cognitect.com/blog/2011/11/15/do
 | [0018](0018-load-balancer-topology.md) | Load balancer topology: modeled once, rendered six ways | Accepted |
 | [0019](0019-kubernetes-source.md) | Kubernetes as a discovery source: containers read as workloads | Accepted |
 | [0020](0020-managed-db-replatforming.md) | Managed-database re-platforming is advisory, not automated | Accepted |
+| [0021](0021-ai-integration-reachable-and-honest.md) | AI made reachable end-to-end (CLI/API/web), and always honestly labeled | Accepted |
 
 See also the [Architecture & Design](../architecture.md) overview.
