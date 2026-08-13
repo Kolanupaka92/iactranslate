@@ -359,6 +359,24 @@ IACTRANSLATE_API_KEY=$(openssl rand -hex 24) \
 # every project-touching request now needs:
 curl -s localhost:8000/projects/$PID -H "Authorization: Bearer $IACTRANSLATE_API_KEY"
 ```
+The same `IACTRANSLATE_STORE=sqlite` switch also persists the **audit trail**, so
+`GET /audit` still answers after a restart (ADR 0026).
+
+**Monitoring** — `GET /metrics` serves Prometheus exposition format. It is
+unauthenticated by design (scrapers don't send bearer tokens; the payload is
+aggregate counts only, no project or inventory data):
+```bash
+curl -s localhost:8000/metrics
+```
+Counters (`iactranslate_projects_created_total`, `…_jobs_failed_total`, …) are
+process-local and reset on restart — correct Prometheus semantics, since `rate()`
+handles counter resets. A minimal scrape config:
+```yaml
+scrape_configs:
+  - job_name: iactranslate
+    static_configs:
+      - targets: ['localhost:8000']
+```
 
 ### 6.5 Web UI
 ```bash
@@ -447,7 +465,7 @@ All env vars (see `src/iactranslate/config.py`):
 | `IACTRANSLATE_MAX_UPLOAD_MB` | `25` | Upload cap → `413`. Streamed, never buffered whole. |
 | `IACTRANSLATE_MAX_VMS` | `5000` | Inventory size cap → `400`. |
 | `IACTRANSLATE_MAX_PROJECTS` | `200` | Store capacity cap; oldest evicted (temp dirs deleted). |
-| `IACTRANSLATE_STORE` | `memory` | `memory` (dies on restart, zero setup) or `sqlite` (persists metadata to `IACTRANSLATE_DB_PATH`, survives a restart — see ADR 0025). |
+| `IACTRANSLATE_STORE` | `memory` | `memory` (dies on restart, zero setup) or `sqlite` (persists project metadata **and the audit trail** to `IACTRANSLATE_DB_PATH`, surviving a restart — see ADR 0025, 0026). |
 | `IACTRANSLATE_DB_PATH` | `./iactranslate.db` | SQLite file path when `IACTRANSLATE_STORE=sqlite`. |
 | `IACTRANSLATE_API_KEY` | (none) | Set to require `Authorization: Bearer <key>` on every project-touching endpoint. Unset = no auth (today's default). Not OIDC/SSO — see ADR 0025. |
 | `IACTRANSLATE_TARGET_UTILIZATION` | `0.65` | When a source carries utilization, size instances so they run at ~this utilization (right-sizing). |
@@ -471,7 +489,8 @@ All env vars (see `src/iactranslate/config.py`):
 | `POST` | `/projects/{id}/run` | Runs the pipeline **synchronously**. 200 summary; 422 validation/policy; 400 bad input. |
 | `POST` | `/projects/{id}/jobs` | Runs **asynchronously**; 202 + `job_id`. Poll `/jobs/{id}`. |
 | `GET` | `/jobs/{job_id}` | Job status (queued/running/completed/failed) + project summary when done. |
-| `GET` | `/audit` | Recent audit events (newest first); `?project_id=` to scope. |
+| `GET` | `/audit` | Recent audit events (newest first); `?project_id=` to scope. Persists across restarts under `IACTRANSLATE_STORE=sqlite`. |
+| `GET` | `/metrics` | Prometheus exposition (counters + in-flight gauge). Unauthenticated — aggregate counts only. |
 | `POST` | `/projects/{id}/assess` | Pre-migration readiness assessment (findings + score) from the uploaded inventory. |
 | `POST` | `/projects/{id}/recommend` | Cloud recommendation (with decisiveness, annualized cost, notes). |
 | `POST` | `/projects/{id}/report` | Executive report HTML. `?include_recommendation=false` to skip the 3-cloud compare. |

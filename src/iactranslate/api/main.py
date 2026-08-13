@@ -7,6 +7,7 @@ Flow:
     POST   /projects/{id}/jobs         -> run asynchronously; returns a job id (202)
     GET    /jobs/{job_id}              -> job status (+ project summary when done)
     GET    /audit                      -> recent audit events (event-sourced)
+    GET    /metrics                    -> Prometheus metrics (unauthenticated, aggregate only)
     GET    /policies                   -> available policy rules
     POST   /projects/{id}/assess       -> pre-migration readiness assessment
     POST   /projects/{id}/recommend    -> compare clouds and recommend one
@@ -24,7 +25,7 @@ from typing import Dict, List, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 from pydantic import BaseModel, field_validator
 from starlette.requests import Request
 
@@ -41,10 +42,11 @@ from ..recommend import recommend
 from ..sources import list_sources, resolve_source
 from ..targets import get_target, list_targets
 from ..validation import PlanValidationError
-from .audit import AuditLog
+from .audit import create_audit_log
 from .auth import require_api_key
 from .events import Event, EventBus, EventType
 from .jobs import JobQueue
+from .metrics import Metrics
 from .store import Project, create_store
 
 logger = logging.getLogger("iactranslate.api")
@@ -56,8 +58,10 @@ store = create_store()
 # Postgres in production — same interfaces). The pipeline stays a pure function.
 bus = EventBus()
 jobs = JobQueue(bus)
-audit = AuditLog()
+audit = create_audit_log()
 audit.attach(bus)
+metrics = Metrics()
+metrics.attach(bus)
 
 _ALLOWED_SUFFIXES = {".xlsx", ".xls", ".xlsm", ".csv"}
 _NAME_RE = re.compile(r"^[A-Za-z0-9 ._-]{1,128}$")
@@ -171,6 +175,19 @@ def create_project(body: CreateProject) -> dict:
     bus.publish(Event(EventType.PROJECT_CREATED, project_id=project.id,
                       detail={"target": project.target, "source": project.source}))
     return _summary(project)
+
+
+@app.get("/metrics", response_class=PlainTextResponse)
+def prometheus_metrics() -> PlainTextResponse:
+    """Prometheus scrape endpoint (counters + an in-flight gauge).
+
+    Unauthenticated like `/health`: scrapers do not send bearer tokens, and the
+    payload is aggregate counts only — no project names, paths, or inventory.
+    """
+    return PlainTextResponse(
+        metrics.render(jobs_in_flight=jobs.in_flight()),
+        media_type="text/plain; version=0.0.4; charset=utf-8",
+    )
 
 
 @app.get("/policies")

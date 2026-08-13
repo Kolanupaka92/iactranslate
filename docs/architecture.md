@@ -288,6 +288,11 @@ platform services layered on top.
   project-touching endpoints with a bearer token — real, tested stopgaps for
   the in-memory-store and zero-auth gaps, not Postgres or OIDC/RBAC
   (see [ADR 0025](adr/0025-persistent-store-and-bearer-auth.md))
+- ✅ Restart-surviving audit trail (same `IACTRANSLATE_STORE=sqlite` switch) and
+  Prometheus metrics at `GET /metrics` — both event-bus subscribers, so routes
+  and the pipeline carry no instrumentation; counters are process-local by
+  design, and this is not distributed tracing
+  (see [ADR 0026](adr/0026-persistent-audit-and-metrics.md))
 
 **Not yet supported**
 

@@ -55,6 +55,11 @@ in CI on `main`.
 - ✅ **Named, timed pipeline stages** — per-stage `pipeline-trace.json` + structured log (observability)
 - ✅ **Async jobs + event bus + audit trail** (single-node) — `POST /jobs` → poll → download,
   event-sourced lifecycle, `GET /audit`; the seam Postgres/Redis/Celery/S3 drop into (ADR 0012)
+- ✅ **Persistent audit + Prometheus metrics** — the audit trail survives a
+  restart under `IACTRANSLATE_STORE=sqlite` (verified with a live
+  kill-and-restart), and `GET /metrics` serves counters + an in-flight gauge in
+  Prometheus exposition format; both are event-bus subscribers, so the routes
+  and the pipeline stay uninstrumented (see [ADR 0026](adr/0026-persistent-audit-and-metrics.md))
 - ✅ Model schema versioning (`NormalizedVM` / `MigrationPlan`)
 
 **Surfaces & delivery**
@@ -73,8 +78,8 @@ backends and integrations that plug into them, via the
 |---|---|---|
 | v2.1 | PostgreSQL store + object-storage artifact store + **durable** job queue (Redis/Celery) — ✅ *metadata* persistence shipped now via an opt-in `SqliteProjectStore` (`IACTRANSLATE_STORE=sqlite`), a real stdlib-only stepping stone verified with an actual kill-and-restart, not just Postgres itself (see [ADR 0025](adr/0025-persistent-store-and-bearer-auth.md)) | in-memory store, `JobQueue`, event bus (shipped seams) |
 | v2.2 | Desktop app (Tauri) over the same core engine | CLI/API (shipped) |
-| v2.3 | AuthN (OIDC/SAML) + RBAC + persistent audit — ✅ opt-in bearer-token auth (`IACTRANSLATE_API_KEY`) shipped now as a real, tested stopgap; not a substitute for OIDC/RBAC (see [ADR 0025](adr/0025-persistent-store-and-bearer-auth.md)) | audit trail (shipped in-memory) |
-| v2.4 | Notifications (Slack/Teams/Email) + metrics (Prometheus/Grafana/OTel) | event bus + `pipeline-trace` (shipped) |
+| v2.3 | AuthN (OIDC/SAML) + RBAC + persistent audit — ✅ opt-in bearer-token auth (`IACTRANSLATE_API_KEY`) and a ✅ **restart-surviving audit trail** (`IACTRANSLATE_STORE=sqlite`, [ADR 0026](adr/0026-persistent-audit-and-metrics.md)) shipped now as real, tested stopgaps; neither substitutes for OIDC/RBAC or tamper-evident storage (see [ADR 0025](adr/0025-persistent-store-and-bearer-auth.md)) | audit trail (shipped) |
+| v2.4 | Notifications (Slack/Teams/Email) + metrics (Prometheus/Grafana/OTel) — ✅ **Prometheus `GET /metrics`** shipped now (counters + in-flight gauge, stdlib-only); OTel distributed tracing and notifications still open (see [ADR 0026](adr/0026-persistent-audit-and-metrics.md)) | event bus + `pipeline-trace` (shipped) |
 | v2.5 | CI/CD pipeline generation (Jenkins/GitHub/GitLab/Azure DevOps) | GitOps workflow (shipped for GH Actions) |
 | v2.6 | Ticketing (Jira/ServiceNow/Azure DevOps) from the assessment | assessment (shipped) |
 | v3.0 | Multi-tenant SaaS + plugin ecosystem + OPA-compatible policy | policy engine, source/target registries (shipped) |

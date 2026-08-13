@@ -47,6 +47,11 @@ CI proves the output is valid against the real cloud providers (`tofu validate`)
   and endpoints require `Authorization: Bearer <key>` when
   `IACTRANSLATE_API_KEY` is set — both stdlib-only, both verified with a real
   kill-and-restart, neither pretending to be Postgres or OIDC/RBAC.
+- **Operable at runtime.** The audit trail survives a restart under the same
+  `sqlite` switch, and `GET /metrics` serves Prometheus counters plus an
+  in-flight gauge. Both are event-bus subscribers, so routes and the pipeline
+  stay free of instrumentation — it's counters and durable history, not
+  distributed tracing.
 - **A full migration-platform layer.** Pre-migration **assessment** (readiness +
   risks), **confidence** scoring, an **executive report**, **architecture
   diagrams**, **infrastructure diff**, **brownfield** adoption (import blocks),

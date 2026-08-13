@@ -33,5 +33,6 @@ Format: [Michael Nygard's ADR template](https://cognitect.com/blog/2011/11/15/do
 | [0023](0023-digitalocean-target.md) | DigitalOcean target: real platform gaps (no subnets, no Windows) stated, not papered over | Accepted |
 | [0024](0024-migration-wave-planning.md) | Migration wave planning: tier + environment order, not a fabricated dependency graph | Accepted |
 | [0025](0025-persistent-store-and-bearer-auth.md) | A real persistent store (SQLite) and real auth (bearer token), scoped to what's buildable without Docker | Accepted |
+| [0026](0026-persistent-audit-and-metrics.md) | A persistent audit trail and Prometheus metrics, both built as event-bus subscribers | Accepted |
 
 See also the [Architecture & Design](../architecture.md) overview.

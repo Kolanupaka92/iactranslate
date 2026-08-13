@@ -79,6 +79,14 @@ class JobQueue:
         with self._lock:
             return self._jobs.get(job_id)
 
+    def in_flight(self) -> int:
+        """Jobs queued or running right now (drives the metrics gauge)."""
+        with self._lock:
+            return sum(
+                1 for j in self._jobs.values()
+                if j.status in (JobStatus.QUEUED, JobStatus.RUNNING)
+            )
+
     def _run(self, job: Job, work: Callable[[], None]) -> None:
         job.status = JobStatus.RUNNING
         job.started_at = time.time()
