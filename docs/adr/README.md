@@ -37,5 +37,6 @@ Format: [Michael Nygard's ADR template](https://cognitect.com/blog/2011/11/15/do
 | [0027](0027-multi-tenancy-and-session-auth.md) | Multi-tenancy: user accounts, session cookies (not bearer tokens), and per-project ownership | Accepted |
 | [0028](0028-rate-limiting-and-security-headers.md) | Per-route rate limiting (per-IP *and* per-account on auth) plus baseline security headers | Accepted |
 | [0029](0029-durable-artifact-workspaces.md) | Generated artifacts move off `/tmp` onto a durable volume, so files survive with their metadata | Accepted |
+| [0030](0030-password-change-and-reset.md) | Password change and reset: both evict every session; delivery stops short of unverified SMTP | Accepted |
 
 See also the [Architecture & Design](../architecture.md) overview.

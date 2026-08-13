@@ -40,6 +40,9 @@ from typing import Optional
 # count can be raised later without invalidating existing passwords.
 _PBKDF2_ITERATIONS = 600_000
 _SESSION_TTL_SECONDS = 14 * 24 * 3600  # 14 days
+# Short on purpose: a reset link sits in an inbox, which is a less trustworthy
+# place than a cookie jar. Long enough to act on, short enough to age out.
+_RESET_TTL_SECONDS = 3600  # 1 hour
 SESSION_COOKIE = "iactranslate_session"
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -123,6 +126,16 @@ class AccountStore:
             expires_at REAL NOT NULL
         )
     """
+    # Reset tokens are hashed exactly like sessions: whoever can read this table
+    # must not be able to take over an account with what they find there.
+    _SCHEMA_RESETS = """
+        CREATE TABLE IF NOT EXISTS password_resets (
+            token_hash TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            created_at REAL NOT NULL,
+            expires_at REAL NOT NULL
+        )
+    """
 
     def __init__(self, db_path: str) -> None:
         self._lock = threading.Lock()
@@ -130,6 +143,7 @@ class AccountStore:
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
         self._conn.execute(self._SCHEMA_USERS)
         self._conn.execute(self._SCHEMA_SESSIONS)
+        self._conn.execute(self._SCHEMA_RESETS)
         self._conn.execute("CREATE INDEX IF NOT EXISTS sessions_user ON sessions (user_id)")
         self._conn.commit()
 
@@ -219,6 +233,77 @@ class AccountStore:
             cursor = self._conn.execute("DELETE FROM sessions WHERE expires_at < ?", (time.time(),))
             self._conn.commit()
             return cursor.rowcount
+
+    def delete_sessions_for_user(self, user_id: str) -> int:
+        """Sign a user out everywhere.
+
+        This is what makes a password change *mean* something: if an attacker
+        already holds a stolen session cookie, changing the password without
+        this leaves them logged in indefinitely.
+        """
+        with self._lock:
+            cursor = self._conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+            self._conn.commit()
+            return cursor.rowcount
+
+    # -- passwords -----------------------------------------------------------
+
+    def get_user_by_email(self, email: str) -> Optional[User]:
+        try:
+            email = validate_email(email)
+        except ValueError:
+            return None
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT id, email, created_at FROM users WHERE email = ?", (email,)
+            ).fetchone()
+        return User(id=row[0], email=row[1], created_at=row[2]) if row else None
+
+    def set_password(self, user_id: str, new_password: str) -> None:
+        validate_password(new_password)
+        encoded = hash_password(new_password)
+        with self._lock:
+            self._conn.execute(
+                "UPDATE users SET password_hash = ? WHERE id = ?", (encoded, user_id)
+            )
+            self._conn.commit()
+
+    def create_reset_token(self, user_id: str, ttl_seconds: int = _RESET_TTL_SECONDS) -> str:
+        """Issue a single-use reset token. Returns the plaintext; only the hash
+        is stored. Any previously issued token for this user is invalidated, so
+        a stale link in an old email can't be used after a newer request."""
+        token = secrets.token_urlsafe(32)
+        now = time.time()
+        with self._lock:
+            self._conn.execute("DELETE FROM password_resets WHERE user_id = ?", (user_id,))
+            self._conn.execute(
+                "INSERT INTO password_resets (token_hash, user_id, created_at, expires_at) "
+                "VALUES (?, ?, ?, ?)",
+                (_hash_token(token), user_id, now, now + ttl_seconds),
+            )
+            self._conn.commit()
+        return token
+
+    def consume_reset_token(self, token: str) -> Optional[str]:
+        """Redeem a reset token, returning its user id — or None if it is
+        unknown or expired. **Single use**: the row is deleted whether or not
+        it had expired, so a token can never be replayed."""
+        if not token:
+            return None
+        token_hash = _hash_token(token)
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT user_id, expires_at FROM password_resets WHERE token_hash = ?",
+                (token_hash,),
+            ).fetchone()
+            if row is not None:
+                self._conn.execute(
+                    "DELETE FROM password_resets WHERE token_hash = ?", (token_hash,)
+                )
+                self._conn.commit()
+        if row is None or row[1] < time.time():
+            return None
+        return row[0]
 
 
 def auth_enabled() -> bool:

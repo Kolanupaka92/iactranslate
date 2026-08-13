@@ -288,6 +288,9 @@ platform services layered on top.
   project-touching endpoints with a bearer token — real, tested stopgaps for
   the in-memory-store and zero-auth gaps, not Postgres or OIDC/RBAC
   (see [ADR 0025](adr/0025-persistent-store-and-bearer-auth.md))
+- ✅ Password change + reset, both invalidating every session; delivery left
+  as a seam rather than unverified SMTP
+  (see [ADR 0030](adr/0030-password-change-and-reset.md))
 - ✅ Rate limiting (per-IP and, on auth, per-account) plus baseline security
   headers; limits are read live so they can be retuned without a restart
   (see [ADR 0028](adr/0028-rate-limiting-and-security-headers.md))

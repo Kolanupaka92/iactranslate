@@ -52,6 +52,7 @@ from .accounts import (
 )
 from .audit import create_audit_log
 from .auth import require_api_key
+from .delivery import deliver_reset_link
 from .events import Event, EventBus, EventType
 from .jobs import JobQueue
 from .metrics import Metrics
@@ -280,6 +281,83 @@ def logout(request: Request) -> Response:
         accounts.delete_session(request.cookies.get(SESSION_COOKIE, ""))
     response = Response(status_code=204)
     response.delete_cookie(SESSION_COOKIE, path="/")
+    return response
+
+
+class ForgotPassword(BaseModel):
+    email: str
+
+
+class ResetPassword(BaseModel):
+    token: str
+    password: str
+
+
+class ChangePassword(BaseModel):
+    current_password: str
+    new_password: str
+
+
+@app.post("/auth/forgot-password", status_code=202)
+def forgot_password(body: ForgotPassword, request: Request) -> dict:
+    """Start a reset. Always 202, whether or not the account exists.
+
+    Reporting "no such account" here would turn this endpoint into a free
+    account-enumeration oracle, undoing the care taken in login and register.
+    """
+    limit_auth(request, body.email)
+    accts = _require_accounts()
+    user = accts.get_user_by_email(body.email)
+    if user is not None:
+        deliver_reset_link(user.email, accts.create_reset_token(user.id))
+    return {"status": "if that account exists, a reset link has been sent"}
+
+
+@app.post("/auth/reset-password", status_code=204)
+def reset_password(body: ResetPassword, request: Request) -> Response:
+    limit_auth(request)
+    accts = _require_accounts()
+    user_id = accts.consume_reset_token(body.token)  # single use, even if expired
+    if user_id is None:
+        raise HTTPException(400, "this reset link is invalid or has expired")
+    try:
+        accts.set_password(user_id, body.password)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+    # A reset is how someone recovers a *compromised* account, so every existing
+    # session must die — including the attacker's.
+    accts.delete_sessions_for_user(user_id)
+    logger.info("password reset completed for user %s", user_id)
+    response = Response(status_code=204)
+    response.delete_cookie(SESSION_COOKIE, path="/")
+    return response
+
+
+@app.post("/auth/change-password", status_code=204)
+def change_password(
+    body: ChangePassword, request: Request, user: Optional[User] = Depends(current_user)
+) -> Response:
+    """Change your own password. Requires the current one."""
+    limit_auth(request)
+    accts = _require_accounts()
+    if user is None:
+        raise HTTPException(401, "not signed in")
+    try:
+        accts.authenticate(user.email, body.current_password)
+    except InvalidCredentials:
+        raise HTTPException(403, "current password is incorrect") from None
+    try:
+        accts.set_password(user.id, body.new_password)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+
+    # Drop every session, then re-issue one for this caller: anyone else holding
+    # a stolen cookie is signed out, while the person who just changed their
+    # password isn't bounced to the login screen for doing the right thing.
+    accts.delete_sessions_for_user(user.id)
+    response = Response(status_code=204)
+    _set_session_cookie(response, accts.create_session(user.id))
+    logger.info("password changed for user %s", user.id)
     return response
 
 

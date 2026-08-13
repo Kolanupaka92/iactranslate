@@ -51,6 +51,10 @@ CI proves the output is valid against the real cloud providers (`tofu validate`)
   session-cookie login, and per-project ownership — one customer cannot see
   another's inventory, and a project owned by someone else returns 404 rather
   than 403 so ids can't be enumerated. Username/password, not OIDC/SSO yet.
+- **Password change + reset.** Both evict every existing session, so a stolen
+  cookie stops working the moment a password changes. Tokens are hashed,
+  single-use, and expire in an hour. Reset *delivery* is intentionally not
+  implemented — the seam logs the link rather than shipping untested SMTP.
 - **Rate limited.** Token buckets per route class, with login throttled by
   source address *and* by target account — per-IP alone does nothing against
   credential stuffing. Limits retune at runtime without a restart; per-process,
