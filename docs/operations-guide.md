@@ -55,7 +55,7 @@ diagrams, infrastructure diff, brownfield adoption, load balancer topology,
 managed-DB re-platforming advice, migration wave planning, a Kubernetes discovery source,
 Pulumi/CloudFormation/Bicep/CDK/Kubernetes renderers, a policy engine, an
 Infrastructure Graph IR, async jobs + audit, and opt-in GitOps.
-~307 tests, 7 green CI jobs (lint, pytest 3.9/3.11/3.12, Docker health, web build, real
+~363 tests, 7 green CI jobs (lint, pytest 3.9/3.11/3.12, Docker health, web build, real
 Terraform validate). Repo: `github.com/Kolanupaka92/iactranslate` (private).
 
 ---
@@ -498,6 +498,10 @@ All env vars (see `src/iactranslate/config.py`):
 | `IACTRANSLATE_API_KEY` | (none) | Set to require `Authorization: Bearer <key>` on every project-touching endpoint. Unset = no auth (today's default). Not OIDC/SSO — see ADR 0025. |
 | `IACTRANSLATE_AUTH` | `none` | `session` enables multi-tenant user accounts, login, and per-user project isolation (ADR 0027). Requires `IACTRANSLATE_STORE=sqlite`. |
 | `IACTRANSLATE_COOKIE_SECURE` | `1` | Set `0` **only** for local http testing — it drops the `Secure` flag from the session cookie. |
+| `IACTRANSLATE_RATE_AUTH` | `10` | Login/register attempts per minute, per IP **and** per email. `0` disables. Read live — no restart needed. |
+| `IACTRANSLATE_RATE_WRITE` | `60` | Write requests/min per IP (upload, run, jobs, report). `0` disables. |
+| `IACTRANSLATE_RATE_READ` | `240` | Read requests/min per IP. `0` disables. |
+| `IACTRANSLATE_TRUST_PROXY` | `0` | Set `1` **only** behind a proxy you control, to read the client IP from `X-Forwarded-For`. Any client can forge that header, so trusting it without a proxy lets attackers bypass every limit. |
 | `IACTRANSLATE_TARGET_UTILIZATION` | `0.65` | When a source carries utilization, size instances so they run at ~this utilization (right-sizing). |
 | `IACTRANSLATE_PRICING` | `static` | `static` (curated catalog rates, offline) or `live` (real market prices, cached, falls back to static). |
 | `IACTRANSLATE_GCP_BILLING_API_KEY` | (none) | API key for GCP live pricing (Cloud Billing Catalog). Without it, GCP live falls back to static. |

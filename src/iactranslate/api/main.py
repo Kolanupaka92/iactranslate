@@ -55,6 +55,7 @@ from .auth import require_api_key
 from .events import Event, EventBus, EventType
 from .jobs import JobQueue
 from .metrics import Metrics
+from .ratelimit import limit_auth, limit_reads, limit_writes
 from .store import Project, create_store
 
 logger = logging.getLogger("iactranslate.api")
@@ -114,6 +115,28 @@ class CreateProject(BaseModel):
         if not _NAME_RE.match(v):
             raise ValueError("name must be 1-128 chars of letters, digits, space, '.', '_', '-'")
         return v
+
+
+@app.middleware("http")
+async def _security_headers(request: Request, call_next):
+    """Baseline hardening headers on every response.
+
+    These matter most on `/projects/{id}/report`, which returns HTML that is
+    rendered in the user's browser: `nosniff` and a restrictive frame policy
+    keep a generated report from being reinterpreted or embedded elsewhere.
+    HSTS is only sent over https — asserting it on a plaintext dev server
+    would pin localhost to https in the developer's browser.
+    """
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
+    if request.url.scheme == "https":
+        response.headers.setdefault(
+            "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
+        )
+    return response
 
 
 @app.exception_handler(Exception)
@@ -218,7 +241,9 @@ def _set_session_cookie(response: JSONResponse, token: str) -> None:
 
 
 @app.post("/auth/register", status_code=201)
-def register(body: Credentials) -> JSONResponse:
+def register(body: Credentials, request: Request) -> JSONResponse:
+    # Throttled by IP and by target email — see ratelimit.limit_auth.
+    limit_auth(request, body.email)
     accts = _require_accounts()
     try:
         user = accts.create_user(body.email, body.password)
@@ -234,7 +259,11 @@ def register(body: Credentials) -> JSONResponse:
 
 
 @app.post("/auth/login")
-def login(body: Credentials) -> JSONResponse:
+def login(body: Credentials, request: Request) -> JSONResponse:
+    # The most attackable endpoint in the product: it accepts a password and
+    # reports whether it was right. Per-email throttling matters as much as
+    # per-IP here, since credential stuffing hits one account from many hosts.
+    limit_auth(request, body.email)
     accts = _require_accounts()
     try:
         user = accts.authenticate(body.email, body.password)
@@ -261,13 +290,13 @@ def whoami(user: Optional[User] = Depends(current_user)) -> dict:
     return {"authenticated": True, "multi_tenant": True, "id": user.id, "email": user.email}
 
 
-@app.get("/projects")
+@app.get("/projects", dependencies=[Depends(limit_reads)])
 def list_projects(user: Optional[User] = Depends(current_user)) -> list:
     """Every project the caller owns — the tenant's own view, nobody else's."""
     return [_summary(p) for p in store.list_for_owner(user.id if user else None)]
 
 
-@app.post("/projects", status_code=201, dependencies=[Depends(require_api_key)])
+@app.post("/projects", status_code=201, dependencies=[Depends(require_api_key), Depends(limit_writes)])
 def create_project(body: CreateProject, user: Optional[User] = Depends(current_user)) -> dict:
     if body.target not in list_targets():
         raise HTTPException(400, f"target '{body.target}' not supported (available: {', '.join(list_targets())})")
@@ -319,12 +348,12 @@ def targets() -> list:
     ]
 
 
-@app.get("/projects/{pid}", dependencies=[Depends(require_api_key)])
+@app.get("/projects/{pid}", dependencies=[Depends(require_api_key), Depends(limit_reads)])
 def get_project(pid: str, user: Optional[User] = Depends(current_user)) -> dict:
     return _summary(_require_project(pid, user))
 
 
-@app.delete("/projects/{pid}", status_code=204, dependencies=[Depends(require_api_key)])
+@app.delete("/projects/{pid}", status_code=204, dependencies=[Depends(require_api_key), Depends(limit_writes)])
 def delete_project(pid: str, user: Optional[User] = Depends(current_user)) -> None:
     # Ownership is checked *before* deleting — otherwise any signed-in user
     # could destroy another tenant's project by guessing its id.
@@ -335,7 +364,7 @@ def delete_project(pid: str, user: Optional[User] = Depends(current_user)) -> No
     bus.publish(Event(EventType.PROJECT_DELETED, project_id=pid))
 
 
-@app.post("/projects/{pid}/upload", dependencies=[Depends(require_api_key)])
+@app.post("/projects/{pid}/upload", dependencies=[Depends(require_api_key), Depends(limit_writes)])
 async def upload(pid: str, file: UploadFile, user: Optional[User] = Depends(current_user)) -> dict:
     project = _require_project(pid, user)
 
@@ -431,7 +460,7 @@ def _execute_run(project: Project) -> None:
     logger.info("project %s generated %d instances", project.id, result.plan.vm_count)
 
 
-@app.post("/projects/{pid}/run", dependencies=[Depends(require_api_key)])
+@app.post("/projects/{pid}/run", dependencies=[Depends(require_api_key), Depends(limit_writes)])
 def run(pid: str, user: Optional[User] = Depends(current_user)) -> dict:
     """Synchronous run — generates in-request. See POST /jobs for the async path."""
     project = _require_project(pid, user)
@@ -449,7 +478,7 @@ def run(pid: str, user: Optional[User] = Depends(current_user)) -> dict:
     return _summary(project)
 
 
-@app.post("/projects/{pid}/jobs", status_code=202, dependencies=[Depends(require_api_key)])
+@app.post("/projects/{pid}/jobs", status_code=202, dependencies=[Depends(require_api_key), Depends(limit_writes)])
 def create_job(pid: str, user: Optional[User] = Depends(current_user)) -> dict:
     """Asynchronous run — enqueue the pipeline and return a job id to poll."""
     project = _require_project(pid, user)
@@ -461,7 +490,7 @@ def create_job(pid: str, user: Optional[User] = Depends(current_user)) -> dict:
     return job.to_dict()
 
 
-@app.get("/jobs/{job_id}", dependencies=[Depends(require_api_key)])
+@app.get("/jobs/{job_id}", dependencies=[Depends(require_api_key), Depends(limit_reads)])
 def get_job(job_id: str, user: Optional[User] = Depends(current_user)) -> dict:
     job = jobs.get(job_id)
     if job is None:
@@ -476,7 +505,7 @@ def get_job(job_id: str, user: Optional[User] = Depends(current_user)) -> dict:
     return data
 
 
-@app.get("/audit", dependencies=[Depends(require_api_key)])
+@app.get("/audit", dependencies=[Depends(require_api_key), Depends(limit_reads)])
 def get_audit(
     project_id: Optional[str] = None,
     limit: int = 100,
@@ -499,7 +528,7 @@ def get_audit(
     return [e.to_dict() for e in events if e.project_id in owned]
 
 
-@app.post("/projects/{pid}/recommend", dependencies=[Depends(require_api_key)])
+@app.post("/projects/{pid}/recommend", dependencies=[Depends(require_api_key), Depends(limit_writes)])
 def recommend_cloud(pid: str, user: Optional[User] = Depends(current_user)) -> dict:
     project = _require_project(pid, user)
     if project.upload_path is None:
@@ -512,7 +541,7 @@ def recommend_cloud(pid: str, user: Optional[User] = Depends(current_user)) -> d
         raise HTTPException(400, str(e)) from e
 
 
-@app.post("/projects/{pid}/assess", dependencies=[Depends(require_api_key)])
+@app.post("/projects/{pid}/assess", dependencies=[Depends(require_api_key), Depends(limit_writes)])
 def assess_estate(pid: str, user: Optional[User] = Depends(current_user)) -> dict:
     project = _require_project(pid, user)
     if project.upload_path is None:
@@ -524,7 +553,11 @@ def assess_estate(pid: str, user: Optional[User] = Depends(current_user)) -> dic
     return a.model_dump(mode="json")
 
 
-@app.post("/projects/{pid}/report", response_class=HTMLResponse, dependencies=[Depends(require_api_key)])
+@app.post(
+    "/projects/{pid}/report",
+    response_class=HTMLResponse,
+    dependencies=[Depends(require_api_key), Depends(limit_writes)],
+)
 def executive_report(pid: str, include_recommendation: bool = True,
                      user: Optional[User] = Depends(current_user)) -> HTMLResponse:
     project = _require_project(pid, user)
@@ -542,7 +575,7 @@ def executive_report(pid: str, include_recommendation: bool = True,
     return HTMLResponse(build_executive_report(plan, vms, recommendation=rec))
 
 
-@app.get("/projects/{pid}/download", dependencies=[Depends(require_api_key)])
+@app.get("/projects/{pid}/download", dependencies=[Depends(require_api_key), Depends(limit_reads)])
 def download(pid: str, user: Optional[User] = Depends(current_user)) -> FileResponse:
     project = _require_project(pid, user)
     if not project.zip_path or not Path(project.zip_path).exists():

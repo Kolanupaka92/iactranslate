@@ -58,3 +58,18 @@ def cmdb_util_path() -> str:
 @pytest.fixture
 def k8s_path() -> str:
     return str(FIXTURES / "k8s_sample.json")
+
+
+@pytest.fixture(autouse=True)
+def _rate_limits_off(monkeypatch):
+    """Disable rate limiting for the suite by default.
+
+    Every test shares one process and one client address, so the limiters would
+    otherwise see the whole suite as a single hammering client and fail tests
+    that have nothing to do with throttling. `tests/test_ratelimit.py` opts back
+    in explicitly, which is where the limits actually belong under test.
+    """
+    for var in ("IACTRANSLATE_RATE_AUTH", "IACTRANSLATE_RATE_WRITE", "IACTRANSLATE_RATE_READ"):
+        monkeypatch.setenv(var, "0")
+    from iactranslate.api.ratelimit import reset_all
+    reset_all()

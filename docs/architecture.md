@@ -288,6 +288,9 @@ platform services layered on top.
   project-touching endpoints with a bearer token — real, tested stopgaps for
   the in-memory-store and zero-auth gaps, not Postgres or OIDC/RBAC
   (see [ADR 0025](adr/0025-persistent-store-and-bearer-auth.md))
+- ✅ Rate limiting (per-IP and, on auth, per-account) plus baseline security
+  headers; limits are read live so they can be retuned without a restart
+  (see [ADR 0028](adr/0028-rate-limiting-and-security-headers.md))
 - ✅ Multi-tenant accounts and session auth (`IACTRANSLATE_AUTH=session`):
   per-user projects, ownership enforced on every project endpoint, cross-tenant
   reads *and deletes* rejected as 404. Not OIDC/SSO, and no orgs/teams

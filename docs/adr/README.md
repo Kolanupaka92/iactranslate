@@ -35,5 +35,6 @@ Format: [Michael Nygard's ADR template](https://cognitect.com/blog/2011/11/15/do
 | [0025](0025-persistent-store-and-bearer-auth.md) | A real persistent store (SQLite) and real auth (bearer token), scoped to what's buildable without Docker | Accepted |
 | [0026](0026-persistent-audit-and-metrics.md) | A persistent audit trail and Prometheus metrics, both built as event-bus subscribers | Accepted |
 | [0027](0027-multi-tenancy-and-session-auth.md) | Multi-tenancy: user accounts, session cookies (not bearer tokens), and per-project ownership | Accepted |
+| [0028](0028-rate-limiting-and-security-headers.md) | Per-route rate limiting (per-IP *and* per-account on auth) plus baseline security headers | Accepted |
 
 See also the [Architecture & Design](../architecture.md) overview.

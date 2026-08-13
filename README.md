@@ -51,6 +51,10 @@ CI proves the output is valid against the real cloud providers (`tofu validate`)
   session-cookie login, and per-project ownership — one customer cannot see
   another's inventory, and a project owned by someone else returns 404 rather
   than 403 so ids can't be enumerated. Username/password, not OIDC/SSO yet.
+- **Rate limited.** Token buckets per route class, with login throttled by
+  source address *and* by target account — per-IP alone does nothing against
+  credential stuffing. Limits retune at runtime without a restart; per-process,
+  so multi-replica enforcement still needs shared state.
 - **Operable at runtime.** The audit trail survives a restart under the same
   `sqlite` switch, and `GET /metrics` serves Prometheus counters plus an
   in-flight gauge. Both are event-bus subscribers, so routes and the pipeline
@@ -140,7 +144,7 @@ scope, and assumptions — is in **[docs/architecture.md](docs/architecture.md)*
 ## Test & lint
 
 ```bash
-pytest                 # ~165 tests: parsers, sizing, validation, all 3 clouds, renderers, API
+pytest                 # ~363 tests: parsers, sizing, validation, all 3 clouds, renderers, API
 ruff check src tests
 ```
 

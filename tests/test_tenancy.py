@@ -32,6 +32,10 @@ def api(tmp_path, monkeypatch):
     import iactranslate.api.main as main
     importlib.reload(main)  # module-level store/accounts read env at import
     yield TestClient(main.app)
+    # Undo the env *before* the teardown reload: that reload re-reads the
+    # environment, so reloading first would leave the module stuck in
+    # multi-tenant mode and 401 every later test in the session.
+    monkeypatch.undo()
     importlib.reload(main)
 
 

@@ -64,6 +64,10 @@ in CI on `main`.
   and `Project.owner_id` scoping on every endpoint; cookies work for the
   `<a href>` download/report links that bearer tokens structurally cannot
   authenticate (see [ADR 0027](adr/0027-multi-tenancy-and-session-auth.md))
+- ✅ **Rate limiting + security headers** — token buckets per route class, with
+  auth throttled by source address *and* by target account (per-IP alone does
+  nothing against credential stuffing); limits retunable at runtime without a
+  restart (see [ADR 0028](adr/0028-rate-limiting-and-security-headers.md))
 - ✅ Model schema versioning (`NormalizedVM` / `MigrationPlan`)
 
 **Surfaces & delivery**
