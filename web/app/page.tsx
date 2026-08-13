@@ -78,18 +78,25 @@ export default function Home() {
   // null = still checking who we are; drives the sign-in gate below.
   const [identity, setIdentity] = useState<Identity | null>(null);
 
+  // A 401 in multi-tenant mode simply means "not signed in yet".
+  const fetchIdentity = () =>
+    whoami().catch<Identity>(() => ({ authenticated: false, multi_tenant: true }));
+
   const refreshIdentity = useCallback(async () => {
-    try {
-      setIdentity(await whoami());
-    } catch {
-      // 401 in multi-tenant mode simply means "not signed in yet".
-      setIdentity({ authenticated: false, multi_tenant: true });
-    }
+    setIdentity(await fetchIdentity());
   }, []);
 
+  // Resolves in a promise callback, not synchronously in the effect body. The
+  // `cancelled` guard drops a response that lands after unmount or re-run.
   useEffect(() => {
-    void refreshIdentity();
-  }, [refreshIdentity]);
+    let cancelled = false;
+    void fetchIdentity().then((next) => {
+      if (!cancelled) setIdentity(next);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const fail = (e: unknown) =>
     setError(e instanceof ApiError ? e.message : "Something went wrong.");
