@@ -11,13 +11,19 @@ selected via `IACTRANSLATE_STORE` (default `memory`):
   `./iactranslate.db`), so it survives a process restart. This closes the
   "project state lives only in process memory" gap with something real and
   fully testable in an environment with no Postgres/Redis available — see
-  ADR 0025. It does **not** close the "generated files survive a node being
-  recycled" gap: each project's workspace (uploads, rendered output) is still
-  a local temp directory. Durable *file* storage (S3/GCS) is the natural next
-  step once a real object-storage backend is available to build against.
+  ADR 0025.
 
-Each project gets an isolated temp workspace regardless of which store is
-active; uploaded files and generated output live there. Both stores are
+Generated *files* are a separate concern from metadata. Each project gets an
+isolated workspace holding its upload and rendered output. By default that is
+a system temp directory — fine locally, but `/tmp` is periodically cleaned and
+never survives a container restart, so the database would keep pointing at
+files that are gone. Setting `IACTRANSLATE_WORKSPACE_ROOT` to a real volume
+makes the files durable too (see `new_workspace`), which together with
+`IACTRANSLATE_STORE=sqlite` means a download still works after a restart.
+Object storage (S3/GCS) remains the answer for multi-node, where a local
+volume isn't shared between replicas.
+
+Both stores are
 thread-safe (FastAPI runs sync endpoints in a threadpool) and
 capacity-bounded — the oldest projects are evicted (and their temp
 workspaces deleted) beyond MAX_PROJECTS so disk usage can't grow without limit.
@@ -40,6 +46,27 @@ from typing import List, Optional
 from ..config import MAX_PROJECTS
 
 
+def new_workspace() -> Path:
+    """Allocate a project workspace.
+
+    By default this is a system temp directory, which is fine for the CLI and
+    local use but is **not durable**: `/tmp` is periodically cleaned, is often
+    a RAM disk, and never survives a container restart — so a customer's
+    generated Terraform disappears while the database still points at it.
+
+    Setting `IACTRANSLATE_WORKSPACE_ROOT` to a real volume makes generated
+    files survive a restart alongside the metadata in `SqliteProjectStore`.
+    Both paths go through `mkdtemp`, so the directory is unique and created
+    0700 either way.
+    """
+    root = os.getenv("IACTRANSLATE_WORKSPACE_ROOT", "").strip()
+    if root:
+        base = Path(root)
+        base.mkdir(parents=True, exist_ok=True)
+        return Path(tempfile.mkdtemp(prefix="iactranslate_", dir=str(base)))
+    return Path(tempfile.mkdtemp(prefix="iactranslate_"))
+
+
 @dataclass
 class Project:
     id: str
@@ -52,7 +79,7 @@ class Project:
     provider: str = "rule"
     owner_id: Optional[str] = None  # None = single-tenant mode (IACTRANSLATE_AUTH unset)
     status: str = "created"  # created -> uploaded -> completed / failed
-    workspace: Path = field(default_factory=lambda: Path(tempfile.mkdtemp(prefix="iactranslate_")))
+    workspace: Path = field(default_factory=new_workspace)
     upload_path: Optional[Path] = None
     project_dir: Optional[Path] = None
     zip_path: Optional[Path] = None
@@ -121,9 +148,9 @@ class ProjectStore:
 class SqliteProjectStore:
     """Same interface as `ProjectStore`, persisted to a local SQLite file.
 
-    Project *metadata* survives a process restart; each project's workspace
-    (uploads, rendered output) is still a local temp directory — see the
-    module docstring for that boundary.
+    Project *metadata* survives a process restart. Whether the generated
+    *files* also survive depends on `IACTRANSLATE_WORKSPACE_ROOT` — see the
+    module docstring and `new_workspace`.
     """
 
     _SCHEMA = """
@@ -205,7 +232,7 @@ class SqliteProjectStore:
         owner_id: Optional[str] = None,
     ) -> Project:
         pid = uuid.uuid4().hex[:12]
-        workspace = Path(tempfile.mkdtemp(prefix="iactranslate_"))
+        workspace = new_workspace()
         with self._lock:
             self._conn.execute(
                 "INSERT INTO projects (id, name, target, source, column_map, region, policy, "

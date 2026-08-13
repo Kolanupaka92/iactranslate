@@ -68,6 +68,10 @@ in CI on `main`.
   auth throttled by source address *and* by target account (per-IP alone does
   nothing against credential stuffing); limits retunable at runtime without a
   restart (see [ADR 0028](adr/0028-rate-limiting-and-security-headers.md))
+- ✅ **Durable artifacts** — `IACTRANSLATE_WORKSPACE_ROOT` puts generated files
+  on a real volume instead of `/tmp`, so a download still works after a restart
+  (single node; object storage is still the multi-replica answer, see
+  [ADR 0029](adr/0029-durable-artifact-workspaces.md))
 - ✅ Model schema versioning (`NormalizedVM` / `MigrationPlan`)
 
 **Surfaces & delivery**
@@ -84,7 +88,7 @@ backends and integrations that plug into them, via the
 
 | Milestone | Focus | Builds on |
 |---|---|---|
-| v2.1 | PostgreSQL store + object-storage artifact store + **durable** job queue (Redis/Celery) — ✅ *metadata* persistence shipped now via an opt-in `SqliteProjectStore` (`IACTRANSLATE_STORE=sqlite`), a real stdlib-only stepping stone verified with an actual kill-and-restart, not just Postgres itself (see [ADR 0025](adr/0025-persistent-store-and-bearer-auth.md)) | in-memory store, `JobQueue`, event bus (shipped seams) |
+| v2.1 | PostgreSQL store + object-storage artifact store + **durable** job queue (Redis/Celery) — ✅ *metadata* persistence and ✅ *single-node durable artifacts* (`IACTRANSLATE_WORKSPACE_ROOT`, [ADR 0029](adr/0029-durable-artifact-workspaces.md)) shipped now via an opt-in `SqliteProjectStore` (`IACTRANSLATE_STORE=sqlite`), a real stdlib-only stepping stone verified with an actual kill-and-restart, not just Postgres itself (see [ADR 0025](adr/0025-persistent-store-and-bearer-auth.md)) | in-memory store, `JobQueue`, event bus (shipped seams) |
 | v2.2 | Desktop app (Tauri) over the same core engine | CLI/API (shipped) |
 | v2.3 | AuthN (OIDC/SAML) + RBAC + persistent audit — ✅ **multi-tenant accounts, session-cookie login, and per-project ownership** ([ADR 0027](adr/0027-multi-tenancy-and-session-auth.md)), ✅ a **restart-surviving audit trail** ([ADR 0026](adr/0026-persistent-audit-and-metrics.md)), and ✅ a single-token API key for machine callers ([ADR 0025](adr/0025-persistent-store-and-bearer-auth.md)). Still open: OIDC/SSO, orgs/teams, RBAC roles, password reset | audit trail (shipped) |
 | v2.4 | Notifications (Slack/Teams/Email) + metrics (Prometheus/Grafana/OTel) — ✅ **Prometheus `GET /metrics`** shipped now (counters + in-flight gauge, stdlib-only); OTel distributed tracing and notifications still open (see [ADR 0026](adr/0026-persistent-audit-and-metrics.md)) | event bus + `pipeline-trace` (shipped) |

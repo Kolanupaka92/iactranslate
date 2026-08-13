@@ -93,3 +93,56 @@ def test_create_store_selects_sqlite_from_env(monkeypatch, tmp_path):
     monkeypatch.delenv("IACTRANSLATE_STORE", raising=False)
     monkeypatch.delenv("IACTRANSLATE_DB_PATH", raising=False)
     os.environ.pop("IACTRANSLATE_STORE", None)
+
+
+# -- durable workspaces (ADR 0029) -----------------------------------------
+
+
+def test_workspaces_default_to_a_temp_directory(monkeypatch):
+    """Unchanged behaviour for the CLI and local use."""
+    import tempfile
+
+    from iactranslate.api.store import new_workspace
+
+    monkeypatch.delenv("IACTRANSLATE_WORKSPACE_ROOT", raising=False)
+    ws = new_workspace()
+    assert ws.is_dir()
+    assert str(ws).startswith(tempfile.gettempdir())
+
+
+def test_workspace_root_places_workspaces_on_a_durable_volume(tmp_path, monkeypatch):
+    from iactranslate.api.store import new_workspace
+
+    root = tmp_path / "artifacts"
+    monkeypatch.setenv("IACTRANSLATE_WORKSPACE_ROOT", str(root))
+
+    a, b = new_workspace(), new_workspace()
+    assert a.parent == root and b.parent == root
+    assert a != b                      # unique per project
+    assert oct(a.stat().st_mode)[-3:] == "700"  # mkdtemp keeps it private
+
+
+def test_workspace_root_is_created_if_missing(tmp_path, monkeypatch):
+    root = tmp_path / "does" / "not" / "exist" / "yet"
+    monkeypatch.setenv("IACTRANSLATE_WORKSPACE_ROOT", str(root))
+    from iactranslate.api.store import new_workspace
+
+    assert new_workspace().parent == root
+
+
+def test_generated_files_survive_a_restart_with_a_durable_root(tmp_path, monkeypatch):
+    """Metadata *and* files must both survive, or a download 409s after restart."""
+    monkeypatch.setenv("IACTRANSLATE_WORKSPACE_ROOT", str(tmp_path / "artifacts"))
+    db = str(tmp_path / "p.db")
+
+    store_a = SqliteProjectStore(db)
+    project = store_a.create(name="durable")
+    artifact = project.workspace / "project.zip"
+    artifact.write_bytes(b"generated terraform")
+    project.zip_path = artifact
+    store_a.save(project)
+
+    # A new process: the row is reloaded and the file it points at is still there.
+    fetched = SqliteProjectStore(db).get(project.id)
+    assert fetched.zip_path.exists()
+    assert fetched.zip_path.read_bytes() == b"generated terraform"

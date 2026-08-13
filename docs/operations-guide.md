@@ -502,6 +502,7 @@ All env vars (see `src/iactranslate/config.py`):
 | `IACTRANSLATE_RATE_WRITE` | `60` | Write requests/min per IP (upload, run, jobs, report). `0` disables. |
 | `IACTRANSLATE_RATE_READ` | `240` | Read requests/min per IP. `0` disables. |
 | `IACTRANSLATE_TRUST_PROXY` | `0` | Set `1` **only** behind a proxy you control, to read the client IP from `X-Forwarded-For`. Any client can forge that header, so trusting it without a proxy lets attackers bypass every limit. |
+| `IACTRANSLATE_WORKSPACE_ROOT` | (system temp) | Directory for project workspaces (uploads + generated output). Point it at a mounted volume so artifacts survive a container recycle; `/tmp` does not. |
 | `IACTRANSLATE_TARGET_UTILIZATION` | `0.65` | When a source carries utilization, size instances so they run at ~this utilization (right-sizing). |
 | `IACTRANSLATE_PRICING` | `static` | `static` (curated catalog rates, offline) or `live` (real market prices, cached, falls back to static). |
 | `IACTRANSLATE_GCP_BILLING_API_KEY` | (none) | API key for GCP live pricing (Cloud Billing Catalog). Without it, GCP live falls back to static. |
