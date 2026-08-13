@@ -362,6 +362,34 @@ curl -s localhost:8000/projects/$PID -H "Authorization: Bearer $IACTRANSLATE_API
 The same `IACTRANSLATE_STORE=sqlite` switch also persists the **audit trail**, so
 `GET /audit` still answers after a restart (ADR 0026).
 
+**Multi-tenant (shared deployment)** — user accounts, login, and per-user project
+isolation (ADR 0027). Required for any deployment more than one person uses:
+```bash
+IACTRANSLATE_AUTH=session \
+IACTRANSLATE_STORE=sqlite IACTRANSLATE_DB_PATH=./iactranslate.db \
+IACTRANSLATE_CORS_ORIGINS=https://app.example.com \
+  uvicorn iactranslate.api.main:app --port 8000
+```
+```bash
+# Register (sets an httponly session cookie), then use it on every call.
+curl -s -c jar.txt -XPOST localhost:8000/auth/register \
+  -H 'content-type: application/json' \
+  -d '{"email":"you@example.com","password":"a-long-passphrase"}'
+curl -s -b jar.txt localhost:8000/projects        # only *your* projects
+```
+Three things to get right:
+- **`IACTRANSLATE_CORS_ORIGINS` must name real origins, not `*`.** Browsers
+  refuse to send credentials to a wildcard origin, so the web UI silently fails
+  to authenticate if you use `*`.
+- **Serve over HTTPS.** The session cookie carries the `Secure` flag by default;
+  `IACTRANSLATE_COOKIE_SECURE=0` disables that and is for local http testing only.
+- **`IACTRANSLATE_STORE=sqlite` is required** — accounts and sessions have
+  nowhere to live in the in-memory store.
+
+Projects created before multi-tenancy was enabled have no owner and are visible
+only in single-tenant mode; the database migrates itself additively on open, so
+nothing is lost.
+
 **Monitoring** — `GET /metrics` serves Prometheus exposition format. It is
 unauthenticated by design (scrapers don't send bearer tokens; the payload is
 aggregate counts only, no project or inventory data):
@@ -468,6 +496,8 @@ All env vars (see `src/iactranslate/config.py`):
 | `IACTRANSLATE_STORE` | `memory` | `memory` (dies on restart, zero setup) or `sqlite` (persists project metadata **and the audit trail** to `IACTRANSLATE_DB_PATH`, surviving a restart — see ADR 0025, 0026). |
 | `IACTRANSLATE_DB_PATH` | `./iactranslate.db` | SQLite file path when `IACTRANSLATE_STORE=sqlite`. |
 | `IACTRANSLATE_API_KEY` | (none) | Set to require `Authorization: Bearer <key>` on every project-touching endpoint. Unset = no auth (today's default). Not OIDC/SSO — see ADR 0025. |
+| `IACTRANSLATE_AUTH` | `none` | `session` enables multi-tenant user accounts, login, and per-user project isolation (ADR 0027). Requires `IACTRANSLATE_STORE=sqlite`. |
+| `IACTRANSLATE_COOKIE_SECURE` | `1` | Set `0` **only** for local http testing — it drops the `Secure` flag from the session cookie. |
 | `IACTRANSLATE_TARGET_UTILIZATION` | `0.65` | When a source carries utilization, size instances so they run at ~this utilization (right-sizing). |
 | `IACTRANSLATE_PRICING` | `static` | `static` (curated catalog rates, offline) or `live` (real market prices, cached, falls back to static). |
 | `IACTRANSLATE_GCP_BILLING_API_KEY` | (none) | API key for GCP live pricing (Cloud Billing Catalog). Without it, GCP live falls back to static. |

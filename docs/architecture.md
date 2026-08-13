@@ -288,6 +288,10 @@ platform services layered on top.
   project-touching endpoints with a bearer token — real, tested stopgaps for
   the in-memory-store and zero-auth gaps, not Postgres or OIDC/RBAC
   (see [ADR 0025](adr/0025-persistent-store-and-bearer-auth.md))
+- ✅ Multi-tenant accounts and session auth (`IACTRANSLATE_AUTH=session`):
+  per-user projects, ownership enforced on every project endpoint, cross-tenant
+  reads *and deletes* rejected as 404. Not OIDC/SSO, and no orgs/teams
+  (see [ADR 0027](adr/0027-multi-tenancy-and-session-auth.md))
 - ✅ Restart-surviving audit trail (same `IACTRANSLATE_STORE=sqlite` switch) and
   Prometheus metrics at `GET /metrics` — both event-bus subscribers, so routes
   and the pipeline carry no instrumentation; counters are process-local by

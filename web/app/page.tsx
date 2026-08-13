@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import AIToggle from "@/components/AIToggle";
 import AssessmentPanel from "@/components/AssessmentPanel";
 import RecommendTable from "@/components/RecommendTable";
 import RunSummary from "@/components/RunSummary";
+import SignIn from "@/components/SignIn";
 import SourcePicker from "@/components/SourcePicker";
 import TargetPicker from "@/components/TargetPicker";
 import UploadDropzone from "@/components/UploadDropzone";
@@ -17,9 +18,12 @@ import {
   downloadUrl,
   recommendClouds,
   reportUrl,
+  logout,
   runProject,
   uploadFile,
+  whoami,
   type Assessment,
+  type Identity,
   type Provider,
   type ProjectSummary,
   type Recommendation,
@@ -71,6 +75,21 @@ export default function Home() {
   const [result, setResult] = useState<RunResult | null>(null);
   const [busy, setBusy] = useState<Busy>(null);
   const [error, setError] = useState<string | null>(null);
+  // null = still checking who we are; drives the sign-in gate below.
+  const [identity, setIdentity] = useState<Identity | null>(null);
+
+  const refreshIdentity = useCallback(async () => {
+    try {
+      setIdentity(await whoami());
+    } catch {
+      // 401 in multi-tenant mode simply means "not signed in yet".
+      setIdentity({ authenticated: false, multi_tenant: true });
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshIdentity();
+  }, [refreshIdentity]);
 
   const fail = (e: unknown) =>
     setError(e instanceof ApiError ? e.message : "Something went wrong.");
@@ -200,6 +219,14 @@ export default function Home() {
     setName("");
   }, [project]);
 
+  if (identity === null) {
+    return <main className="p-10 text-sm opacity-70">Loading…</main>;
+  }
+
+  if (identity.multi_tenant && !identity.authenticated) {
+    return <SignIn onSignedIn={refreshIdentity} />;
+  }
+
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-10">
       <header className="mb-8">
@@ -209,6 +236,21 @@ export default function Home() {
           CMDB export, or an existing cloud fleet — into production-ready Terraform for AWS,
           Azure, or GCP, in minutes.
         </p>
+        {identity.authenticated && (
+          <p className="mt-3 text-xs opacity-60">
+            Signed in as {identity.email}
+            <button
+              type="button"
+              onClick={async () => {
+                await logout();
+                await refreshIdentity();
+              }}
+              className="ml-2 underline"
+            >
+              Sign out
+            </button>
+          </p>
+        )}
       </header>
 
       {error && (

@@ -35,7 +35,7 @@ import uuid
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 from ..config import MAX_PROJECTS
 
@@ -50,6 +50,7 @@ class Project:
     region: Optional[str] = None
     policy: Optional[dict] = None
     provider: str = "rule"
+    owner_id: Optional[str] = None  # None = single-tenant mode (IACTRANSLATE_AUTH unset)
     status: str = "created"  # created -> uploaded -> completed / failed
     workspace: Path = field(default_factory=lambda: Path(tempfile.mkdtemp(prefix="iactranslate_")))
     upload_path: Optional[Path] = None
@@ -74,11 +75,13 @@ class ProjectStore:
         region: Optional[str] = None,
         policy: Optional[dict] = None,
         provider: str = "rule",
+        owner_id: Optional[str] = None,
     ) -> Project:
         pid = uuid.uuid4().hex[:12]
         project = Project(
             id=pid, name=name, target=target, source=source,
             column_map=column_map, region=region, policy=policy, provider=provider,
+            owner_id=owner_id,
         )
         with self._lock:
             self._projects[pid] = project
@@ -88,6 +91,11 @@ class ProjectStore:
     def get(self, pid: str) -> Optional[Project]:
         with self._lock:
             return self._projects.get(pid)
+
+    def list_for_owner(self, owner_id: Optional[str]) -> List[Project]:
+        """Projects belonging to one owner, newest first."""
+        with self._lock:
+            return [p for p in reversed(self._projects.values()) if p.owner_id == owner_id]
 
     def save(self, project: Project) -> None:
         """No-op: `get()` returns the same shared object, so in-place field
@@ -135,13 +143,14 @@ class SqliteProjectStore:
             zip_path TEXT,
             error TEXT,
             summary TEXT,
-            created_at REAL NOT NULL
+            created_at REAL NOT NULL,
+            owner_id TEXT
         )
     """
     _COLUMNS = (
         "id", "name", "target", "source", "column_map", "region", "policy",
         "provider", "status", "workspace", "upload_path", "project_dir",
-        "zip_path", "error", "summary", "created_at",
+        "zip_path", "error", "summary", "created_at", "owner_id",
     )
 
     def __init__(self, db_path: str, max_projects: int = MAX_PROJECTS) -> None:
@@ -150,7 +159,22 @@ class SqliteProjectStore:
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
         self._conn.execute(self._SCHEMA)
+        self._migrate()
+        self._conn.execute("CREATE INDEX IF NOT EXISTS projects_owner ON projects (owner_id)")
         self._conn.commit()
+
+    def _migrate(self) -> None:
+        """Add columns missing from a database created by an older version.
+
+        A file written before multi-tenancy has no `owner_id`; opening it would
+        otherwise fail on every query. Additive and idempotent — it never drops
+        or rewrites existing rows, so pre-existing projects simply come back
+        with `owner_id = NULL` (single-tenant, as they were).
+        """
+        existing = {row[1] for row in self._conn.execute("PRAGMA table_info(projects)")}
+        if "owner_id" not in existing:
+            self._conn.execute("ALTER TABLE projects ADD COLUMN owner_id TEXT")
+            self._conn.commit()
 
     def _row_to_project(self, row: tuple) -> Project:
         data = dict(zip(self._COLUMNS, row))
@@ -166,6 +190,7 @@ class SqliteProjectStore:
             zip_path=Path(data["zip_path"]) if data["zip_path"] else None,
             error=data["error"],
             summary=json.loads(data["summary"]) if data["summary"] else None,
+            owner_id=data["owner_id"],
         )
 
     def create(
@@ -177,23 +202,27 @@ class SqliteProjectStore:
         region: Optional[str] = None,
         policy: Optional[dict] = None,
         provider: str = "rule",
+        owner_id: Optional[str] = None,
     ) -> Project:
         pid = uuid.uuid4().hex[:12]
         workspace = Path(tempfile.mkdtemp(prefix="iactranslate_"))
         with self._lock:
             self._conn.execute(
                 "INSERT INTO projects (id, name, target, source, column_map, region, policy, "
-                "provider, status, workspace, upload_path, project_dir, zip_path, error, summary, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'created', ?, NULL, NULL, NULL, NULL, NULL, ?)",
+                "provider, status, workspace, upload_path, project_dir, zip_path, error, summary, "
+                "created_at, owner_id) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'created', ?, NULL, NULL, NULL, NULL, NULL, ?, ?)",
                 (pid, name, target, source,
                  json.dumps(column_map) if column_map else None, region,
-                 json.dumps(policy) if policy else None, provider, str(workspace), time.time()),
+                 json.dumps(policy) if policy else None, provider, str(workspace), time.time(),
+                 owner_id),
             )
             self._conn.commit()
             self._evict_locked()
         return Project(
             id=pid, name=name, target=target, source=source, column_map=column_map,
             region=region, policy=policy, provider=provider, workspace=workspace,
+            owner_id=owner_id,
         )
 
     def get(self, pid: str) -> Optional[Project]:
@@ -202,6 +231,16 @@ class SqliteProjectStore:
                 f"SELECT {', '.join(self._COLUMNS)} FROM projects WHERE id = ?", (pid,)
             ).fetchone()
         return self._row_to_project(row) if row else None
+
+    def list_for_owner(self, owner_id: Optional[str]) -> List[Project]:
+        """Projects belonging to one owner, newest first."""
+        clause = "owner_id IS ?" if owner_id is None else "owner_id = ?"
+        with self._lock:
+            rows = self._conn.execute(
+                f"SELECT {', '.join(self._COLUMNS)} FROM projects WHERE {clause} ORDER BY rowid DESC",
+                (owner_id,),
+            ).fetchall()
+        return [self._row_to_project(row) for row in rows]
 
     def save(self, project: Project) -> None:
         with self._lock:

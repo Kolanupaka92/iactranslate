@@ -19,11 +19,12 @@ Flow:
 from __future__ import annotations
 
 import logging
+import os
 import re
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from fastapi import Depends, FastAPI, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, HTTPException, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 from pydantic import BaseModel, field_validator
@@ -42,6 +43,13 @@ from ..recommend import recommend
 from ..sources import list_sources, resolve_source
 from ..targets import get_target, list_targets
 from ..validation import PlanValidationError
+from .accounts import (
+    SESSION_COOKIE,
+    EmailTaken,
+    InvalidCredentials,
+    User,
+    create_account_store,
+)
 from .audit import create_audit_log
 from .auth import require_api_key
 from .events import Event, EventBus, EventType
@@ -53,6 +61,7 @@ logger = logging.getLogger("iactranslate.api")
 
 app = FastAPI(title="IaCTranslate", version="0.1.0")
 store = create_store()
+accounts = create_account_store()  # None unless IACTRANSLATE_AUTH=session
 
 # Runtime orchestration layer (single-node realization; swap for Redis/Celery +
 # Postgres in production — same interfaces). The pipeline stays a pure function.
@@ -72,6 +81,11 @@ if _origins:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=_origins,
+        # Required for the session cookie to cross origins (web app and API are
+        # separate origins). Browsers reject credentialed requests against a
+        # wildcard origin, so IACTRANSLATE_CORS_ORIGINS must name real origins
+        # rather than "*" whenever IACTRANSLATE_AUTH=session.
+        allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
@@ -126,9 +140,34 @@ def _summary(project: Project) -> dict:
     return data
 
 
-def _require_project(pid: str) -> Project:
+def current_user(request: Request) -> Optional[User]:
+    """Resolve the session cookie to a user.
+
+    Returns None in single-tenant mode (`IACTRANSLATE_AUTH` unset), where every
+    project has `owner_id = None` and the ownership check below degenerates to
+    "everything belongs to the one operator" — the historical behavior.
+    """
+    if accounts is None:
+        return None
+    user = accounts.user_for_session(request.cookies.get(SESSION_COOKIE, ""))
+    if user is None:
+        raise HTTPException(401, "not signed in")
+    return user
+
+
+def _require_project(pid: str, user: Optional[User]) -> Project:
+    """Fetch a project the caller is allowed to see.
+
+    A project owned by someone else returns **404, not 403** — a 403 would
+    confirm that the id exists, letting an attacker enumerate other tenants'
+    projects. The caller cannot distinguish "no such project" from "not yours",
+    which is the point.
+    """
     project = store.get(pid)
     if project is None:
+        raise HTTPException(404, "project not found")
+    expected_owner = user.id if user else None
+    if project.owner_id != expected_owner:
         raise HTTPException(404, "project not found")
     return project
 
@@ -153,8 +192,83 @@ def health() -> dict:
     return {"status": "ok"}
 
 
+class Credentials(BaseModel):
+    email: str
+    password: str
+
+
+def _require_accounts():
+    if accounts is None:
+        raise HTTPException(404, "accounts are not enabled on this deployment")
+    return accounts
+
+
+def _set_session_cookie(response: JSONResponse, token: str) -> None:
+    """httponly blocks JS access (XSS can't steal it); samesite=lax blocks
+    cross-site POSTs (CSRF) while still allowing top-level navigations, which
+    is what makes the download/report links work."""
+    response.set_cookie(
+        SESSION_COOKIE, token,
+        httponly=True,
+        samesite="lax",
+        secure=os.getenv("IACTRANSLATE_COOKIE_SECURE", "1") != "0",
+        max_age=14 * 24 * 3600,
+        path="/",
+    )
+
+
+@app.post("/auth/register", status_code=201)
+def register(body: Credentials) -> JSONResponse:
+    accts = _require_accounts()
+    try:
+        user = accts.create_user(body.email, body.password)
+    except EmailTaken:
+        # Same shape as a validation failure — do not confirm which emails exist.
+        raise HTTPException(400, "could not create that account") from None
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+    response = JSONResponse(status_code=201, content={"id": user.id, "email": user.email})
+    _set_session_cookie(response, accts.create_session(user.id))
+    logger.info("registered user %s", user.id)
+    return response
+
+
+@app.post("/auth/login")
+def login(body: Credentials) -> JSONResponse:
+    accts = _require_accounts()
+    try:
+        user = accts.authenticate(body.email, body.password)
+    except InvalidCredentials:
+        raise HTTPException(401, "invalid email or password") from None
+    response = JSONResponse(content={"id": user.id, "email": user.email})
+    _set_session_cookie(response, accts.create_session(user.id))
+    return response
+
+
+@app.post("/auth/logout", status_code=204)
+def logout(request: Request) -> Response:
+    if accounts is not None:
+        accounts.delete_session(request.cookies.get(SESSION_COOKIE, ""))
+    response = Response(status_code=204)
+    response.delete_cookie(SESSION_COOKIE, path="/")
+    return response
+
+
+@app.get("/auth/me")
+def whoami(user: Optional[User] = Depends(current_user)) -> dict:
+    if user is None:
+        return {"authenticated": False, "multi_tenant": False}
+    return {"authenticated": True, "multi_tenant": True, "id": user.id, "email": user.email}
+
+
+@app.get("/projects")
+def list_projects(user: Optional[User] = Depends(current_user)) -> list:
+    """Every project the caller owns — the tenant's own view, nobody else's."""
+    return [_summary(p) for p in store.list_for_owner(user.id if user else None)]
+
+
 @app.post("/projects", status_code=201, dependencies=[Depends(require_api_key)])
-def create_project(body: CreateProject) -> dict:
+def create_project(body: CreateProject, user: Optional[User] = Depends(current_user)) -> dict:
     if body.target not in list_targets():
         raise HTTPException(400, f"target '{body.target}' not supported (available: {', '.join(list_targets())})")
     if body.source not in ("auto", *list_sources()):
@@ -169,7 +283,7 @@ def create_project(body: CreateProject) -> dict:
     project = store.create(
         name=body.name, target=body.target, source=body.source,
         column_map=body.column_map, region=body.region, policy=body.policy,
-        provider=body.provider,
+        provider=body.provider, owner_id=user.id if user else None,
     )
     logger.info("created project %s (target=%s source=%s)", project.id, project.target, project.source)
     bus.publish(Event(EventType.PROJECT_CREATED, project_id=project.id,
@@ -206,12 +320,15 @@ def targets() -> list:
 
 
 @app.get("/projects/{pid}", dependencies=[Depends(require_api_key)])
-def get_project(pid: str) -> dict:
-    return _summary(_require_project(pid))
+def get_project(pid: str, user: Optional[User] = Depends(current_user)) -> dict:
+    return _summary(_require_project(pid, user))
 
 
 @app.delete("/projects/{pid}", status_code=204, dependencies=[Depends(require_api_key)])
-def delete_project(pid: str) -> None:
+def delete_project(pid: str, user: Optional[User] = Depends(current_user)) -> None:
+    # Ownership is checked *before* deleting — otherwise any signed-in user
+    # could destroy another tenant's project by guessing its id.
+    _require_project(pid, user)
     if not store.delete(pid):
         raise HTTPException(404, "project not found")
     logger.info("deleted project %s", pid)
@@ -219,8 +336,8 @@ def delete_project(pid: str) -> None:
 
 
 @app.post("/projects/{pid}/upload", dependencies=[Depends(require_api_key)])
-async def upload(pid: str, file: UploadFile) -> dict:
-    project = _require_project(pid)
+async def upload(pid: str, file: UploadFile, user: Optional[User] = Depends(current_user)) -> dict:
+    project = _require_project(pid, user)
 
     suffix = Path(file.filename or "").suffix.lower()
     if suffix not in _ALLOWED_SUFFIXES:
@@ -315,9 +432,9 @@ def _execute_run(project: Project) -> None:
 
 
 @app.post("/projects/{pid}/run", dependencies=[Depends(require_api_key)])
-def run(pid: str) -> dict:
+def run(pid: str, user: Optional[User] = Depends(current_user)) -> dict:
     """Synchronous run — generates in-request. See POST /jobs for the async path."""
-    project = _require_project(pid)
+    project = _require_project(pid, user)
     if project.upload_path is None:
         raise HTTPException(400, "no file uploaded for this project")
     try:
@@ -333,9 +450,9 @@ def run(pid: str) -> dict:
 
 
 @app.post("/projects/{pid}/jobs", status_code=202, dependencies=[Depends(require_api_key)])
-def create_job(pid: str) -> dict:
+def create_job(pid: str, user: Optional[User] = Depends(current_user)) -> dict:
     """Asynchronous run — enqueue the pipeline and return a job id to poll."""
-    project = _require_project(pid)
+    project = _require_project(pid, user)
     if project.upload_path is None:
         raise HTTPException(400, "no file uploaded for this project")
     project.status = "queued"
@@ -345,10 +462,13 @@ def create_job(pid: str) -> dict:
 
 
 @app.get("/jobs/{job_id}", dependencies=[Depends(require_api_key)])
-def get_job(job_id: str) -> dict:
+def get_job(job_id: str, user: Optional[User] = Depends(current_user)) -> dict:
     job = jobs.get(job_id)
     if job is None:
         raise HTTPException(404, "job not found")
+    # A job id is a handle to a project, so it inherits that project's access
+    # check — otherwise a guessed job id would expose another tenant's summary.
+    _require_project(job.project_id, user)
     data = job.to_dict()
     project = store.get(job.project_id)
     if project is not None:
@@ -357,14 +477,31 @@ def get_job(job_id: str) -> dict:
 
 
 @app.get("/audit", dependencies=[Depends(require_api_key)])
-def get_audit(project_id: Optional[str] = None, limit: int = 100) -> list:
-    """Recent audit events (newest first), optionally scoped to one project."""
-    return [e.to_dict() for e in audit.recent(project_id=project_id, limit=min(limit, 1000))]
+def get_audit(
+    project_id: Optional[str] = None,
+    limit: int = 100,
+    user: Optional[User] = Depends(current_user),
+) -> list:
+    """Recent audit events (newest first), scoped to the caller's own projects.
+
+    The unfiltered trail names every tenant's project ids and activity, so in
+    multi-tenant mode it is filtered to projects the caller owns rather than
+    returned whole.
+    """
+    if project_id is not None:
+        _require_project(project_id, user)
+        return [e.to_dict() for e in audit.recent(project_id=project_id, limit=min(limit, 1000))]
+
+    events = audit.recent(limit=min(limit, 1000))
+    if user is None:
+        return [e.to_dict() for e in events]  # single-tenant: one operator, one trail
+    owned = {p.id for p in store.list_for_owner(user.id)}
+    return [e.to_dict() for e in events if e.project_id in owned]
 
 
 @app.post("/projects/{pid}/recommend", dependencies=[Depends(require_api_key)])
-def recommend_cloud(pid: str) -> dict:
-    project = _require_project(pid)
+def recommend_cloud(pid: str, user: Optional[User] = Depends(current_user)) -> dict:
+    project = _require_project(pid, user)
     if project.upload_path is None:
         raise HTTPException(400, "no file uploaded for this project")
 
@@ -376,8 +513,8 @@ def recommend_cloud(pid: str) -> dict:
 
 
 @app.post("/projects/{pid}/assess", dependencies=[Depends(require_api_key)])
-def assess_estate(pid: str) -> dict:
-    project = _require_project(pid)
+def assess_estate(pid: str, user: Optional[User] = Depends(current_user)) -> dict:
+    project = _require_project(pid, user)
     if project.upload_path is None:
         raise HTTPException(400, "no file uploaded for this project")
 
@@ -388,8 +525,9 @@ def assess_estate(pid: str) -> dict:
 
 
 @app.post("/projects/{pid}/report", response_class=HTMLResponse, dependencies=[Depends(require_api_key)])
-def executive_report(pid: str, include_recommendation: bool = True) -> HTMLResponse:
-    project = _require_project(pid)
+def executive_report(pid: str, include_recommendation: bool = True,
+                     user: Optional[User] = Depends(current_user)) -> HTMLResponse:
+    project = _require_project(pid, user)
     if project.upload_path is None:
         raise HTTPException(400, "no file uploaded for this project")
 
@@ -405,8 +543,8 @@ def executive_report(pid: str, include_recommendation: bool = True) -> HTMLRespo
 
 
 @app.get("/projects/{pid}/download", dependencies=[Depends(require_api_key)])
-def download(pid: str) -> FileResponse:
-    project = _require_project(pid)
+def download(pid: str, user: Optional[User] = Depends(current_user)) -> FileResponse:
+    project = _require_project(pid, user)
     if not project.zip_path or not Path(project.zip_path).exists():
         raise HTTPException(409, "project has not been generated yet; call /run first")
     return FileResponse(

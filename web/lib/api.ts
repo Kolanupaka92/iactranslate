@@ -111,7 +111,11 @@ export class ApiError extends Error {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
-    res = await fetch(`${API_URL}${path}`, init);
+    // `credentials: "include"` sends the session cookie cross-origin (the web
+    // app and API are separate origins in dev). The API must therefore echo a
+    // specific Origin in IACTRANSLATE_CORS_ORIGINS — "*" is rejected by the
+    // browser whenever credentials are included.
+    res = await fetch(`${API_URL}${path}`, { credentials: "include", ...init });
   } catch {
     throw new ApiError(
       0,
@@ -180,10 +184,51 @@ export function deleteProject(projectId: string): Promise<void> {
   return request(`/projects/${projectId}`, { method: "DELETE" });
 }
 
+/** Plain link targets. These are opened as ordinary navigations (`<a href>`,
+ *  a new tab), so the browser attaches the session cookie by itself — which is
+ *  exactly why auth here is a cookie and not a bearer token: a navigation has
+ *  no fetch call to hang an Authorization header on. */
 export function downloadUrl(projectId: string): string {
   return `${API_URL}/projects/${projectId}/download`;
 }
 
 export function reportUrl(projectId: string): string {
   return `${API_URL}/projects/${projectId}/report`;
+}
+
+export interface Identity {
+  authenticated: boolean;
+  multi_tenant: boolean;
+  id?: string;
+  email?: string;
+}
+
+/** Who the caller is. `multi_tenant: false` means the deployment runs
+ *  single-tenant (no accounts), so the UI should not render a login screen. */
+export function whoami(): Promise<Identity> {
+  return request("/auth/me");
+}
+
+export function register(email: string, password: string): Promise<Identity> {
+  return request("/auth/register", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+}
+
+export function login(email: string, password: string): Promise<Identity> {
+  return request("/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+}
+
+export function logout(): Promise<void> {
+  return request("/auth/logout", { method: "POST" });
+}
+
+export function listProjects(): Promise<ProjectSummary[]> {
+  return request("/projects");
 }

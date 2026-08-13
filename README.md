@@ -47,6 +47,10 @@ CI proves the output is valid against the real cloud providers (`tofu validate`)
   and endpoints require `Authorization: Bearer <key>` when
   `IACTRANSLATE_API_KEY` is set — both stdlib-only, both verified with a real
   kill-and-restart, neither pretending to be Postgres or OIDC/RBAC.
+- **Multi-tenant.** Opt in with `IACTRANSLATE_AUTH=session` for user accounts,
+  session-cookie login, and per-project ownership — one customer cannot see
+  another's inventory, and a project owned by someone else returns 404 rather
+  than 403 so ids can't be enumerated. Username/password, not OIDC/SSO yet.
 - **Operable at runtime.** The audit trail survives a restart under the same
   `sqlite` switch, and `GET /metrics` serves Prometheus counters plus an
   in-flight gauge. Both are event-bus subscribers, so routes and the pipeline
