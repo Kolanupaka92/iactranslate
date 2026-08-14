@@ -21,3 +21,6 @@ venv/
 
 # OS
 .DS_Store
+
+# Hypothesis local example/constant cache (machine-specific, not source)
+.hypothesis/

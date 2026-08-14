@@ -8,7 +8,7 @@ subnet tier and security group from the VM's tier — all via the target.
 from __future__ import annotations
 
 import math
-from typing import List, Tuple
+from typing import Dict, List, Tuple
 
 from ..models import ComputePlan, Environment, NormalizedVM, Tier
 from ..pricing import monthly_cost
@@ -113,4 +113,36 @@ def build_compute_plans(
                 external_id=vm.external_id,
             )
         )
+    _ensure_unique_resource_names(plans)
     return plans
+
+
+def _ensure_unique_resource_names(plans: List[ComputePlan]) -> None:
+    """Guarantee every Terraform resource label is unique.
+
+    `terraform_safe_name` maps every non-alphanumeric run to `_`, so distinct
+    machines can collapse onto the same label: `web-01`, `web.01`, `WEB_01`,
+    and `web 01` all become `web_01`. Real estates contain exactly this — a
+    CMDB and DNS rarely agree on separators or case — and the result was
+    several `resource "aws_instance" "web_01"` blocks, which Terraform rejects
+    as duplicates.
+
+    Collisions are resolved by suffixing in the order the plans were built,
+    which is derived from the sorted inventory, so the mapping is stable across
+    runs. That stability matters: a label that moved between runs would look to
+    Terraform like a resource to destroy and recreate.
+    """
+    seen: Dict[str, int] = {}
+    for plan in plans:
+        base = plan.resource_name
+        count = seen.get(base, 0)
+        seen[base] = count + 1
+        if count:
+            # `_2`, `_3`, … — and re-check, since the suffixed name could
+            # itself collide with a real machine literally called "web_01_2".
+            candidate = f"{base}_{count + 1}"
+            while candidate in seen:
+                count += 1
+                candidate = f"{base}_{count + 1}"
+            seen[candidate] = 1
+            plan.resource_name = candidate

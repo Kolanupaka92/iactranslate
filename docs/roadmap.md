@@ -87,6 +87,11 @@ in CI on `main`.
   Purely organizational: Terraform still loads the directory as one config, so
   no resource address or state changes
   (see [ADR 0032](adr/0032-split-compute-output-for-reviewability.md))
+- ✅ **Property-based testing** — Hypothesis generates adversarial estates as a
+  stand-in for customer data we don't have yet. Found four real bugs on the
+  first run, including distinct machines (`web-01` / `web.01` / `WEB_01`)
+  colliding onto one Terraform label
+  (see [ADR 0033](adr/0033-property-based-testing-as-a-customer-substitute.md))
 - ✅ Model schema versioning (`NormalizedVM` / `MigrationPlan`)
 
 **Surfaces & delivery**

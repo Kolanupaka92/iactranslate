@@ -5,6 +5,7 @@ Accepts the raw dicts produced by either parser (RVTools or flat VMware CSV).
 """
 from __future__ import annotations
 
+import math
 import re
 from typing import Dict, List, Optional
 
@@ -12,13 +13,28 @@ from .models import NormalizedVM
 
 MIB_PER_GIB = 1024.0
 
+# Floor for a workload reporting zero or missing memory. Mirrors the
+# `max(1, ...)` clamp already applied to vCPU: bad data must not lose the
+# machine, and `NormalizedVM.memory_gib` is constrained `> 0`.
+MIN_MEMORY_GIB = 1.0
+
 
 def _to_int(value: object, default: int = 1) -> int:
     if value is None:
         return default
     try:
-        return max(1, int(round(float(value))))
+        number = float(value)
     except (TypeError, ValueError):
+        return default
+    # A spreadsheet cell reading "Inf"/"NaN" parses as a float but cannot be
+    # made an int: `int(round(inf))` raises OverflowError, which used to escape
+    # `normalize()` and fail the whole upload over one bad row. pandas also
+    # produces NaN for blank numeric cells, so this is ordinary input.
+    if not math.isfinite(number):
+        return default
+    try:
+        return max(1, int(round(number)))
+    except (OverflowError, ValueError):
         return default
 
 
@@ -26,9 +42,12 @@ def _to_float(value: object) -> Optional[float]:
     if value is None:
         return None
     try:
-        return float(value)
+        number = float(value)
     except (TypeError, ValueError):
         return None
+    # NaN/inf would propagate into sizing and cost arithmetic and surface to a
+    # customer as "nan" in a report.
+    return number if math.isfinite(number) else None
 
 
 def _util_pct(value: object) -> Optional[float]:
@@ -63,8 +82,14 @@ def _memory_gib(rec: Dict[str, object]) -> float:
     val = _to_float(rec.get("memory_value"))
     if val is not None:
         unit = str(rec.get("memory_unit", "gib")).lower()
-        return round(val / MIB_PER_GIB, 2) if unit == "mib" else round(val, 2)
-    return 1.0  # sane floor; a VM always has some memory
+        gib = round(val / MIB_PER_GIB, 2) if unit == "mib" else round(val, 2)
+        # A row reporting *zero* memory is the same data-quality problem as a
+        # row reporting none — templates, powered-off shells, and half-filled
+        # CMDB rows all produce it. The floor applies to both: `memory_gib` is
+        # constrained `> 0`, so returning 0.0 raised a ValidationError out of
+        # `normalize()` and one bad row failed the entire upload.
+        return gib if gib > 0 else MIN_MEMORY_GIB
+    return MIN_MEMORY_GIB
 
 
 def _disks_gib(rec: Dict[str, object]) -> List[float]:
@@ -137,8 +162,17 @@ def sanitize_identifier(value: str) -> str:
     none of these characters.
     """
     cleaned = _UNSAFE_IN_GENERATED_CODE.sub("-", value)
-    # Collapse the runs of dashes a substitution can leave behind.
-    cleaned = re.sub(r"-{2,}", "-", cleaned).strip("-").strip()
+    # Normalize *all* whitespace — including Unicode forms like U+0085 (NEL)
+    # and U+00A0 (NBSP) that the control-character class above doesn't cover —
+    # before trimming. Without this the function was not idempotent: `.strip()`
+    # removed those characters while the regex didn't, so a second pass could
+    # shorten the result again. That matters because a name that changes on
+    # re-run changes the Terraform resource label, and Terraform treats a
+    # renamed resource as destroy-and-recreate.
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    # Collapse the runs of dashes a substitution can leave behind, then trim
+    # dashes and spaces together so neither can strand the other.
+    cleaned = re.sub(r"-{2,}", "-", cleaned).strip("- ")
     return cleaned or "unnamed"
 
 

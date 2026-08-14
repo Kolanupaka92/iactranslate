@@ -27,6 +27,7 @@ dev = [
     "httpx>=0.27",
     "anthropic>=0.39",
     "ruff>=0.6",
+    "hypothesis>=6.100",  # property-based tests (tests/test_properties.py)
     "markdown>=3.5",  # scripts/build_guide_artifact.py (docs → HTML for the Artifact)
 ]
 
