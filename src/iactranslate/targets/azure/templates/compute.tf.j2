@@ -4,7 +4,7 @@
 {% for c in compute %}
 {% if c.subnet_tier == SubnetTier.PUBLIC and c.vm_name not in fronted_vm_names %}
 resource "azurerm_public_ip" "{{ c.resource_name }}" {
-  name                = "{{ c.vm_name }}-pip"
+  name                = "{{ vm_slug[c.vm_name] }}-pip"
   resource_group_name = azurerm_resource_group.main.name
   location            = azurerm_resource_group.main.location
   allocation_method   = "Static"
@@ -17,7 +17,7 @@ resource "azurerm_public_ip" "{{ c.resource_name }}" {
 
 {% endif %}
 resource "azurerm_network_interface" "{{ c.resource_name }}" {
-  name                = "{{ c.vm_name }}-nic"
+  name                = "{{ vm_slug[c.vm_name] }}-nic"
   resource_group_name = azurerm_resource_group.main.name
   location            = azurerm_resource_group.main.location
 
@@ -51,7 +51,7 @@ resource "azurerm_network_interface_backend_address_pool_association" "{{ c.reso
 
 {% if c.image_key.startswith('windows') %}
 resource "azurerm_windows_virtual_machine" "{{ c.resource_name }}" {
-  name                  = "{{ c.vm_name }}"
+  name                  = "{{ vm_slug[c.vm_name] }}"
   resource_group_name   = azurerm_resource_group.main.name
   location              = azurerm_resource_group.main.location
   size                  = "{{ c.instance_type }}"
@@ -81,7 +81,7 @@ resource "azurerm_windows_virtual_machine" "{{ c.resource_name }}" {
 }
 {% else %}
 resource "azurerm_linux_virtual_machine" "{{ c.resource_name }}" {
-  name                  = "{{ c.vm_name }}"
+  name                  = "{{ vm_slug[c.vm_name] }}"
   resource_group_name   = azurerm_resource_group.main.name
   location              = azurerm_resource_group.main.location
   size                  = "{{ c.instance_type }}"

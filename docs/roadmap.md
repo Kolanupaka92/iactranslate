@@ -77,6 +77,11 @@ in CI on `main`.
   1h TTL, no account enumeration. Reset **delivery is not implemented** — the
   seam ships a log backend rather than unverified SMTP
   (see [ADR 0030](adr/0030-password-change-and-reset.md))
+- ✅ **Untrusted-input sanitizing** — uploaded inventory is sanitized at the
+  `normalize` waist, closing a proven template injection (a VM named
+  `${file("/etc/passwd")}` was evaluated by Terraform) and fixing Azure, which
+  produced invalid names for ordinary CMDB data like `web server 01`
+  (see [ADR 0031](adr/0031-sanitize-untrusted-inventory-at-normalize.md))
 - ✅ Model schema versioning (`NormalizedVM` / `MigrationPlan`)
 
 **Surfaces & delivery**
@@ -110,6 +115,9 @@ backends and integrations that plug into them, via the
 - ✅ Kubernetes/KubeVirt — VMs as `VirtualMachine` CRDs, SG ingress as
   `NetworkPolicy`, cloud-agnostic (see [ADR 0017](adr/0017-kubernetes-from-graph.md))
 - ◻ Migrate the rest of Terraform/Pulumi's resource generation onto the graph
+- ◻ **Split generated output per tier/application** — a 5,000-VM estate emits a
+  single 95k-line `compute.tf`. It validates, but nobody can review it, and
+  reviewability is the product promise (noted in [ADR 0031](adr/0031-sanitize-untrusted-inventory-at-normalize.md))
 
 **Considered, deliberately deferred** (tracked so the reasoning is explicit):
 

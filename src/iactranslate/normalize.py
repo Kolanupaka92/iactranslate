@@ -109,13 +109,55 @@ def _clean_str(value: object) -> Optional[str]:
     return text or None
 
 
+# Characters that are harmless in a hostname but dangerous once the value is
+# written into generated code. Braces are stripped outright rather than just
+# the `${`/`%{` pairs: dropping only the pairs leaves stray braces that make
+# generated code confusing to read and review, and no real hostname has them.
+# Quotes and backslashes break out of string literals in HCL, Python
+# (Pulumi/CDK), JSON (CloudFormation) and YAML (Kubernetes); backticks and
+# `$(` are shell substitution; angle brackets matter in HTML reports.
+_UNSAFE_IN_GENERATED_CODE = re.compile(r"""[\x00-\x1f\x7f"'\\`<>{}]|\$\(""")
+
+
+def sanitize_identifier(value: str) -> str:
+    """Strip characters that would let inventory data inject into generated code.
+
+    This is the single choke point protecting **every** renderer. The tool's
+    whole job is turning an untrusted file into code someone runs, so a name
+    like `x-${file("/etc/passwd")}` must never reach a template: Terraform
+    evaluates `${...}` *inside* string literals, so the value doesn't even need
+    to escape its quotes to be executed at plan time.
+
+    Fixing this in `normalize` rather than in six template languages means one
+    correct implementation instead of six chances to get HCL, Python, JSON,
+    YAML, and Bicep escaping right — consistent with `NormalizedVM` being the
+    narrow waist every renderer reads from (ADR 0002).
+
+    Legitimate hostnames pass through untouched; RFC-valid hostnames contain
+    none of these characters.
+    """
+    cleaned = _UNSAFE_IN_GENERATED_CODE.sub("-", value)
+    # Collapse the runs of dashes a substitution can leave behind.
+    cleaned = re.sub(r"-{2,}", "-", cleaned).strip("-").strip()
+    return cleaned or "unnamed"
+
+
+def _safe_str(value: object) -> Optional[str]:
+    """`_clean_str` plus injection sanitizing, for values that reach templates."""
+    text = _clean_str(value)
+    return sanitize_identifier(text) if text is not None else None
+
+
 def normalize(records: List[Dict[str, object]]) -> List[NormalizedVM]:
     seen: Dict[str, NormalizedVM] = {}
     for rec in records:
-        name = _clean_str(rec.get("name"))
+        name = _safe_str(rec.get("name"))
         if not name:
             continue
 
+        # Every free-text field below is attacker-influenced (it came out of an
+        # uploaded file) and ends up inside generated code or a report, so all
+        # of them go through the same sanitizer — not just the name.
         vm = NormalizedVM(
             vm_name=name,
             cpu=_to_int(rec.get("cpus")),
@@ -123,14 +165,14 @@ def normalize(records: List[Dict[str, object]]) -> List[NormalizedVM]:
             disks_gib=_disks_gib(rec),
             cpu_util_pct=_util_pct(rec.get("cpu_util_pct")),
             mem_util_pct=_util_pct(rec.get("mem_util_pct")),
-            network=_clean_str(rec.get("network")),
-            os=_clean_str(rec.get("os")),
-            power_state=_clean_str(rec.get("powerstate")),
+            network=_safe_str(rec.get("network")),
+            os=_safe_str(rec.get("os")),
+            power_state=_safe_str(rec.get("powerstate")),
             ip_addresses=_parse_ips(rec.get("ip")),
-            hostname=_clean_str(rec.get("dns_name")),
-            cluster=_clean_str(rec.get("cluster")),
-            datacenter=_clean_str(rec.get("datacenter")),
-            external_id=_clean_str(rec.get("external_id")),
+            hostname=_safe_str(rec.get("dns_name")),
+            cluster=_safe_str(rec.get("cluster")),
+            datacenter=_safe_str(rec.get("datacenter")),
+            external_id=_safe_str(rec.get("external_id")),
         )
         # De-dupe by name; prefer the record with more disk detail.
         existing = seen.get(vm.vm_name)
