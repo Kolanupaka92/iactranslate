@@ -146,3 +146,84 @@ def test_messy_real_world_names_produce_valid_resource_names(tmp_path, target):
             assert "(" not in value and ")" not in value, f"{target}: parens in {value!r}"
             assert "/" not in value, f"{target}: slash in {value!r}"
             assert "#" not in value, f"{target}: hash in {value!r}"
+
+
+# -- output reviewability (ADR 0032) ---------------------------------------
+
+
+def _estate(tmp_path, count, name="estate.csv"):
+    csv = tmp_path / name
+    rows = "\n".join(
+        f"{env}-{tier}-{i:04d},2,8,50,Ubuntu 22.04,10.{i // 65536}.{(i // 256) % 256}.{i % 256}"
+        for i, (env, tier) in enumerate(
+            (["prod", "dev"][i % 2], ["web", "app", "db"][i % 3]) for i in range(count)
+        )
+    )
+    csv.write_text("name,cpu,memory_gib,disk_gib,os,ip\n" + rows + "\n")
+    return csv
+
+
+def test_small_estates_stay_in_one_compute_file(tmp_path):
+    """One short file beats six tiny ones."""
+    from iactranslate.pipeline import run_pipeline
+
+    out = tmp_path / "small"
+    run_pipeline(input_path=str(_estate(tmp_path, 10)), project_name="s", out_dir=str(out),
+                 target="aws", source="generic", make_zip=False)
+    assert (out / "compute.tf").exists()
+    assert not list(out.glob("compute-*.tf"))
+
+
+def test_large_estates_split_by_environment_and_tier(tmp_path):
+    from iactranslate.pipeline import run_pipeline
+
+    out = tmp_path / "large"
+    run_pipeline(input_path=str(_estate(tmp_path, 120)), project_name="l", out_dir=str(out),
+                 target="aws", source="generic", make_zip=False)
+
+    parts = sorted(p.name for p in out.glob("compute-*.tf"))
+    assert parts, "a 120-VM estate should have been split"
+    assert not (out / "compute.tf").exists(), "the monolithic file should be gone"
+    # Named for the two axes a reviewer actually thinks in.
+    assert any("production" in p and "web" in p for p in parts), parts
+
+
+def test_splitting_preserves_every_resource_exactly_once(tmp_path):
+    """The split must be purely organizational — no resource lost or doubled."""
+    from iactranslate.pipeline import run_pipeline
+
+    src = _estate(tmp_path, 120)
+    whole, split = tmp_path / "whole", tmp_path / "split"
+
+    import os
+    os.environ["IACTRANSLATE_SPLIT_COMPUTE_ABOVE"] = "0"  # disabled
+    run_pipeline(input_path=str(src), project_name="w", out_dir=str(whole),
+                 target="aws", source="generic", make_zip=False)
+    os.environ.pop("IACTRANSLATE_SPLIT_COMPUTE_ABOVE")
+    run_pipeline(input_path=str(src), project_name="w", out_dir=str(split),
+                 target="aws", source="generic", make_zip=False)
+
+    def instances(paths):
+        found = []
+        for p in paths:
+            found += [
+                line for line in p.read_text().splitlines()
+                if line.startswith('resource "aws_instance"')
+            ]
+        return sorted(found)
+
+    one = instances([whole / "compute.tf"])
+    many = instances(sorted(split.glob("compute-*.tf")))
+    assert many == one, "split output must contain exactly the same resources"
+    assert len(many) == len(set(many)), "a resource was emitted twice"
+
+
+def test_split_threshold_is_configurable(tmp_path, monkeypatch):
+    from iactranslate.generator.renderer import split_threshold
+
+    monkeypatch.setenv("IACTRANSLATE_SPLIT_COMPUTE_ABOVE", "5")
+    assert split_threshold() == 5
+    monkeypatch.setenv("IACTRANSLATE_SPLIT_COMPUTE_ABOVE", "0")
+    assert split_threshold() == 0          # disabled
+    monkeypatch.setenv("IACTRANSLATE_SPLIT_COMPUTE_ABOVE", "nonsense")
+    assert split_threshold() == 50         # falls back rather than crashing

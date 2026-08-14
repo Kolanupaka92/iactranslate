@@ -5,9 +5,11 @@ a mapping of {filename: content} which the packager writes to disk / zips.
 """
 from __future__ import annotations
 
+import os
 import re
+from collections import OrderedDict
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional, Tuple
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
@@ -82,6 +84,44 @@ def _data_volumes(compute: List[ComputePlan]) -> List[dict]:
     return volumes
 
 
+def split_threshold() -> int:
+    """Workload count above which `compute.tf` is split. 0 disables splitting."""
+    try:
+        return int(os.getenv("IACTRANSLATE_SPLIT_COMPUTE_ABOVE", "50"))
+    except ValueError:
+        return 50
+
+
+def _compute_split(
+    filename: str, compute: List[ComputePlan]
+) -> Optional[List[Tuple[str, List[ComputePlan]]]]:
+    """Group compute resources into per-file slices, or None to keep one file.
+
+    A 5,000-VM estate otherwise renders a single ~95,000-line `compute.tf`.
+    That is valid Terraform and completely unreviewable — and "reviewable IaC"
+    is the product's whole claim, so a file nobody opens is a real defect.
+
+    Splitting is **purely organizational**: Terraform loads every `.tf` in a
+    directory as one configuration, so this changes no resource address, no
+    dependency, and no state. Nothing needs migrating, and small projects are
+    left as a single file because one short file is genuinely nicer to read
+    than six tiny ones.
+
+    Grouping is by environment then tier, which is the conventional split
+    (by environment, then by component) and happens to match how migrations
+    are actually executed and reviewed — the same two signals the wave planner
+    sequences on (ADR 0024).
+    """
+    threshold = split_threshold()
+    if not filename.startswith("compute") or threshold <= 0 or len(compute) <= threshold:
+        return None
+
+    grouped: "OrderedDict[str, List[ComputePlan]]" = OrderedDict()
+    for c in sorted(compute, key=lambda x: (x.environment.value, x.tier.value, x.vm_name)):
+        grouped.setdefault(f"{c.environment.value}-{c.tier.value}", []).append(c)
+    return list(grouped.items())
+
+
 def build_files(plan: MigrationPlan, target: Target) -> Dict[str, str]:
     env = _env(target.template_dir)
     subnet_of = _assign_subnets(plan)
@@ -114,7 +154,15 @@ def build_files(plan: MigrationPlan, target: Target) -> Dict[str, str]:
     }
     out: Dict[str, str] = {}
     for template_name, filename in target.template_map.items():
-        out[filename] = env.get_template(template_name).render(**context)
+        template = env.get_template(template_name)
+        groups = _compute_split(filename, plan.compute)
+        if groups is None:
+            out[filename] = template.render(**context)
+            continue
+        # Render the compute template once per group, each over its own slice.
+        for suffix, subset in groups:
+            name = filename[: -len(".tf")] if filename.endswith(".tf") else filename
+            out[f"{name}-{suffix}.tf"] = template.render(**{**context, "compute": subset})
     # Drop files that rendered empty — e.g. imports.tf when there are no
     # brownfield resource ids to adopt.
     return {name: content for name, content in out.items() if content.strip()}

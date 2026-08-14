@@ -148,7 +148,7 @@ scope, and assumptions — is in **[docs/architecture.md](docs/architecture.md)*
 ## Test & lint
 
 ```bash
-pytest                 # ~363 tests: parsers, sizing, validation, all 3 clouds, renderers, API
+pytest                 # ~403 tests: parsers, sizing, validation, all 3 clouds, renderers, API
 ruff check src tests
 ```
 

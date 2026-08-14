@@ -55,7 +55,7 @@ diagrams, infrastructure diff, brownfield adoption, load balancer topology,
 managed-DB re-platforming advice, migration wave planning, a Kubernetes discovery source,
 Pulumi/CloudFormation/Bicep/CDK/Kubernetes renderers, a policy engine, an
 Infrastructure Graph IR, async jobs + audit, and opt-in GitOps.
-~363 tests, 7 green CI jobs (lint, pytest 3.9/3.11/3.12, Docker health, web build, real
+~403 tests, 7 green CI jobs (lint, pytest 3.9/3.11/3.12, Docker health, web build, real
 Terraform validate). Repo: `github.com/Kolanupaka92/iactranslate` (private).
 
 ---
@@ -504,6 +504,7 @@ All env vars (see `src/iactranslate/config.py`):
 | `IACTRANSLATE_TRUST_PROXY` | `0` | Set `1` **only** behind a proxy you control, to read the client IP from `X-Forwarded-For`. Any client can forge that header, so trusting it without a proxy lets attackers bypass every limit. |
 | `IACTRANSLATE_WORKSPACE_ROOT` | (system temp) | Directory for project workspaces (uploads + generated output). Point it at a mounted volume so artifacts survive a container recycle; `/tmp` does not. |
 | `IACTRANSLATE_APP_URL` | `http://localhost:3000` | Public origin of the web app, used to build the password-reset link. The API's own origin is usually wrong here — the reset form lives in the frontend. |
+| `IACTRANSLATE_SPLIT_COMPUTE_ABOVE` | `50` | Workload count above which compute output is split into `compute-<env>-<tier>.tf` files for reviewability. `0` keeps a single `compute.tf`. Purely organizational — no state impact. |
 | `IACTRANSLATE_TARGET_UTILIZATION` | `0.65` | When a source carries utilization, size instances so they run at ~this utilization (right-sizing). |
 | `IACTRANSLATE_PRICING` | `static` | `static` (curated catalog rates, offline) or `live` (real market prices, cached, falls back to static). |
 | `IACTRANSLATE_GCP_BILLING_API_KEY` | (none) | API key for GCP live pricing (Cloud Billing Catalog). Without it, GCP live falls back to static. |

@@ -39,5 +39,6 @@ Format: [Michael Nygard's ADR template](https://cognitect.com/blog/2011/11/15/do
 | [0029](0029-durable-artifact-workspaces.md) | Generated artifacts move off `/tmp` onto a durable volume, so files survive with their metadata | Accepted |
 | [0030](0030-password-change-and-reset.md) | Password change and reset: both evict every session; delivery stops short of unverified SMTP | Accepted |
 | [0031](0031-sanitize-untrusted-inventory-at-normalize.md) | Untrusted inventory is sanitized once at `normalize`, killing a proven Terraform template injection | Accepted |
+| [0032](0032-split-compute-output-for-reviewability.md) | Large estates split compute output per environment/tier so the result is reviewable | Accepted |
 
 See also the [Architecture & Design](../architecture.md) overview.

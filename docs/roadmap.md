@@ -82,6 +82,11 @@ in CI on `main`.
   `${file("/etc/passwd")}` was evaluated by Terraform) and fixing Azure, which
   produced invalid names for ordinary CMDB data like `web server 01`
   (see [ADR 0031](adr/0031-sanitize-untrusted-inventory-at-normalize.md))
+- ✅ **Reviewable output at scale** — above 50 workloads, compute is split per
+  environment/tier (`compute-production-web.tf`) instead of one 95k-line file.
+  Purely organizational: Terraform still loads the directory as one config, so
+  no resource address or state changes
+  (see [ADR 0032](adr/0032-split-compute-output-for-reviewability.md))
 - ✅ Model schema versioning (`NormalizedVM` / `MigrationPlan`)
 
 **Surfaces & delivery**
@@ -115,9 +120,10 @@ backends and integrations that plug into them, via the
 - ✅ Kubernetes/KubeVirt — VMs as `VirtualMachine` CRDs, SG ingress as
   `NetworkPolicy`, cloud-agnostic (see [ADR 0017](adr/0017-kubernetes-from-graph.md))
 - ◻ Migrate the rest of Terraform/Pulumi's resource generation onto the graph
-- ◻ **Split generated output per tier/application** — a 5,000-VM estate emits a
-  single 95k-line `compute.tf`. It validates, but nobody can review it, and
-  reviewability is the product promise (noted in [ADR 0031](adr/0031-sanitize-untrusted-inventory-at-normalize.md))
+- ◻ **Emit reusable modules with `for_each`** — the per-environment/tier split
+  ([ADR 0032](adr/0032-split-compute-output-for-reviewability.md)) made output
+  reviewable; modules would compress ~8k-line files dramatically, but change
+  what the customer reads, so it is a separate piece of work
 
 **Considered, deliberately deferred** (tracked so the reasoning is explicit):
 
