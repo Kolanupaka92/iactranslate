@@ -92,6 +92,10 @@ in CI on `main`.
   first run, including distinct machines (`web-01` / `web.01` / `WEB_01`)
   colliding onto one Terraform label
   (see [ADR 0033](adr/0033-property-based-testing-as-a-customer-substitute.md))
+- ✅ **Zero-friction evaluation** — `iactranslate demo` runs the whole pipeline
+  on a bundled sample estate (no input file, no account, no upload), plus
+  `docker compose up` and a public GHCR image, so a stranger can try it in one
+  command (see [ADR 0034](adr/0034-zero-friction-evaluation.md))
 - ✅ Model schema versioning (`NormalizedVM` / `MigrationPlan`)
 
 **Surfaces & delivery**
