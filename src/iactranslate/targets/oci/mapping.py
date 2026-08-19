@@ -59,6 +59,7 @@ DEFAULT_INGRESS: Dict[str, List[IngressRule]] = {
 IMAGE_OS: Dict[str, Dict[str, str]] = {
     "ubuntu-22.04": {"operating_system": "Canonical Ubuntu", "operating_system_version": "22.04"},
     "rhel-9": {"operating_system": "Oracle Linux", "operating_system_version": "9"},
+    "rhel-8": {"operating_system": "Oracle Linux", "operating_system_version": "8"},
     "sles-15": {"operating_system": "SUSE Linux Enterprise Server", "operating_system_version": "15"},
     "centos-7": {"operating_system": "Oracle Linux", "operating_system_version": "9"},
     "windows-2022": {"operating_system": "Windows", "operating_system_version": "Server 2022 Standard"},
@@ -86,7 +87,10 @@ def image_key(os_string: Optional[str]) -> str:
             return "windows-2016"
         return "windows-2022"
     if "red hat" in s or "rhel" in s:
-        return "rhel-9"
+        # Respect the reported major version. Silently returning the newest
+        # RHEL we stock would upgrade a certified RHEL 8 estate to RHEL 9
+        # without anyone deciding to — a real application-compatibility risk.
+        return "rhel-8" if "8" in s else "rhel-9"
     if "ubuntu" in s:
         return "ubuntu-22.04"
     if "suse" in s or "sles" in s:

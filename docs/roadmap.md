@@ -96,6 +96,11 @@ in CI on `main`.
   on a bundled sample estate (no input file, no account, no upload), plus
   `docker compose up` and a public GHCR image, so a stranger can try it in one
   command (see [ADR 0034](adr/0034-zero-friction-evaluation.md))
+- ✅ **Realistic RVTools parsing** — tested against a 14-sheet, ~50-column
+  export built from Microsoft's published import spec. Fixed a silent RHEL 8 →
+  RHEL 9 upgrade, made every OS substitution state itself in the decision
+  reason, and stopped reading the 11 sheets we never use
+  (see [ADR 0035](adr/0035-realistic-rvtools-parsing.md))
 - ✅ Model schema versioning (`NormalizedVM` / `MigrationPlan`)
 
 **Surfaces & delivery**
@@ -129,6 +134,8 @@ backends and integrations that plug into them, via the
 - ✅ Kubernetes/KubeVirt — VMs as `VirtualMachine` CRDs, SG ingress as
   `NetworkPolicy`, cloud-agnostic (see [ADR 0017](adr/0017-kubernetes-from-graph.md))
 - ◻ Migrate the rest of Terraform/Pulumi's resource generation onto the graph
+- ◻ **Key identity on `VM UUID`** — real RVTools rows carry a stable UUID; de-dup
+  and resource labels key on the VM *name*, so a renamed machine looks new
 - ◻ **Emit reusable modules with `for_each`** — the per-environment/tier split
   ([ADR 0032](adr/0032-split-compute-output-for-reviewability.md)) made output
   reviewable; modules would compress ~8k-line files dramatically, but change

@@ -72,6 +72,7 @@ DEFAULT_INGRESS: Dict[str, List[IngressRule]] = {
 IMAGE_SLUGS: Dict[str, str] = {
     "ubuntu-22.04": "ubuntu-22-04-x64",
     "rhel-9": "rockylinux-9-x64",
+    "rhel-8": "rockylinux-8-x64",
     "sles-15": "ubuntu-22-04-x64",
     "centos-7": "rockylinux-9-x64",
     "windows-2022": "ubuntu-22-04-x64",
@@ -99,7 +100,10 @@ def image_key(os_string: Optional[str]) -> str:
             return "windows-2016"
         return "windows-2022"
     if "red hat" in s or "rhel" in s:
-        return "rhel-9"
+        # Respect the reported major version. Silently returning the newest
+        # RHEL we stock would upgrade a certified RHEL 8 estate to RHEL 9
+        # without anyone deciding to — a real application-compatibility risk.
+        return "rhel-8" if "8" in s else "rhel-9"
     if "ubuntu" in s:
         return "ubuntu-22.04"
     if "suse" in s or "sles" in s:

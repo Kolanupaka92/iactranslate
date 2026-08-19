@@ -57,6 +57,7 @@ AMI_FILTERS: Dict[str, Dict[str, object]] = {
     "ubuntu-22.04": {"owners": ["099720109477"],
                      "name": "ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"},
     "rhel-9": {"owners": ["309956199498"], "name": "RHEL-9.*_HVM-*-x86_64-*"},
+    "rhel-8": {"owners": ["309956199498"], "name": "RHEL-8.*_HVM-*-x86_64-*"},
     "sles-15": {"owners": ["013907871322"], "name": "suse-sles-15-sp*-v*-hvm-ssd-x86_64"},
     "centos-7": {"owners": ["125523088429"], "name": "CentOS Linux 7*x86_64*"},
 }
@@ -80,7 +81,10 @@ def image_key(os_string: Optional[str]) -> str:
             return "windows-2016"
         return "windows-2022"
     if "red hat" in s or "rhel" in s:
-        return "rhel-9"
+        # Respect the reported major version. Silently returning the newest
+        # RHEL we stock would upgrade a certified RHEL 8 estate to RHEL 9
+        # without anyone deciding to — a real application-compatibility risk.
+        return "rhel-8" if "8" in s else "rhel-9"
     if "ubuntu" in s:
         return "ubuntu-22.04"
     if "suse" in s or "sles" in s:

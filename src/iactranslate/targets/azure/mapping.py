@@ -53,6 +53,7 @@ DEFAULT_INGRESS: Dict[str, List[IngressRule]] = {
 IMAGE_REFS: Dict[str, Dict[str, str]] = {
     "ubuntu-22.04": {"publisher": "Canonical", "offer": "0001-com-ubuntu-server-jammy", "sku": "22_04-lts-gen2"},
     "rhel-9": {"publisher": "RedHat", "offer": "RHEL", "sku": "9-lvm-gen2"},
+    "rhel-8": {"publisher": "RedHat", "offer": "RHEL", "sku": "8-lvm-gen2"},
     "sles-15": {"publisher": "SUSE", "offer": "sles-15-sp5", "sku": "gen2"},
     "centos-7": {"publisher": "OpenLogic", "offer": "CentOS", "sku": "7_9-gen2"},
     "windows-2022": {
@@ -93,7 +94,10 @@ def image_key(os_string: Optional[str]) -> str:
             return "windows-2016"
         return "windows-2022"
     if "red hat" in s or "rhel" in s:
-        return "rhel-9"
+        # Respect the reported major version. Silently returning the newest
+        # RHEL we stock would upgrade a certified RHEL 8 estate to RHEL 9
+        # without anyone deciding to — a real application-compatibility risk.
+        return "rhel-8" if "8" in s else "rhel-9"
     if "ubuntu" in s:
         return "ubuntu-22.04"
     if "suse" in s or "sles" in s:

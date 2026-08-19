@@ -42,5 +42,6 @@ Format: [Michael Nygard's ADR template](https://cognitect.com/blog/2011/11/15/do
 | [0032](0032-split-compute-output-for-reviewability.md) | Large estates split compute output per environment/tier so the result is reviewable | Accepted |
 | [0033](0033-property-based-testing-as-a-customer-substitute.md) | Property-based testing stands in for customer data pre-launch; found 4 real bugs immediately | Accepted |
 | [0034](0034-zero-friction-evaluation.md) | Zero-friction evaluation: `demo` needs no inventory, plus compose and a published image | Accepted |
+| [0035](0035-realistic-rvtools-parsing.md) | Test against a structurally real RVTools export; stop silently upgrading a customer's OS | Accepted |
 
 See also the [Architecture & Design](../architecture.md) overview.

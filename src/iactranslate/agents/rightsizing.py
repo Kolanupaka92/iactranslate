@@ -8,7 +8,8 @@ subnet tier and security group from the VM's tier — all via the target.
 from __future__ import annotations
 
 import math
-from typing import Dict, List, Tuple
+import re
+from typing import Dict, List, Optional, Tuple
 
 from ..models import ComputePlan, Environment, NormalizedVM, Tier
 from ..pricing import monthly_cost
@@ -45,6 +46,46 @@ def _decision_reason(vm, demand, spec, tier, overridden: bool, suggested: str) -
     if overridden:
         reason += f" Catalog guardrail: model suggestion '{suggested}' is not a real type."
     return reason
+
+
+_VERSION_RE = re.compile(r"(\d+(?:\.\d+)?)")
+# Every RVTools OS string carries an architecture suffix — "Ubuntu Linux
+# (64-bit)". Left in, the "64" reads as a version number and every Ubuntu
+# machine gets reported as a substitution. Strip it before comparing.
+_ARCH_RE = re.compile(r"\(?\b(?:32|64)[\s-]?bit\)?", re.IGNORECASE)
+
+
+def os_substitution_note(source_os: Optional[str], image_key: str) -> Optional[str]:
+    """Describe an OS version change, or None when the versions agree.
+
+    The image catalog cannot stock every OS a real estate runs. Windows Server
+    2012 R2 is a good example: it is past end of life and the clouds no longer
+    publish a base image, so a plan *has* to fall forward to a supported
+    release. That is defensible; doing it silently is not — a legacy
+    application certified against 2012 R2 may simply not run on 2022, and the
+    person reviewing the plan is the only one who can judge that.
+
+    So the substitution stays, and it gets stated in the decision's `reason`,
+    which flows into `decisions.json` and the executive report.
+    """
+    if not source_os:
+        return None
+    source_versions = _VERSION_RE.findall(_ARCH_RE.sub(" ", source_os))
+    image_versions = _VERSION_RE.findall(image_key)
+    # No version on either side means there is nothing to compare — an OS
+    # string like "Ubuntu Linux" simply doesn't say which release it is, and
+    # guessing a mismatch would cry wolf on every such machine.
+    if not source_versions or not image_versions:
+        return None
+    # Compare the leading version token of each — "Windows Server 2012 R2"
+    # against "windows-2022", "RHEL 8" against "rhel-8".
+    if source_versions[0] == image_versions[0]:
+        return None
+    return (
+        f"OS substituted: source reports '{source_os.strip()}' but the plan provisions "
+        f"'{image_key}' — no matching image is available. Verify application "
+        f"compatibility before migrating."
+    )
 
 
 def _root_and_extra(vm: NormalizedVM) -> Tuple[int, List[int]]:
@@ -85,6 +126,9 @@ def build_compute_plans(
         spec = target.spec_of(instance_type)
         reason = _decision_reason(vm, demand, spec, tier, overridden, suggestion.instance_type)
         image_key = suggestion.image_key or target.image_key(vm.os)
+        substitution = os_substitution_note(vm.os, image_key)
+        if substitution:
+            reason += f" {substitution}"
         root_gib, extra_gib = _root_and_extra(vm)
         cost, price_source = monthly_cost(
             target.name, instance_type, region, target.cost_of(instance_type), live_pricing
