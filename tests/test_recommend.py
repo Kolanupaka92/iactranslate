@@ -1,3 +1,4 @@
+import pytest
 from fastapi.testclient import TestClient
 
 from iactranslate.api.main import app
@@ -70,3 +71,47 @@ def test_api_recommend_flow(rvtools_path):
     body = r.json()
     assert body["recommended"] in list_targets()
     assert len(body["ranked"]) == len(list_targets())
+
+
+# -- the weighting must be inspectable (ADR 0037) ---------------------------
+
+
+def test_weights_are_returned_so_the_ranking_can_be_checked_by_hand(rvtools_path):
+    """"Weights are explicit and inspectable" is a stated design principle and
+    the main reason to trust this over a cloud vendor's own tool — but they
+    lived only as module constants, so the one question an architect asks
+    ("how are you weighting this?") needed a source dive."""
+    from iactranslate.normalize import normalize
+    from iactranslate.recommend import W_COST, W_FIT, W_OS, recommend
+    from iactranslate.sources import resolve_source
+
+    vms = normalize(resolve_source(rvtools_path, "auto").parse(rvtools_path))
+    rec = recommend(vms)
+
+    assert (rec.weights.cost, rec.weights.fit, rec.weights.os) == (W_COST, W_FIT, W_OS)
+    assert round(rec.weights.cost + rec.weights.fit + rec.weights.os, 6) == 1.0
+
+    # Every reported score must be reproducible from the published weights.
+    for s in rec.ranked:
+        recomputed = (
+            rec.weights.cost * s.cost_score
+            + rec.weights.fit * s.fit_score
+            + rec.weights.os * s.os_score
+        )
+        assert round(recomputed, 4) == pytest.approx(s.weighted_score, abs=1e-4)
+
+
+def test_margin_names_the_cloud_it_is_measured_against(rvtools_path):
+    """"margin 0.06" alone says nothing — not against whom."""
+    from iactranslate.normalize import normalize
+    from iactranslate.recommend import recommend
+    from iactranslate.sources import resolve_source
+
+    vms = normalize(resolve_source(rvtools_path, "auto").parse(rvtools_path))
+    rec = recommend(vms)
+
+    assert rec.runner_up == rec.ranked[1].cloud
+    assert rec.runner_up != rec.recommended
+    assert rec.margin == pytest.approx(
+        rec.ranked[0].weighted_score - rec.ranked[1].weighted_score, abs=1e-4
+    )

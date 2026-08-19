@@ -105,6 +105,10 @@ in CI on `main`.
   card comes first, and a project sidebar surfaces work that already persisted
   but was unreachable. Page height -42%, step 1 -91%
   (see [ADR 0036](adr/0036-workspace-ui-not-a-scrolling-wizard.md))
+- ✅ **Inspectable scoring** — the recommendation ships its own weights
+  (cost 0.45 / fit 0.30 / OS 0.25) and names the runner-up, so an architect can
+  reproduce the ranking by hand. "Unbiased" becomes verifiable rather than
+  asserted (see [ADR 0037](adr/0037-publish-the-scoring-weights.md))
 - ✅ Model schema versioning (`NormalizedVM` / `MigrationPlan`)
 
 **Surfaces & delivery**
@@ -138,6 +142,8 @@ backends and integrations that plug into them, via the
 - ✅ Kubernetes/KubeVirt — VMs as `VirtualMachine` CRDs, SG ingress as
   `NetworkPolicy`, cloud-agnostic (see [ADR 0017](adr/0017-kubernetes-from-graph.md))
 - ◻ Migrate the rest of Terraform/Pulumi's resource generation onto the graph
+- ◻ **User-adjustable scoring weights** — a cost-insensitive regulated estate
+  weights fit/OS far higher than 0.45/0.30/0.25; exposing the weights invites it
 - ◻ **Key identity on `VM UUID`** — real RVTools rows carry a stable UUID; de-dup
   and resource labels key on the VM *name*, so a renamed machine looks new
 - ◻ **Emit reusable modules with `for_each`** — the per-environment/tier split

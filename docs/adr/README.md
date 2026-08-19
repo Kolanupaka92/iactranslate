@@ -44,5 +44,6 @@ Format: [Michael Nygard's ADR template](https://cognitect.com/blog/2011/11/15/do
 | [0034](0034-zero-friction-evaluation.md) | Zero-friction evaluation: `demo` needs no inventory, plus compose and a published image | Accepted |
 | [0035](0035-realistic-rvtools-parsing.md) | Test against a structurally real RVTools export; stop silently upgrading a customer's OS | Accepted |
 | [0036](0036-workspace-ui-not-a-scrolling-wizard.md) | The web UI becomes a project workspace: completed steps collapse, results come first | Accepted |
+| [0037](0037-publish-the-scoring-weights.md) | Publish the recommendation's scoring weights so the ranking is checkable by hand | Accepted |
 
 See also the [Architecture & Design](../architecture.md) overview.

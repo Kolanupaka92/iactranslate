@@ -51,16 +51,25 @@ function Section({
   title,
   state,
   summary,
+  collapseWhenDone = true,
   children,
 }: {
   step: number;
   title: string;
   state: StepState;
   summary?: string;
+  /** Steps whose output is something to *read* (the assessment, the cloud
+   *  comparison) must stay open when they complete. Collapsing them the moment
+   *  the result arrives hides the very thing the user just asked for — which
+   *  is exactly what the first version of this did. Only pure-input steps
+   *  collapse on their own. */
+  collapseWhenDone?: boolean;
   children: React.ReactNode;
 }) {
-  const [open, setOpen] = useState(false);
+  const [manuallyToggled, setManuallyToggled] = useState<boolean | null>(null);
+  const open = manuallyToggled ?? !collapseWhenDone;
   const collapsed = state === "done" && !open;
+  const setOpen = (next: boolean) => setManuallyToggled(next);
 
   return (
     <section
@@ -477,6 +486,7 @@ export default function Home() {
             summary={
               assessment ? `Readiness ${assessment.readiness.score}/100` : undefined
             }
+            collapseWhenDone={false}
           >
             <button
               type="button"
@@ -502,6 +512,7 @@ export default function Home() {
             title="Not sure which cloud? Compare them all (optional)"
             state={stepState(!!rec, uploaded && !result)}
             summary={rec ? `Recommended: ${rec.recommended.toUpperCase()}` : undefined}
+            collapseWhenDone={false}
           >
             <button
               type="button"

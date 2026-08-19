@@ -37,13 +37,29 @@ export default function RecommendTable({
         <span className="opacity-70">Recommended:</span>
         <span className="font-semibold uppercase">{rec.recommended}</span>
         <span
-          className={`rounded-full px-2 py-0.5 text-xs font-medium capitalize ${
+          className={`rounded-full px-2 py-0.5 text-xs font-medium ${
             DECISIVENESS_STYLE[rec.decisiveness] ?? ""
           }`}
         >
-          {rec.decisiveness} lead · margin {rec.margin.toFixed(2)}
+          {/* "margin 0.06" said nothing on its own — not what it measures,
+              against whom, or on what scale. `capitalize` is scoped to the one
+              word that needs it; on the whole span it title-cased the sentence
+              into "Moderate Lead · 0.06 Ahead Of OCI". */}
+          <span className="capitalize">{rec.decisiveness}</span> lead
+          {rec.runner_up
+            ? ` · ${rec.margin.toFixed(2)} ahead of ${rec.runner_up.toUpperCase()}`
+            : ` · margin ${rec.margin.toFixed(2)}`}
         </span>
       </div>
+
+      {/* The weighting is the first thing an architect asks about, and it was
+          only visible by reading the source. Showing it makes the ranking
+          reproducible by hand. */}
+      <p className="text-xs opacity-60">
+        Weighted score = cost × {rec.weights.cost.toFixed(2)} + fit ×{" "}
+        {rec.weights.fit.toFixed(2)} + OS × {rec.weights.os.toFixed(2)}. All component scores are 0–1, higher is better.
+        Weights are fixed and identical for every cloud.
+      </p>
 
       <div className="overflow-x-auto">
         <table className="w-full min-w-[560px] text-sm">
@@ -51,10 +67,16 @@ export default function RecommendTable({
             <tr className="border-b border-neutral-200 text-left opacity-70 dark:border-neutral-800">
               <th className="py-2 pr-4 font-medium">Cloud</th>
               <th className="py-2 pr-4 font-medium">Score</th>
-              <th className="py-2 pr-4 text-right font-medium">Est. $/mo</th>
-              <th className="py-2 pr-4 font-medium">Cost</th>
-              <th className="py-2 pr-4 font-medium">Fit</th>
-              <th className="py-2 pr-4 font-medium">OS</th>
+              <th className="py-2 pr-4 text-right font-medium">Est. cost</th>
+              <th className="py-2 pr-4 font-medium">
+                Cost <span className="opacity-60">×{rec.weights.cost.toFixed(2)}</span>
+              </th>
+              <th className="py-2 pr-4 font-medium">
+                Fit <span className="opacity-60">×{rec.weights.fit.toFixed(2)}</span>
+              </th>
+              <th className="py-2 pr-4 font-medium">
+                OS <span className="opacity-60">×{rec.weights.os.toFixed(2)}</span>
+              </th>
               <th className="py-2 font-medium" />
             </tr>
           </thead>
@@ -78,7 +100,13 @@ export default function RecommendTable({
                     {s.weighted_score.toFixed(2)}
                   </td>
                   <td className="py-2.5 pr-4 text-right tabular-nums">
-                    ${s.total_monthly_cost_usd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    <span className="block">
+                      ${s.total_monthly_cost_usd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      <span className="opacity-60">/mo</span>
+                    </span>
+                    <span className="block text-xs opacity-60">
+                      ${s.annual_cost_usd.toLocaleString(undefined, { maximumFractionDigits: 0 })}/yr
+                    </span>
                   </td>
                   <td className="py-2.5 pr-4"><Meter value={s.cost_score} label="Cost" /></td>
                   <td className="py-2.5 pr-4"><Meter value={s.fit_score} label="Fit" /></td>

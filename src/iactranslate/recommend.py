@@ -47,6 +47,22 @@ class CloudScore(BaseModel):
     reasons: List[str] = Field(default_factory=list)
 
 
+class ScoringWeights(BaseModel):
+    """The weights behind `weighted_score`, carried in the response.
+
+    "Weights are explicit and inspectable; no vendor gets a thumb on the scale"
+    is a design principle and the main reason to trust this over a cloud
+    vendor's own tool — but the weights lived only as module constants, so the
+    one question an architect actually asks ("how are you weighting this?")
+    could only be answered by reading the source. Shipping them makes the
+    ranking checkable by hand.
+    """
+
+    cost: float = Field(description="Weight applied to cost_score")
+    fit: float = Field(description="Weight applied to fit_score")
+    os: float = Field(description="Weight applied to os_score")
+
+
 class Recommendation(BaseModel):
     recommended: str
     summary: str
@@ -55,6 +71,12 @@ class Recommendation(BaseModel):
     # estate-level observations a reviewer should weigh.
     decisiveness: str = Field(default="clear", description="'clear' | 'moderate' | 'close'")
     margin: float = Field(default=0.0, description="Winner's weighted-score lead over #2")
+    runner_up: Optional[str] = Field(
+        default=None, description="Cloud ranked #2 — what `margin` is measured against"
+    )
+    weights: ScoringWeights = Field(
+        default_factory=lambda: ScoringWeights(cost=W_COST, fit=W_FIT, os=W_OS)
+    )
     notes: List[str] = Field(default_factory=list)
 
 
@@ -203,5 +225,8 @@ def recommend(vms: List[NormalizedVM], targets: Optional[List[str]] = None) -> R
     )
     return Recommendation(
         recommended=winner.cloud, summary=summary, ranked=scores,
-        decisiveness=decisiveness, margin=margin, notes=notes,
+        decisiveness=decisiveness, margin=margin,
+        runner_up=scores[1].cloud if len(scores) > 1 else None,
+        weights=ScoringWeights(cost=W_COST, fit=W_FIT, os=W_OS),
+        notes=notes,
     )

@@ -55,12 +55,23 @@ export interface CloudScore {
   reasons: string[];
 }
 
+/** The weights behind `weighted_score`. Shipped in the response so the ranking
+ *  can be checked by hand — the reason to trust this over a vendor's own tool. */
+export interface ScoringWeights {
+  cost: number;
+  fit: number;
+  os: number;
+}
+
 export interface Recommendation {
   recommended: Target;
   summary: string;
   ranked: CloudScore[];
   decisiveness: "clear" | "moderate" | "close";
   margin: number;
+  /** The cloud ranked #2 — what `margin` is measured against. */
+  runner_up?: string | null;
+  weights: ScoringWeights;
   notes: string[];
 }
 
