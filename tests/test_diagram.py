@@ -50,7 +50,8 @@ def test_svg_caps_large_lanes():
     # 20 public instances — only a capped number are drawn, rest summarised.
     plan = _plan([_cp(f"w{i}", Tier.WEB, SubnetTier.PUBLIC) for i in range(20)])
     svg = architecture_svg(plan)
-    assert "more instance(s)" in svg
+    # Inflected properly now — a client-facing artifact shouldn't say "instance(s)".
+    assert "more instances" in svg
 
 
 def test_mermaid_structure():

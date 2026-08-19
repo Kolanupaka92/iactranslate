@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 from typing import Callable, List, Tuple
 
+from ..display import plural
 from ..models import NormalizedVM
 from .models import (
     SEVERITY_WEIGHT,
@@ -121,7 +122,7 @@ def _check_legacy_os(vms: List[NormalizedVM]) -> List[Finding]:
                 severity=Severity.HIGH,
                 title=f"End-of-life OS: {label}",
                 detail=(
-                    f"{len(hit)} workload(s) run {label}, which is past or near end of support. "
+                    f"{plural(len(hit), 'workload')} run {label}, which is past or near end of support. "
                     "No security patches; some clouds restrict or surcharge these images."
                 ),
                 recommendation="Plan an in-place or post-migration OS upgrade; check extended-support options.",
@@ -215,7 +216,7 @@ def _check_licensing(vms: List[NormalizedVM]) -> List[Finding]:
                 severity=Severity.MEDIUM,
                 title=f"{label} licensing to reconcile",
                 detail=(
-                    f"{len(hit)} workload(s) appear to run {label}. Commercial database licensing is "
+                    f"{plural(len(hit), 'workload')} appear to run {label}. Commercial database licensing is "
                     "often the largest single migration cost and may favor a managed service."
                 ),
                 recommendation=f"Evaluate a managed database vs self-hosted {label}, and BYOL options.",

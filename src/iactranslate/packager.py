@@ -9,6 +9,7 @@ from typing import Dict, List, Optional
 from .assessment import assess, to_html, to_json
 from .confidence import score_plan
 from .diagram import architecture_mermaid, architecture_svg
+from .display import plural
 from .exec_report import build_executive_report
 from .gitops import gitops_files
 from .graph import build_graph
@@ -32,7 +33,7 @@ def migration_summary(plan: MigrationPlan, vms: Optional[List[NormalizedVM]] = N
         f"- **Estimated monthly cost:** ${plan.total_estimated_monthly_cost_usd:.2f} "
         f"({'live market prices' if plan.pricing_source == 'live' else 'curated static rates'}, on-demand)",
         f"- **Translation confidence:** {conf.overall * 100:.0f}% ({conf.level})"
-        + (f" — {len(conf.low_confidence())} workload(s) need review" if conf.low_confidence() else ""),
+        + (f" — {plural(len(conf.low_confidence()), 'workload')} need review" if conf.low_confidence() else ""),
     ]
     if right_sized:
         lines.append(

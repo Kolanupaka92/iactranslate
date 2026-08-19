@@ -15,6 +15,7 @@ import html
 from collections import defaultdict
 from typing import Dict, List
 
+from .display import plural
 from .graph import GraphNode, InfrastructureGraph, NodeKind, build_graph
 from .models import MigrationPlan, Tier
 
@@ -112,7 +113,7 @@ def _draw_lane(
     if hidden > 0:
         parts.append(
             f'<text x="{x + _GAP}" y="{y + _lane_height(len(nodes), len(load_balancers)) - 12}" '
-            f'font-size="11" fill="#94a3b8">+{hidden} more instance(s)</text>'
+            f'font-size="11" fill="#94a3b8">+{plural(hidden, "more instance")}</text>'
         )
     return "\n".join(parts)
 

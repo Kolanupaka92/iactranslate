@@ -31,6 +31,7 @@ from typing import Dict, List, Tuple
 
 from pydantic import BaseModel, Field
 
+from .display import plural
 from .models import ComputePlan, Environment, MigrationPlan, Tier
 
 # Lower number = migrated (and validated) earlier. Foundational/stateful
@@ -151,9 +152,9 @@ def plan_waves(plan: MigrationPlan) -> WaveReport:
     if waves:
         total_downtime = sum(w.estimated_downtime_minutes for w in waves)
         summary = (
-            f"{len(waves)} migration wave(s) across {plan.vm_count} workload(s), sequenced by "
+            f"{plural(len(waves), 'migration wave')} across {plural(plan.vm_count, 'workload')}, sequenced by "
             f"environment (lower environments first) and tier dependency (data/cache before app "
-            f"before web). Estimated {total_downtime} minute(s) of cumulative planning-level "
+            f"before web). Estimated {plural(total_downtime, 'minute')} of cumulative planning-level "
             f"downtime if waves run sequentially — waves in different environments can run in "
             f"parallel."
         )

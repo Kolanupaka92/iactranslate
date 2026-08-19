@@ -16,6 +16,7 @@ from .assessment import assess
 from .assessment.models import Severity
 from .confidence import score_plan
 from .diagram import architecture_svg
+from .display import display_cloud, display_source, plural
 from .models import MigrationPlan, NormalizedVM
 from .narrative import generate_narrative
 from .recommend import Recommendation
@@ -128,9 +129,15 @@ def build_executive_report(
     waves = plan_waves(plan)
     wave_section = _wave_section(waves)
     narrative = generate_narrative(plan, assessment, confidence)
+    # This document is read by the customer, not the operator. Labelling which
+    # engine wrote the summary is the honest-disclosure requirement from
+    # ADR 0021 and stays — but the previous copy told the reader to "enable
+    # --provider anthropic", putting a CLI flag for our own tool in front of
+    # someone being pitched a migration.
     narrative_badge = (
-        '<span class="ai-badge">✨ AI-generated (Claude)</span>' if narrative.source == "ai"
-        else '<span class="ai-badge muted">Deterministic summary — enable <code>--provider anthropic</code> for an AI narrative</span>'
+        '<span class="ai-badge">✨ AI-generated summary (Claude)</span>'
+        if narrative.source == "ai"
+        else '<span class="ai-badge muted">Rule-based summary — generated deterministically</span>'
     )
 
     total_cost = plan.total_estimated_monthly_cost_usd
@@ -139,13 +146,25 @@ def build_executive_report(
     conf_color = _CONF_COLOR.get(confidence.level, "#64748b")
 
     # Headline stats.
+    #
+    # "0/25 right-sized" was shown as a headline number whenever the inventory
+    # carried no utilization data — which is most exports, since RVTools does
+    # not include it by default. A bare zero reads as a failure of the tool
+    # rather than a gap in the input, so when nothing could be right-sized the
+    # card states the cause instead of the score.
+    has_utilization = any(vm.has_utilization for vm in vms)
+    right_sizing_stat = (
+        _stat(f"{len(right_sized)}/{plan.vm_count}", "right-sized")
+        if has_utilization
+        else _stat("—", "right-sizing (no usage data)")
+    )
     stats = [
         _stat(str(plan.vm_count), "workloads"),
         _stat(_money(total_cost) + "/mo", "est. cloud spend"),
         _stat(f"{assessment.readiness.score}", "readiness", band_color),
         _stat(f"{confidence.overall * 100:.0f}%", "confidence", conf_color),
-        _stat(plan.target.upper(), "target cloud"),
-        _stat(f"{len(right_sized)}/{plan.vm_count}", "right-sized"),
+        _stat(display_cloud(plan.target), "target cloud"),
+        right_sizing_stat,
     ]
 
     # Cost by tier.
@@ -177,7 +196,7 @@ def build_executive_report(
     )
     low_conf = confidence.low_confidence()
     low_conf_html = (
-        f'<p class="muted">{len(low_conf)} workload(s) need review: '
+        f'<p class="muted">{plural(len(low_conf), "workload")} need review: '
         + ", ".join(_esc(w.vm_name) for w in low_conf[:8])
         + ("…" if len(low_conf) > 8 else "") + ".</p>"
         if low_conf else '<p class="muted">No low-confidence workloads.</p>'
@@ -205,9 +224,9 @@ def build_executive_report(
   .wrap {{ max-width:920px; margin:0 auto; padding:40px 20px 72px; }}
   header h1 {{ margin:0 0 4px; font-size:1.7rem; }}
   header .sub {{ color:var(--muted); margin:0; }}
-  .stats {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:12px; margin:28px 0; }}
+  .stats {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin:28px 0; }}
   .stat {{ background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; text-align:center; }}
-  .stat .v {{ display:block; font-size:1.5rem; font-weight:700; }}
+  .stat .v {{ display:block; font-size:clamp(1.05rem,2.1vw,1.5rem); font-weight:700; overflow-wrap:anywhere; }}
   .stat .l {{ display:block; font-size:.72rem; color:var(--muted); margin-top:2px; text-transform:uppercase; letter-spacing:.04em; }}
   section {{ background:var(--card); border:1px solid var(--line); border-radius:14px; padding:22px 24px; margin-bottom:18px; }}
   h2 {{ margin:0 0 14px; font-size:1.15rem; }}
@@ -241,7 +260,7 @@ def build_executive_report(
 <div class="wrap">
   <header>
     <h1>Cloud Migration Report</h1>
-    <p class="sub">{_esc(plan.project_name)} · {_esc(plan.source_platform)} → {_esc(plan.target)} ({_esc(plan.region)}) · {date.today().isoformat()}</p>
+    <p class="sub">{_esc(plan.project_name)} · {_esc(display_source(plan.source_platform))} → {_esc(display_cloud(plan.target))} ({_esc(plan.region)}) · {date.today().isoformat()}</p>
   </header>
 
   <div class="stats">{"".join(stats)}</div>

@@ -28,6 +28,7 @@ from typing import Optional
 
 from .assessment.models import InfrastructureAssessment
 from .confidence import PlanConfidence
+from .display import display_cloud, display_source, plural
 from .models import MigrationPlan
 
 DEFAULT_MODEL = "claude-opus-4-8"
@@ -46,14 +47,14 @@ def _facts(plan: MigrationPlan, assessment: InfrastructureAssessment, confidence
     tiers = sorted({c.tier.value for c in plan.compute})
     low_conf = confidence.low_confidence()
     return (
-        f"{plan.vm_count} workload(s) migrating from {plan.source_platform} to "
+        f"{plural(plan.vm_count, 'workload')} migrating from {display_source(plan.source_platform)} to "
         f"{plan.target.upper()} ({plan.region}); tiers present: {', '.join(tiers) or 'none'}. "
         f"Estimated cost: ${total_cost:,.2f}/month ({plan.pricing_source} pricing). "
         f"{right_sized} of {plan.vm_count} instances were right-sized to observed utilization. "
         f"Migration readiness: {assessment.readiness.score}/100 "
         f"({assessment.readiness.band.replace('-', ' ')}) — {assessment.readiness.rationale} "
         f"Translation confidence: {confidence.overall * 100:.0f}% ({confidence.level}); "
-        f"{len(low_conf)} workload(s) below the review threshold."
+        f"{plural(len(low_conf), 'workload')} below the review threshold."
     )
 
 
@@ -66,19 +67,31 @@ def _deterministic_narrative(
     right_sized = sum(1 for c in plan.compute if c.right_sized)
     tiers = sorted({c.tier.value for c in plan.compute})
     low_conf = confidence.low_confidence()
-    tier_clause = f"spanning the {', '.join(tiers)} tier(s)" if tiers else ""
+    tier_clause = (f"spanning the {', '.join(tiers)} {'tiers' if len(tiers) != 1 else 'tier'}"
+                   if tiers else "")
+    # "0 of 25 instances were right-sized" reads as a failure of the tool. The
+    # real cause is almost always that the export carried no utilization data —
+    # RVTools does not include it by default — so say that instead.
+    sizing_clause = (
+        f"{right_sized} of {plan.vm_count} instances were right-sized to observed "
+        f"utilization rather than raw allocation."
+        if right_sized
+        else "Instances are sized from allocated capacity: the inventory contained no "
+             "utilization data, so right-sizing could not be applied. Supplying CPU and "
+             "memory usage would typically reduce this estimate."
+    )
     review_clause = (
-        f"{len(low_conf)} workload(s) — "
+        f"{plural(len(low_conf), 'workload')} — "
         + ", ".join(w.vm_name for w in low_conf[:5])
         + ("…" if len(low_conf) > 5 else "")
         + " — warrant manual review before cutover."
         if low_conf else "No workloads fell below the confidence threshold for review."
     )
     return (
-        f"This migration moves {plan.vm_count} workload(s) from {plan.source_platform} to "
-        f"{plan.target.upper()} ({plan.region}), {tier_clause}. Estimated monthly cost is "
-        f"${total_cost:,.2f}, with {right_sized} of {plan.vm_count} instances right-sized to "
-        f"observed utilization rather than raw allocation. The estate's migration readiness "
+        f"This migration moves {plural(plan.vm_count, 'workload')} from "
+        f"{display_source(plan.source_platform)} to "
+        f"{display_cloud(plan.target)} ({plan.region}), {tier_clause}. Estimated monthly cost is "
+        f"${total_cost:,.2f}. {sizing_clause} The estate's migration readiness "
         f"scores {assessment.readiness.score}/100 ({assessment.readiness.band.replace('-', ' ')}), "
         f"and the generated plan carries {confidence.overall * 100:.0f}% average translation "
         f"confidence ({confidence.level}). {review_clause}"

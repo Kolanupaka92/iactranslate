@@ -20,6 +20,7 @@ from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
+from .display import plural
 from .models import MigrationPlan, NormalizedVM, Tier
 
 # Engine keyword → canonical engine id. Order matters (check specific before
@@ -164,7 +165,7 @@ def analyze_replatforming(
 
     if candidates:
         summary = (
-            f"{len(candidates)} database-tier workload(s) are candidates for managed-DB "
+            f"{plural(len(candidates), 'database-tier workload')} are candidates for managed-DB "
             f"re-platforming on {target.upper()}. The generated IaC still lift-and-shifts them; "
             "review each against the caveats before committing to a managed service."
         )

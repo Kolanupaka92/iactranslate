@@ -16,6 +16,7 @@ from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
+from .display import plural
 from .models import ComputePlan, Environment, MigrationPlan, NormalizedVM, Tier
 
 # Factor weights (sum to 1.0). Sizing dominates because a wrong instance size is
@@ -167,7 +168,7 @@ def score_plan(plan: MigrationPlan, vms: Optional[List[NormalizedVM]] = None) ->
     weakest = min(factor_averages, key=factor_averages.get) if workloads else None
     summary = (
         f"Overall confidence {overall * 100:.0f}% ({level}). "
-        + (f"{len(low)} workload(s) are low-confidence. " if low else "")
+        + (f"{plural(len(low), 'workload')} are low-confidence. " if low else "")
         + (f"Weakest signal: {weakest} ({factor_averages[weakest] * 100:.0f}%)."
            if weakest else "No workloads to score.")
     )
