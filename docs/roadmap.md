@@ -101,6 +101,10 @@ in CI on `main`.
   RHEL 9 upgrade, made every OS substitution state itself in the decision
   reason, and stopped reading the 11 sheets we never use
   (see [ADR 0035](adr/0035-realistic-rvtools-parsing.md))
+- ✅ **Workspace UI** — completed steps collapse to summary rows, the result
+  card comes first, and a project sidebar surfaces work that already persisted
+  but was unreachable. Page height -42%, step 1 -91%
+  (see [ADR 0036](adr/0036-workspace-ui-not-a-scrolling-wizard.md))
 - ✅ Model schema versioning (`NormalizedVM` / `MigrationPlan`)
 
 **Surfaces & delivery**

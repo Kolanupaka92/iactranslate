@@ -196,6 +196,20 @@ export function reportUrl(projectId: string): string {
   return `${API_URL}/projects/${projectId}/report`;
 }
 
+/** POST the report and return its HTML.
+ *
+ *  Goes through the same credentialed path as every other call. A bare
+ *  `fetch()` here omits the session cookie and 401s in multi-tenant mode —
+ *  which is exactly what the page used to do. */
+export async function fetchReportHtml(projectId: string): Promise<string> {
+  const res = await fetch(reportUrl(projectId), {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!res.ok) throw new ApiError(res.status, "Could not generate the report.");
+  return res.text();
+}
+
 export interface Identity {
   authenticated: boolean;
   multi_tenant: boolean;

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import AIToggle from "@/components/AIToggle";
 import AssessmentPanel from "@/components/AssessmentPanel";
+import ProjectList from "@/components/ProjectList";
 import RecommendTable from "@/components/RecommendTable";
 import RunSummary from "@/components/RunSummary";
 import SignIn from "@/components/SignIn";
@@ -16,9 +17,10 @@ import {
   createProject,
   deleteProject,
   downloadUrl,
-  recommendClouds,
-  reportUrl,
+  fetchReportHtml,
+  listProjects,
   logout,
+  recommendClouds,
   runProject,
   uploadFile,
   whoami,
@@ -33,31 +35,83 @@ import {
 } from "@/lib/api";
 
 type Busy = "create" | "upload" | "assess" | "recommend" | "switch" | "run" | "report" | null;
+type StepState = "pending" | "active" | "done";
 
+/**
+ * One step of the flow.
+ *
+ * A finished step collapses to a single summary row. Previously every step
+ * stayed fully expanded forever: step 1 alone held 496px of a form nobody
+ * would touch again, and reaching "Generate" meant scrolling ~1,900px past
+ * completed work in a 720px viewport. Collapsing keeps the whole flow on one
+ * screen while leaving finished work re-openable rather than hidden.
+ */
 function Section({
   step,
   title,
-  active,
+  state,
+  summary,
   children,
 }: {
   step: number;
   title: string;
-  active: boolean;
+  state: StepState;
+  summary?: string;
   children: React.ReactNode;
 }) {
+  const [open, setOpen] = useState(false);
+  const collapsed = state === "done" && !open;
+
   return (
     <section
-      className={`rounded-xl border border-neutral-200 p-5 transition-opacity dark:border-neutral-800 ${
-        active ? "" : "pointer-events-none opacity-40"
-      }`}
+      className={`rounded-xl border transition-colors ${
+        state === "active"
+          ? "border-neutral-300 dark:border-neutral-700"
+          : "border-neutral-200 dark:border-neutral-800"
+      } ${state === "pending" ? "pointer-events-none opacity-40" : ""}`}
     >
-      <h2 className="mb-4 flex items-center gap-2 font-semibold">
-        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-neutral-900 text-xs text-white dark:bg-neutral-100 dark:text-neutral-900">
-          {step}
-        </span>
-        {title}
-      </h2>
-      {children}
+      <div className={collapsed ? "" : "p-5"}>
+        {collapsed ? (
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            className="flex w-full items-center gap-3 px-5 py-3 text-left"
+          >
+            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-[11px] text-white">
+              ✓
+            </span>
+            <span className="text-sm font-medium">{title}</span>
+            {summary && (
+              <span className="ml-auto truncate text-xs opacity-60">{summary}</span>
+            )}
+          </button>
+        ) : (
+          <>
+            <h2 className="mb-4 flex items-center gap-2 font-semibold">
+              <span
+                className={`flex h-6 w-6 items-center justify-center rounded-full text-xs ${
+                  state === "done"
+                    ? "bg-emerald-600 text-white"
+                    : "bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900"
+                }`}
+              >
+                {state === "done" ? "✓" : step}
+              </span>
+              {title}
+              {state === "done" && (
+                <button
+                  type="button"
+                  onClick={() => setOpen(false)}
+                  className="ml-auto text-xs font-normal opacity-60 hover:opacity-100"
+                >
+                  Collapse
+                </button>
+              )}
+            </h2>
+            {children}
+          </>
+        )}
+      </div>
     </section>
   );
 }
@@ -68,6 +122,7 @@ export default function Home() {
   const [source, setSource] = useState<Source>("auto");
   const [provider, setProvider] = useState<Provider>("rule");
   const [project, setProject] = useState<ProjectSummary | null>(null);
+  const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [file, setFile] = useState<File | null>(null);
   const [uploaded, setUploaded] = useState(false);
   const [rec, setRec] = useState<Recommendation | null>(null);
@@ -86,6 +141,11 @@ export default function Home() {
     setIdentity(await fetchIdentity());
   }, []);
 
+  const refreshProjects = useCallback(async () => {
+    // Never fatal — an empty sidebar is better than blocking the whole page.
+    setProjects(await listProjects().catch(() => []));
+  }, []);
+
   // Resolves in a promise callback, not synchronously in the effect body. The
   // `cancelled` guard drops a response that lands after unmount or re-run.
   useEffect(() => {
@@ -98,6 +158,22 @@ export default function Home() {
     };
   }, []);
 
+  // Same shape as the identity bootstrap: resolve in a promise callback rather
+  // than synchronously in the effect body, and drop a response that lands
+  // after unmount.
+  useEffect(() => {
+    if (!identity) return;
+    let cancelled = false;
+    void listProjects()
+      .catch(() => [])
+      .then((next) => {
+        if (!cancelled) setProjects(next);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [identity]);
+
   const fail = (e: unknown) =>
     setError(e instanceof ApiError ? e.message : "Something went wrong.");
 
@@ -105,13 +181,15 @@ export default function Home() {
     setBusy("create");
     setError(null);
     try {
-      setProject(await createProject(name.trim(), target, source, undefined, provider));
+      const created = await createProject(name.trim(), target, source, undefined, provider);
+      setProject(created);
+      void refreshProjects();
     } catch (e) {
       fail(e);
     } finally {
       setBusy(null);
     }
-  }, [name, target, source, provider]);
+  }, [name, target, source, provider, refreshProjects]);
 
   const handleFile = useCallback(
     async (f: File) => {
@@ -173,13 +251,14 @@ export default function Home() {
         setProject(fresh);
         setTarget(t);
         setResult(null);
+        void refreshProjects();
       } catch (e) {
         fail(e);
       } finally {
         setBusy(null);
       }
     },
-    [project, file, source, provider],
+    [project, file, source, provider, refreshProjects],
   );
 
   const handleRun = useCallback(async () => {
@@ -190,21 +269,20 @@ export default function Home() {
       const summary = await runProject(project.id);
       setProject(summary);
       setResult(summary.result ?? null);
+      void refreshProjects();
     } catch (e) {
       fail(e);
     } finally {
       setBusy(null);
     }
-  }, [project]);
+  }, [project, refreshProjects]);
 
   const handleViewReport = useCallback(async () => {
     if (!project) return;
     setBusy("report");
     setError(null);
     try {
-      const res = await fetch(reportUrl(project.id), { method: "POST" });
-      if (!res.ok) throw new ApiError(res.status, "Could not generate the report.");
-      const html = await res.text();
+      const html = await fetchReportHtml(project.id);
       const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
       window.open(url, "_blank", "noopener");
     } catch (e) {
@@ -214,8 +292,10 @@ export default function Home() {
     }
   }, [project]);
 
-  const handleReset = useCallback(() => {
-    if (project) void deleteProject(project.id).catch(() => {});
+  /** Clear the workspace for a new project — without deleting the old one.
+   *  "Start over" used to delete the current project outright, which is only
+   *  safe when finished work is unreachable anyway. It isn't any more. */
+  const handleNew = useCallback(() => {
     setProject(null);
     setFile(null);
     setUploaded(false);
@@ -224,7 +304,21 @@ export default function Home() {
     setResult(null);
     setError(null);
     setName("");
-  }, [project]);
+  }, []);
+
+  /** Reopen an existing project from the sidebar. The uploaded inventory
+   *  itself stays on the server, so the flow resumes from its status. */
+  const handleOpenProject = useCallback((p: ProjectSummary) => {
+    setProject(p);
+    setTarget(p.target);
+    setName(p.name);
+    setFile(null);
+    setUploaded(p.status !== "created");
+    setResult(p.result ?? null);
+    setRec(null);
+    setAssessment(null);
+    setError(null);
+  }, []);
 
   if (identity === null) {
     return <main className="p-10 text-sm opacity-70">Loading…</main>;
@@ -234,18 +328,23 @@ export default function Home() {
     return <SignIn onSignedIn={refreshIdentity} />;
   }
 
+  const stepState = (done: boolean, active: boolean): StepState =>
+    done ? "done" : active ? "active" : "pending";
+
   return (
-    <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-10">
-      <header className="mb-8">
-        <h1 className="text-2xl font-bold">IaCTranslate</h1>
-        <p className="mt-1 text-sm opacity-70">
-          Convert any infrastructure inventory — VMware, Hyper-V, Kubernetes, a
-          CMDB export, or an existing cloud fleet — into production-ready Terraform for AWS,
-          Azure, or GCP, in minutes.
-        </p>
+    <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-10">
+      <header className="mb-8 flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold">IaCTranslate</h1>
+          <p className="mt-1 max-w-2xl text-sm opacity-70">
+            Convert any infrastructure inventory — VMware, Hyper-V, Kubernetes, a
+            CMDB export, or an existing cloud fleet — into production-ready
+            Terraform for AWS, Azure, GCP, OCI, or DigitalOcean, in minutes.
+          </p>
+        </div>
         {identity.authenticated && (
-          <p className="mt-3 text-xs opacity-60">
-            Signed in as {identity.email}
+          <p className="text-xs opacity-60">
+            {identity.email}
             <button
               type="button"
               onClick={async () => {
@@ -269,150 +368,178 @@ export default function Home() {
         </div>
       )}
 
-      <div className="space-y-5">
-        <Section step={1} title="Create a migration project" active={!project}>
-          <div className="space-y-4">
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Project name, e.g. acme-datacenter-migration"
-              maxLength={128}
-              className="w-full rounded-lg border border-neutral-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-emerald-600 dark:border-neutral-700"
+      <div className="grid gap-8 lg:grid-cols-[220px_minmax(0,1fr)]">
+        <ProjectList
+          projects={projects}
+          currentId={project?.id ?? null}
+          onOpen={handleOpenProject}
+          onNew={handleNew}
+        />
+
+        <div className="space-y-4">
+          {/* The payoff goes first once it exists. Burying it under five
+              completed steps meant scrolling past finished work to reach it. */}
+          {result && project && (
+            <section className="rounded-xl border border-emerald-600/40 bg-emerald-500/5 p-5">
+              <h2 className="mb-4 font-semibold">
+                Your Terraform project is ready
+              </h2>
+              <RunSummary result={result} />
+              <div className="mt-5 flex flex-wrap items-center gap-3">
+                <a
+                  href={downloadUrl(project.id)}
+                  className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500"
+                >
+                  Download ZIP
+                </a>
+                <button
+                  type="button"
+                  onClick={handleViewReport}
+                  disabled={busy === "report"}
+                  className="rounded-lg border border-neutral-300 px-4 py-2 text-sm font-semibold hover:border-neutral-400 disabled:opacity-50 dark:border-neutral-700 dark:hover:border-neutral-500"
+                >
+                  {busy === "report" ? "Building report…" : "View executive report"}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleNew}
+                  className="rounded-lg border border-neutral-300 px-4 py-2 text-sm font-semibold hover:border-neutral-400 dark:border-neutral-700 dark:hover:border-neutral-500"
+                >
+                  New project
+                </button>
+              </div>
+              <p className="mt-3 text-xs opacity-60">
+                OS images resolve automatically — add cloud credentials (and a GCP
+                project ID) and run terraform init / plan / apply. A migration
+                summary and readiness assessment are included under documentation/.
+              </p>
+            </section>
+          )}
+
+          <Section
+            step={1}
+            title="Create a migration project"
+            state={stepState(!!project, !project)}
+            summary={project ? `${project.name} · ${project.target.toUpperCase()}` : undefined}
+          >
+            <div className="space-y-4">
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Project name, e.g. acme-datacenter-migration"
+                maxLength={128}
+                className="w-full rounded-lg border border-neutral-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-emerald-600 dark:border-neutral-700"
+              />
+              <TargetPicker value={target} onChange={setTarget} />
+              <SourcePicker value={source} onChange={setSource} />
+              <AIToggle value={provider} onChange={setProvider} />
+              <button
+                type="button"
+                onClick={handleCreate}
+                disabled={!name.trim() || busy === "create"}
+                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
+              >
+                {busy === "create" ? "Creating…" : "Create project"}
+              </button>
+            </div>
+          </Section>
+
+          <Section
+            step={2}
+            title="Upload your discovery export"
+            state={stepState(uploaded, !!project && !uploaded)}
+            summary={file?.name ?? (uploaded ? "inventory uploaded" : undefined)}
+          >
+            <UploadDropzone
+              onFile={handleFile}
+              disabled={!project || busy === "upload"}
+              fileName={uploaded ? (file?.name ?? null) : null}
             />
-            <TargetPicker value={target} onChange={setTarget} />
-            <SourcePicker value={source} onChange={setSource} />
-            <AIToggle value={provider} onChange={setProvider} />
+            {busy === "upload" && <p className="mt-2 text-sm opacity-70">Uploading…</p>}
             <button
               type="button"
-              onClick={handleCreate}
-              disabled={!name.trim() || busy === "create"}
-              className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
+              disabled={!project || busy === "upload"}
+              onClick={async () => {
+                const blob = await (await fetch("/rvtools_sample.xlsx")).blob();
+                void handleFile(new File([blob], "rvtools_sample.xlsx"));
+              }}
+              className="mt-3 text-sm text-emerald-600 underline-offset-2 hover:underline disabled:opacity-50 dark:text-emerald-400"
             >
-              {busy === "create" ? "Creating…" : "Create project"}
+              No export handy? Try the sample inventory (7 VMs)
             </button>
-          </div>
-        </Section>
-
-        <Section
-          step={2}
-          title="Upload your discovery export"
-          active={!!project && !result}
-        >
-          <UploadDropzone
-            onFile={handleFile}
-            disabled={!project || busy === "upload"}
-            fileName={uploaded ? (file?.name ?? null) : null}
-          />
-          {busy === "upload" && <p className="mt-2 text-sm opacity-70">Uploading…</p>}
-          <button
-            type="button"
-            disabled={!project || busy === "upload"}
-            onClick={async () => {
-              const blob = await (await fetch("/rvtools_sample.xlsx")).blob();
-              void handleFile(new File([blob], "rvtools_sample.xlsx"));
-            }}
-            className="mt-3 text-sm text-emerald-600 underline-offset-2 hover:underline disabled:opacity-50 dark:text-emerald-400"
-          >
-            No export handy? Try the sample inventory (7 VMs)
-          </button>
-        </Section>
-
-        <Section
-          step={3}
-          title="Assess migration readiness (optional)"
-          active={uploaded && !result}
-        >
-          <button
-            type="button"
-            onClick={handleAssess}
-            disabled={busy === "assess"}
-            className="rounded-lg border border-neutral-300 px-4 py-2 text-sm font-semibold hover:border-neutral-400 disabled:opacity-50 dark:border-neutral-700 dark:hover:border-neutral-500"
-          >
-            {busy === "assess" ? "Assessing…" : "Assess this estate"}
-          </button>
-          <p className="mt-2 text-xs opacity-60">
-            Surfaces migration risks, cost-optimization opportunities, and data
-            gaps, with a readiness score. Deterministic — no AI.
-          </p>
-          {assessment && (
-            <div className="mt-4">
-              <AssessmentPanel a={assessment} />
-            </div>
-          )}
-        </Section>
-
-        <Section
-          step={4}
-          title="Not sure which cloud? Compare all three (optional)"
-          active={uploaded && !result}
-        >
-          <button
-            type="button"
-            onClick={handleRecommend}
-            disabled={busy === "recommend"}
-            className="rounded-lg border border-neutral-300 px-4 py-2 text-sm font-semibold hover:border-neutral-400 disabled:opacity-50 dark:border-neutral-700 dark:hover:border-neutral-500"
-          >
-            {busy === "recommend" ? "Comparing clouds…" : "Compare AWS · Azure · GCP"}
-          </button>
-          {busy === "switch" && (
-            <p className="mt-2 text-sm opacity-70">Switching target cloud…</p>
-          )}
-          {rec && (
-            <div className="mt-4">
-              <RecommendTable rec={rec} onUseCloud={handleUseCloud} busy={busy === "switch"} />
-            </div>
-          )}
-        </Section>
-
-        <Section
-          step={5}
-          title={`Generate Terraform for ${project?.target.toUpperCase() ?? "your cloud"}`}
-          active={uploaded && !result}
-        >
-          <button
-            type="button"
-            onClick={handleRun}
-            disabled={busy === "run"}
-            className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
-          >
-            {busy === "run" ? "Generating…" : "Generate Terraform project"}
-          </button>
-        </Section>
-
-        {result && project && (
-          <Section step={6} title="Your Terraform project is ready" active>
-            <RunSummary result={result} />
-            <div className="mt-5 flex items-center gap-3">
-              <a
-                href={downloadUrl(project.id)}
-                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500"
-              >
-                Download ZIP
-              </a>
-              <button
-                type="button"
-                onClick={handleViewReport}
-                disabled={busy === "report"}
-                className="rounded-lg border border-neutral-300 px-4 py-2 text-sm font-semibold hover:border-neutral-400 disabled:opacity-50 dark:border-neutral-700 dark:hover:border-neutral-500"
-              >
-                {busy === "report" ? "Building report…" : "View executive report"}
-              </button>
-              <button
-                type="button"
-                onClick={handleReset}
-                className="rounded-lg border border-neutral-300 px-4 py-2 text-sm font-semibold hover:border-neutral-400 dark:border-neutral-700 dark:hover:border-neutral-500"
-              >
-                Start over
-              </button>
-            </div>
-            <p className="mt-3 text-xs opacity-60">
-              OS images resolve automatically — just add cloud credentials (and a
-              GCP project ID) and run terraform init / plan / apply. A migration
-              summary and readiness assessment are included under documentation/.
-            </p>
           </Section>
-        )}
+
+          <Section
+            step={3}
+            title="Assess migration readiness (optional)"
+            state={stepState(!!assessment, uploaded && !result)}
+            summary={
+              assessment ? `Readiness ${assessment.readiness.score}/100` : undefined
+            }
+          >
+            <button
+              type="button"
+              onClick={handleAssess}
+              disabled={busy === "assess"}
+              className="rounded-lg border border-neutral-300 px-4 py-2 text-sm font-semibold hover:border-neutral-400 disabled:opacity-50 dark:border-neutral-700 dark:hover:border-neutral-500"
+            >
+              {busy === "assess" ? "Assessing…" : "Assess this estate"}
+            </button>
+            <p className="mt-2 text-xs opacity-60">
+              Surfaces migration risks, cost-optimization opportunities, and data
+              gaps, with a readiness score. Deterministic — no AI.
+            </p>
+            {assessment && (
+              <div className="mt-4">
+                <AssessmentPanel a={assessment} />
+              </div>
+            )}
+          </Section>
+
+          <Section
+            step={4}
+            title="Not sure which cloud? Compare them all (optional)"
+            state={stepState(!!rec, uploaded && !result)}
+            summary={rec ? `Recommended: ${rec.recommended.toUpperCase()}` : undefined}
+          >
+            <button
+              type="button"
+              onClick={handleRecommend}
+              disabled={busy === "recommend"}
+              className="rounded-lg border border-neutral-300 px-4 py-2 text-sm font-semibold hover:border-neutral-400 disabled:opacity-50 dark:border-neutral-700 dark:hover:border-neutral-500"
+            >
+              {busy === "recommend"
+                ? "Comparing clouds…"
+                : "Compare AWS · Azure · GCP · OCI · DigitalOcean"}
+            </button>
+            {busy === "switch" && (
+              <p className="mt-2 text-sm opacity-70">Switching target cloud…</p>
+            )}
+            {rec && (
+              <div className="mt-4">
+                <RecommendTable rec={rec} onUseCloud={handleUseCloud} busy={busy === "switch"} />
+              </div>
+            )}
+          </Section>
+
+          {!result && (
+            <Section
+              step={5}
+              title={`Generate Terraform for ${project?.target.toUpperCase() ?? "your cloud"}`}
+              state={stepState(false, uploaded)}
+            >
+              <button
+                type="button"
+                onClick={handleRun}
+                disabled={busy === "run"}
+                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
+              >
+                {busy === "run" ? "Generating…" : "Generate Terraform project"}
+              </button>
+            </Section>
+          )}
+        </div>
       </div>
 
       <footer className="mt-10 text-center text-xs opacity-50">
