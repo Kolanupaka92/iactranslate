@@ -38,7 +38,7 @@ iactranslate = "iactranslate.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-iactranslate = ["targets/*/templates/*.j2"]
+iactranslate = ["targets/*/templates/*.j2", "samples/*.csv"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

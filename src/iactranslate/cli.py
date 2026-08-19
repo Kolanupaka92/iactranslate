@@ -332,7 +332,54 @@ def build_parser() -> argparse.ArgumentParser:
     d.add_argument("--map", default=None, help=map_help)
     d.add_argument("--json", action="store_true", help="Emit the diff as JSON.")
     d.set_defaults(func=_cmd_diff)
+
+    demo = sub.add_parser(
+        "demo",
+        help="Try it with no inventory of your own — runs on a bundled sample estate.",
+    )
+    demo.add_argument("--target", default="aws",
+                      help="Target cloud: aws|azure|gcp|oci|digitalocean (default aws).")
+    demo.add_argument("--out", default="./iactranslate-demo", help="Output directory.")
+    demo.add_argument("--renderer", default="terraform",
+                      help="terraform|pulumi|cloudformation|bicep|cdk|kubernetes.")
+    demo.add_argument("--region", default=None, help="Target region (default: the cloud's).")
+    demo.add_argument("--name", default=None, help="Project name.")
+    demo.add_argument("--zip", action="store_true", help="Also write a .zip of the project.")
+    demo.set_defaults(func=_cmd_demo)
     return parser
+
+
+def sample_estate_path() -> Path:
+    """The bundled 12-workload sample inventory, shipped inside the package."""
+    return Path(__file__).resolve().parent / "samples" / "sample_estate.csv"
+
+
+def _cmd_demo(args: argparse.Namespace) -> int:
+    """Run the full pipeline against a bundled sample estate.
+
+    This exists for one reason: evaluating a migration tool otherwise requires
+    handing your entire infrastructure inventory to software you have never
+    run. That is a large ask, and it is the first thing that stops someone
+    trying this. `demo` removes it — no file, no account, no upload, nothing
+    leaves the machine.
+    """
+    sample = sample_estate_path()
+    if not sample.exists():  # pragma: no cover - packaging guard
+        print(f"error: bundled sample missing at {sample}", file=sys.stderr)
+        return 2
+
+    print(f"Running the full pipeline on a bundled {12}-workload sample estate.")
+    print("Nothing is uploaded; no inventory of your own is needed.\n")
+
+    args.input = str(sample)
+    args.name = args.name or "sample-estate"
+    args.source = "generic"
+    args.map = None
+    args.policy = None
+    args.provider = None
+    args.region = getattr(args, "region", None)
+    args.gitops = False
+    return _cmd_translate(args)
 
 
 def main(argv=None) -> int:

@@ -24,3 +24,7 @@ venv/
 
 # Hypothesis local example/constant cache (machine-specific, not source)
 .hypothesis/
+
+# demo output
+/out/
+iactranslate-demo/

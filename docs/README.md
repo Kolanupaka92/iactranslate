@@ -38,7 +38,7 @@ Two published, shareable web pages back this repo:
 **Sharing externally:** the **Documentation site** bundles *every* doc (operations,
 architecture, deployment, roadmap, all ADRs) into one page with **all links
 resolved in-page** — no GitHub access needed, so it's safe to send to prospects,
-investors, or partners. The standalone Operations Guide links back to the (private)
+investors, or partners. The standalone Operations Guide links back to the
 repo, so use it internally. Regenerate the site after editing any doc:
 
 ```bash

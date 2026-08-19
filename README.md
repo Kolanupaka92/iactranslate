@@ -78,6 +78,27 @@ CI proves the output is valid against the real cloud providers (`tofu validate`)
 - **Offline & auditable.** Runs with no internet and no API keys; the output is
   reproducible and reviewable.
 
+## Try it in 60 seconds — no inventory of your own
+
+Evaluating a migration tool shouldn't start with handing your infrastructure
+inventory to software you've never run. It doesn't here: `demo` generates a
+full project from a bundled 12-workload sample estate. No account, no upload,
+no cloud credentials — the pipeline is offline by default.
+
+```bash
+docker run --rm -v "$PWD/out:/out" ghcr.io/kolanupaka92/iactranslate \
+  iactranslate demo --out /out
+```
+
+Or with the whole stack (API + persistence) on your machine:
+
+```bash
+docker compose up          # then http://localhost:8000/docs
+```
+
+Already have Python? `pip install -e . && iactranslate demo --out ./out`.
+Swap `--target azure|gcp|oci|digitalocean` to see any cloud.
+
 ## Quick start
 
 ```bash

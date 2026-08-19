@@ -1,0 +1,55 @@
+# Run IaCTranslate locally with one command:
+#
+#     docker compose up
+#
+# Then open http://localhost:8000/docs, or generate a sample project without
+# any inventory of your own:
+#
+#     docker compose run --rm api iactranslate demo --out /work/out
+#
+# Everything runs on your machine. No account, no upload, no network egress —
+# the pipeline is offline by default and needs no cloud credentials to
+# generate. That is the point: evaluating a migration tool should not require
+# handing your infrastructure inventory to software you have never run.
+
+services:
+  api:
+    build: .
+    image: iactranslate:local
+    ports:
+      - "8000:8000"
+    environment:
+      # Durable across restarts (ADR 0025/0029). Both paths live in the volume
+      # below, so `docker compose down && up` keeps your projects.
+      IACTRANSLATE_STORE: sqlite
+      IACTRANSLATE_DB_PATH: /data/iactranslate.db
+      IACTRANSLATE_WORKSPACE_ROOT: /data/artifacts
+      # The web app's origin. Must name a real origin rather than "*" — a
+      # browser refuses to send session cookies to a wildcard (ADR 0027).
+      IACTRANSLATE_CORS_ORIGINS: http://localhost:3000
+      # Single-user by default. Set IACTRANSLATE_AUTH=session for multi-tenant
+      # accounts, and serve over HTTPS if you do (ADR 0027).
+    volumes:
+      - iactranslate-data:/data
+      # Anything written to ./out on the host lands here, so `demo --out /work/out`
+      # leaves the generated Terraform where you can read it.
+      - ./out:/work/out
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health').status==200 else 1)
+      interval: 30s
+      timeout: 3s
+      start_period: 5s
+      retries: 3
+    # Measured: a 5,000-workload estate (the documented MAX_VMS ceiling) peaks
+    # at ~185 MB RSS, so 512 MB is comfortable rather than optimistic.
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+volumes:
+  iactranslate-data:

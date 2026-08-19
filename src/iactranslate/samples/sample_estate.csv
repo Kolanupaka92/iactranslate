@@ -1,0 +1,13 @@
+name,cpu,memory_gib,disk_gib,os,ip,cluster,cpu_util_pct,mem_util_pct
+prod-web-01,4,16,100,Ubuntu 22.04,10.0.1.10,prod-cluster,22,30
+prod-web-02,4,16,100,Ubuntu 22.04,10.0.1.11,prod-cluster,19,28
+prod-app-01,8,32,200,RHEL 8,10.0.2.10,prod-cluster,55,61
+prod-app-02,8,32,200,RHEL 8,10.0.2.11,prod-cluster,48,58
+PROD-DB-01,16,128,1000,Windows Server 2019,10.0.3.10,prod-cluster,71,83
+prod cache 01,4,32,50,Ubuntu 22.04,10.0.3.20,prod-cluster,35,77
+staging-web-01,2,8,60,Ubuntu 22.04,10.1.1.10,stg-cluster,8,14
+staging-app-01,4,16,120,RHEL 8,10.1.2.10,stg-cluster,12,22
+dev-build-01,8,16,300,Ubuntu 20.04,10.2.1.10,dev-cluster,64,41
+dev.sandbox.01,2,4,40,CentOS 7,10.2.1.11,dev-cluster,3,9
+legacy-fileserver,4,8,2000,Windows Server 2012 R2,10.0.4.10,prod-cluster,11,35
+mgmt-jumphost,2,4,40,Ubuntu 22.04,10.0.9.10,prod-cluster,5,12
