@@ -146,6 +146,16 @@ class ComputePlan(BaseModel):
     source_memory_gib: Optional[float] = None
     # Explainability: a human-readable "why this instance / tier" for the decision.
     reason: Optional[str] = None
+    # The OS the source inventory reported, kept so downstream consumers can ask
+    # "what was this before?" without re-parsing the estate.
+    source_os: Optional[str] = None
+    # True when the plan provisions a different OS *family* than the source ran
+    # — a workload that will not boot as-is, not merely a version bump. Carried
+    # as a flag because renderers previously inferred it from an `image_key`
+    # prefix, which stops being true the moment a target maps Windows to a Linux
+    # image (DigitalOcean does; ADR 0023) — exactly the case that most needs the
+    # warning.
+    os_family_changed: bool = False
     # Brownfield: existing cloud resource id to adopt via a Terraform import block.
     external_id: Optional[str] = None
 

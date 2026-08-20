@@ -81,11 +81,30 @@ def os_substitution_note(source_os: Optional[str], image_key: str) -> Optional[s
     # against "windows-2022", "RHEL 8" against "rhel-8".
     if source_versions[0] == image_versions[0]:
         return None
+    # A change of OS *family* is categorically worse than a version bump. A
+    # Windows workload landing on a Linux image will not run at all — no amount
+    # of compatibility testing fixes it — and the only honest advice is to pick
+    # a different target. DigitalOcean publishes no Windows image (ADR 0023),
+    # so this is a real path, not a hypothetical one.
+    if _os_family(source_os) != _os_family(image_key):
+        return (
+            f"OS FAMILY CHANGED: source reports '{source_os.strip()}' but the plan "
+            f"provisions '{image_key}'. This target publishes no image for that "
+            f"operating system, so the workload will not run as-is — it requires "
+            f"either a different target cloud or a custom image. Do not migrate "
+            f"this workload on this plan without resolving that first."
+        )
     return (
         f"OS substituted: source reports '{source_os.strip()}' but the plan provisions "
         f"'{image_key}' — no matching image is available. Verify application "
         f"compatibility before migrating."
     )
+
+
+def _os_family(text: str) -> str:
+    """`windows` vs `linux` — the distinction that decides whether a workload
+    boots at all, as opposed to merely needing a compatibility check."""
+    return "windows" if "windows" in text.lower() else "linux"
 
 
 def _root_and_extra(vm: NormalizedVM) -> Tuple[int, List[int]]:
@@ -129,6 +148,7 @@ def build_compute_plans(
         substitution = os_substitution_note(vm.os, image_key)
         if substitution:
             reason += f" {substitution}"
+        family_changed = bool(vm.os) and _os_family(vm.os) != _os_family(image_key)
         root_gib, extra_gib = _root_and_extra(vm)
         cost, price_source = monthly_cost(
             target.name, instance_type, region, target.cost_of(instance_type), live_pricing
@@ -138,6 +158,8 @@ def build_compute_plans(
             ComputePlan(
                 vm_name=vm.vm_name,
                 resource_name=vm.resource_name,
+                source_os=vm.os,
+                os_family_changed=family_changed,
                 instance_type=instance_type,
                 image_key=image_key,
                 vcpu=spec.vcpu if spec else vm.cpu,

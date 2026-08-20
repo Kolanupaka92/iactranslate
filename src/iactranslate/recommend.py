@@ -44,6 +44,14 @@ class CloudScore(BaseModel):
     fit_score: float = Field(description="0-1, higher means less over-provisioning")
     os_score: float = Field(description="0-1, higher means better OS-mix alignment")
     weighted_score: float
+    unsupported_workloads: int = Field(
+        default=0,
+        description="VMs whose operating system this cloud publishes no image for",
+    )
+    eligible: bool = Field(
+        default=True,
+        description="False when the cloud cannot host part of the estate at all",
+    )
     reasons: List[str] = Field(default_factory=list)
 
 
@@ -80,6 +88,11 @@ class Recommendation(BaseModel):
     notes: List[str] = Field(default_factory=list)
 
 
+def _os_family(text: str) -> str:
+    """`windows` vs `linux` — see `agents.rightsizing._os_family`."""
+    return "windows" if "windows" in text.lower() else "linux"
+
+
 def _is_windows(vm: NormalizedVM) -> bool:
     return bool(vm.os and "windows" in vm.os.lower())
 
@@ -110,6 +123,24 @@ def _os_affinity(cloud: str, windows_fraction: float) -> float:
     return _AWS_OS_BASELINE
 
 
+def _unsupported_count(target, vms: List[NormalizedVM]) -> int:
+    """How many workloads this cloud publishes no usable image for.
+
+    Asked of the target's own catalog rather than hardcoded per cloud: if a
+    target maps a Windows source OS to a Linux image key, it has no Windows
+    image, and any plan it produces would boot the wrong operating system.
+    DigitalOcean is the live example (ADR 0023) but nothing here names it, so a
+    future catalog change is caught the same way.
+    """
+    count = 0
+    for vm in vms:
+        if not vm.os:
+            continue
+        if _os_family(vm.os) != _os_family(target.image_key(vm.os)):
+            count += 1
+    return count
+
+
 def recommend(vms: List[NormalizedVM], targets: Optional[List[str]] = None) -> Recommendation:
     if len(vms) > MAX_VMS:
         raise ValueError(f"Inventory has {len(vms)} VMs, exceeding the limit of {MAX_VMS}")
@@ -128,30 +159,65 @@ def recommend(vms: List[NormalizedVM], targets: Optional[List[str]] = None) -> R
             "cost": plan.total_estimated_monthly_cost_usd,
             "fit": _fit(vms, plan.compute),
             "os": _os_affinity(name, windows_fraction),
+            "unsupported": _unsupported_count(target, vms),
         }
 
-    cheapest_cost = min(r["cost"] for r in raw.values()) or 1.0
+    # The cost baseline every other cloud is measured against must come from a
+    # cloud that could actually take the estate. An ineligible cloud is cheapest
+    # by construction — it silently drops the workloads it cannot host — so
+    # anchoring "$X more than the cheapest option" to it would overstate the
+    # premium on every real candidate.
+    priced = {n: r for n, r in raw.items() if not r["unsupported"]} or raw
+    cheapest_cost = min(r["cost"] for r in priced.values()) or 1.0
     best_fit = max(r["fit"] for r in raw.values())
-    lowest_cost_cloud = min(raw, key=lambda n: raw[n]["cost"])
+    lowest_cost_cloud = min(priced, key=lambda n: priced[n]["cost"])
     # Only claim "tightest fit" when one cloud strictly wins (not a tie).
     fit_winners = [n for n, r in raw.items() if r["fit"] == best_fit]
     tightest_fit_cloud = fit_winners[0] if len(fit_winners) == 1 else None
 
     scores: List[CloudScore] = []
     for name, r in raw.items():
-        cost_score = round(cheapest_cost / r["cost"], 4) if r["cost"] else 1.0
+        cost_score = round(min(cheapest_cost / r["cost"], 1.0), 4) if r["cost"] else 1.0
         fit_score = r["fit"]
         os_score = r["os"]
+        unsupported = r["unsupported"]
+        eligible = unsupported == 0
         weighted = round(W_COST * cost_score + W_FIT * fit_score + W_OS * os_score, 4)
+        if not eligible:
+            # A disqualified cloud scores zero, not "well but excluded". Leaving
+            # it a competitive number produced a table whose ranking contradicted
+            # its own scores — DigitalOcean sitting last with the highest figure
+            # on the page. The component scores below are untouched, so what it
+            # *would* have scored is still fully visible and checkable.
+            weighted = 0.0
 
         reasons: List[str] = []
-        if name == lowest_cost_cloud:
-            reasons.append(f"Lowest projected cost (${r['cost']:.2f}/mo).")
+        if not eligible:
+            # Stated first, and stated bluntly. This cloud's cost advantage is
+            # partly an artifact of not running workloads it cannot run, so
+            # presenting it as a cheaper peer would be actively misleading.
+            reasons.append(
+                f"NOT ELIGIBLE: {unsupported} of {total} workloads run an operating "
+                f"system {name.upper()} publishes no image for. Its cost figure "
+                f"excludes licensing for machines it cannot host, so it is not "
+                f"comparable to the others."
+            )
+        if eligible:
+            if name == lowest_cost_cloud:
+                reasons.append(f"Lowest projected cost (${r['cost']:.2f}/mo).")
+            else:
+                delta = r["cost"] - cheapest_cost
+                reasons.append(f"${delta:.2f}/mo more than the cheapest option.")
+            if name == tightest_fit_cloud:
+                reasons.append("Tightest instance sizing — least over-provisioning.")
         else:
-            delta = r["cost"] - cheapest_cost
-            reasons.append(f"${delta:.2f}/mo more than the cheapest option.")
-        if name == tightest_fit_cloud:
-            reasons.append("Tightest instance sizing — least over-provisioning.")
+            # No selling points for a disqualified cloud. "Cheapest" and
+            # "tightest sizing" are arguments *for* choosing it, and both are
+            # artifacts of the workloads it silently drops.
+            reasons.append(
+                f"Priced at ${r['cost']:.2f}/mo for the "
+                f"{total - unsupported} workloads it can host, shown for reference only."
+            )
         if name == "azure" and windows > 0:
             reasons.append(
                 f"Strong fit for a Windows-heavy estate ({windows} of {total} VMs run Windows): "
@@ -176,15 +242,28 @@ def recommend(vms: List[NormalizedVM], targets: Optional[List[str]] = None) -> R
                 fit_score=fit_score,
                 os_score=os_score,
                 weighted_score=weighted,
+                unsupported_workloads=unsupported,
+                eligible=eligible,
                 reasons=reasons,
             )
         )
 
-    scores.sort(key=lambda s: s.weighted_score, reverse=True)
+    # Eligibility dominates score. A cloud that cannot run part of the estate is
+    # not a cheaper option, it is not an option — and it would otherwise *win* on
+    # cost precisely because it skips the workloads it cannot host.
+    scores.sort(key=lambda s: (s.eligible, s.weighted_score), reverse=True)
     winner = scores[0]
+    eligible_scores = [s for s in scores if s.eligible]
 
     # 2.0: decisiveness from the score gap to the runner-up.
-    margin = round(winner.weighted_score - scores[1].weighted_score, 4) if len(scores) > 1 else winner.weighted_score
+    # Measured against the next genuine alternative: a margin over a cloud that
+    # cannot host the estate says nothing about how decisive the choice is.
+    contenders = eligible_scores or scores
+    margin = (
+        round(winner.weighted_score - contenders[1].weighted_score, 4)
+        if len(contenders) > 1
+        else winner.weighted_score
+    )
     if margin >= 0.10:
         decisiveness = "clear"
     elif margin >= 0.03:
@@ -193,7 +272,11 @@ def recommend(vms: List[NormalizedVM], targets: Optional[List[str]] = None) -> R
         decisiveness = "close"
 
     # 2.0: estate-level notes a reviewer should weigh.
-    priciest = max(scores, key=lambda s: s.total_monthly_cost_usd)
+    # Quote the spread across clouds that could actually take the estate. An
+    # ineligible cloud always looks cheapest — it is not running everything —
+    # and headlining its number would reintroduce the comparison the
+    # eligibility check exists to prevent.
+    priciest = max(contenders, key=lambda s: s.total_monthly_cost_usd)
     annual_spread = round((priciest.total_monthly_cost_usd - cheapest_cost) * 12, 2)
     notes: List[str] = [
         f"Annual spend ranges ${cheapest_cost * 12:,.0f} ({lowest_cost_cloud.upper()}) to "
@@ -205,6 +288,13 @@ def recommend(vms: List[NormalizedVM], targets: Optional[List[str]] = None) -> R
             f"Mixed estate: {windows} Windows / {linux} Linux. Windows licensing "
             "(Azure Hybrid Benefit vs BYOL) can shift the cost comparison."
         )
+    for s_ in scores:
+        if not s_.eligible:
+            notes.append(
+                f"{s_.cloud.upper()} was excluded from the recommendation: it cannot "
+                f"host {s_.unsupported_workloads} of {total} workloads. Migrating those "
+                f"would need a different cloud or a custom image."
+            )
     if decisiveness == "close":
         notes.append(
             "Close call — the top two clouds are within the scoring noise; "
@@ -226,7 +316,7 @@ def recommend(vms: List[NormalizedVM], targets: Optional[List[str]] = None) -> R
     return Recommendation(
         recommended=winner.cloud, summary=summary, ranked=scores,
         decisiveness=decisiveness, margin=margin,
-        runner_up=scores[1].cloud if len(scores) > 1 else None,
+        runner_up=contenders[1].cloud if len(contenders) > 1 else None,
         weights=ScoringWeights(cost=W_COST, fit=W_FIT, os=W_OS),
         notes=notes,
     )

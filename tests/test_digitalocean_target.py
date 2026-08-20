@@ -46,13 +46,52 @@ def test_digitalocean_renders_droplet_and_vpc_resources(rvtools_path):
 
 def test_digitalocean_windows_source_vms_flagged_in_readme(rvtools_path):
     files, plan = _files(rvtools_path)
-    windows = [c for c in plan.compute if c.image_key.startswith("windows")]
+    windows = [c for c in plan.compute if c.os_family_changed]
     assert windows, "fixture should exercise at least one Windows source VM"
     assert "Windows source VMs" in files["README.md"]
     for c in windows:
         assert c.vm_name in files["README.md"]
     # Rendered as Ubuntu, not a fabricated Windows slug.
     assert 'image    = "ubuntu-22-04-x64"' in files["compute.tf"]
+
+
+def test_digitalocean_never_claims_a_windows_image_it_does_not_have(rvtools_path):
+    """The plan must not say `windows-*` when the Droplet will boot Ubuntu.
+
+    Every `windows-*` key in DigitalOcean's catalog resolves to
+    `ubuntu-22-04-x64`, so publishing one made `image_key` a false statement:
+    the plan claimed Windows, the infrastructure ran Linux, and the
+    OS-substitution check compared source-2019 against key-2019 and stayed
+    silent about the single most consequential substitution the tool can make.
+    """
+    _, plan = _files(rvtools_path)
+    windows_sources = [c for c in plan.compute if "windows" in (c.source_os or "").lower()]
+    assert windows_sources, "fixture should exercise at least one Windows source VM"
+    for c in windows_sources:
+        assert not c.image_key.startswith("windows"), (
+            f"{c.vm_name}: image_key {c.image_key!r} claims Windows, but DigitalOcean "
+            f"has no Windows image and will provision Ubuntu"
+        )
+        assert c.os_family_changed
+        assert "OS FAMILY CHANGED" in (c.reason or "")
+
+
+def test_digitalocean_is_not_recommended_for_a_windows_estate(rvtools_path):
+    """A cloud that cannot run part of the estate must not win on cost.
+
+    DigitalOcean looked cheapest on a Windows-heavy estate precisely *because*
+    it skipped Windows licensing for machines it cannot host — an argument that
+    only holds if you ignore that the migration would fail.
+    """
+    from iactranslate.recommend import recommend
+
+    vms = normalize(parse(rvtools_path))
+    rec = recommend(vms)
+    do = next(s for s in rec.ranked if s.cloud == "digitalocean")
+    assert not do.eligible
+    assert do.unsupported_workloads > 0
+    assert rec.recommended != "digitalocean"
+    assert any("DIGITALOCEAN was excluded" in n for n in rec.notes)
 
 
 def test_digitalocean_firewalls_use_tags_not_subnets(rvtools_path):

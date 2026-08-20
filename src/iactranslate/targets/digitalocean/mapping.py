@@ -94,11 +94,15 @@ def image_key(os_string: Optional[str]) -> str:
         return "ubuntu-22.04"
     s = os_string.lower()
     if "windows" in s:
-        if "2019" in s:
-            return "windows-2019"
-        if "2016" in s:
-            return "windows-2016"
-        return "windows-2022"
+        # DigitalOcean has no Windows Server image at all (ADR 0023): every
+        # `windows-*` key here resolves to `ubuntu-22-04-x64`. Returning a
+        # `windows-*` key therefore *lied* — the plan claimed Windows while the
+        # Droplet would boot Linux, and the OS-substitution check (ADR 0035)
+        # compares against the key, so it saw "2019" vs "2019" and stayed
+        # silent about the most consequential substitution the tool can make.
+        # Returning the image that will actually be provisioned makes the plan
+        # honest and lets that check fire.
+        return "ubuntu-22.04"
     if "red hat" in s or "rhel" in s:
         # Respect the reported major version. Silently returning the newest
         # RHEL we stock would upgrade a certified RHEL 8 estate to RHEL 9

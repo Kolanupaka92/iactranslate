@@ -91,14 +91,23 @@ def test_weights_are_returned_so_the_ranking_can_be_checked_by_hand(rvtools_path
     assert (rec.weights.cost, rec.weights.fit, rec.weights.os) == (W_COST, W_FIT, W_OS)
     assert round(rec.weights.cost + rec.weights.fit + rec.weights.os, 6) == 1.0
 
-    # Every reported score must be reproducible from the published weights.
+    # Every eligible cloud's score must be reproducible from the published
+    # weights. Eligibility is a separate, stated gate rather than a hidden
+    # adjustment to the arithmetic: a cloud that cannot host the estate scores
+    # zero, and its components stay published so the gate's effect is visible.
     for s in rec.ranked:
         recomputed = (
             rec.weights.cost * s.cost_score
             + rec.weights.fit * s.fit_score
             + rec.weights.os * s.os_score
         )
-        assert round(recomputed, 4) == pytest.approx(s.weighted_score, abs=1e-4)
+        if s.eligible:
+            assert round(recomputed, 4) == pytest.approx(s.weighted_score, abs=1e-4)
+        else:
+            assert s.weighted_score == 0.0
+            # The components are intact, so a reader can still see what the
+            # cloud would have scored had it been able to run the workloads.
+            assert recomputed > 0
 
 
 def test_margin_names_the_cloud_it_is_measured_against(rvtools_path):
