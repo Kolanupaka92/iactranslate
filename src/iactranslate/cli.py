@@ -14,6 +14,7 @@ from .agents import build_migration_plan
 from .agents.providers import get_provider
 from .assessment import assess, to_html, to_json
 from .confidence import score_plan
+from .costing import estimate_costs
 from .diff import diff_inventories
 from .exec_report import build_executive_report
 from .normalize import normalize
@@ -90,7 +91,13 @@ def _cmd_translate(args: argparse.Namespace) -> int:
     print(f"Project:    {plan.project_name}")
     print(f"Migration:  {plan.source_platform} -> {plan.target} ({plan.region})")
     print(f"VMs:        {plan.vm_count}")
-    print(f"Est. cost:  ${plan.total_estimated_monthly_cost_usd:.2f}/month")
+    costs = estimate_costs(plan)
+    print(f"Est. cost:  ${costs.total:,.2f}/month  "
+          f"(compute ${costs.compute:,.2f}"
+          + (f" + storage ${costs.storage:,.2f}" if costs.storage else "")
+          + (f" + Windows ${costs.windows_licensing:,.2f}" if costs.windows_licensing else "")
+          + (f" + LB ${costs.load_balancers:,.2f}" if costs.load_balancers else "")
+          + ")")
     if args.provider:
         engine = "Claude (Anthropic)" if plan.provider_used == "anthropic" else "rule engine (deterministic)"
         print(f"AI:         {engine}"

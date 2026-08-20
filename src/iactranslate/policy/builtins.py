@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from typing import List
 
+from ..costing import estimate_costs
 from ..models import MigrationPlan, SubnetTier
 from ..targets.base import Target
 from .base import PolicyViolation, Severity, register
@@ -76,7 +77,10 @@ def max_monthly_cost(plan: MigrationPlan, target: Target, config: dict, sev: Sev
     budget = config.get("budget_usd")
     if budget is None:
         return []
-    total = plan.total_estimated_monthly_cost_usd
+    # Gating on compute alone let a plan pass a $20,000 budget while actually
+    # costing $21,866 — storage, Windows licensing and load balancers are real
+    # spend and a budget policy that ignores them does not enforce the budget.
+    total = estimate_costs(plan).total
     if total > budget:
         return [PolicyViolation(
             policy="max_monthly_cost", severity=sev, resource=None,

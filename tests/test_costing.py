@@ -117,3 +117,45 @@ def test_report_headlines_the_full_total_not_the_compute_subtotal(realistic_vms)
     # like it contradicts the headline.
     assert "Compute subtotal" in html
     assert "not of the" in html
+
+
+def test_every_surface_quotes_the_same_total(realistic_vms, tmp_path):
+    """The bundle must not contradict itself.
+
+    A customer receives the executive report, the generated README and the
+    Terraform header in one zip. When only the report was corrected, the README
+    still said $16,030 beside a report saying $21,866, and the difference was
+    unexplainable to anyone reading both.
+    """
+    from iactranslate.generator import build_files
+
+    plan = _plan(realistic_vms, "aws")
+    total = f"{estimate_costs(plan).total:,.2f}"
+
+    files = build_files(plan, get_target("aws"))
+    assert total in files["README.md"]
+    assert total in files["main.tf"]
+    assert total in build_executive_report(plan, realistic_vms)
+
+
+def test_budget_policy_gates_on_the_real_bill(realistic_vms):
+    """A budget that ignores storage and licensing does not enforce a budget.
+
+    Compute alone is $16,030 on this estate, so a $20,000 budget used to pass
+    while the actual spend is $21,866.
+    """
+    from iactranslate.policy.base import Severity
+
+    from iactranslate.policy.builtins import max_monthly_cost
+
+    plan = _plan(realistic_vms, "aws")
+    compute_only = plan.total_estimated_monthly_cost_usd
+    costs = estimate_costs(plan)
+    budget = (compute_only + costs.total) / 2  # between the two figures
+    assert compute_only < budget < costs.total
+
+    violations = max_monthly_cost(
+        plan, get_target("aws"), {"budget_usd": budget}, Severity.DENY
+    )
+    assert violations, "a plan over budget on the real bill must be flagged"
+    assert f"{costs.total:,.2f}" in violations[0].message

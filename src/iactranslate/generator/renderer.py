@@ -13,6 +13,7 @@ from typing import Dict, List, Optional, Tuple
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
+from ..costing import estimate_costs
 from ..graph import EdgeKind, NodeKind, build_graph
 from ..models import ComputePlan, MigrationPlan, SubnetTier, terraform_safe_name
 from ..targets.base import Target
@@ -132,8 +133,17 @@ def build_files(plan: MigrationPlan, target: Target) -> Dict[str, str]:
         key: {**target.image_reference(key), "resource": terraform_safe_name(key)}
         for key in _image_keys(plan.compute)
     }
+    _costs = estimate_costs(plan)
     context = {
         "plan": plan,
+        # `plan.total_estimated_monthly_cost_usd` is compute only. Templates
+        # print an "estimated cost" header a customer reads, so they get the
+        # itemized total instead (ADR 0039) — otherwise the generated README
+        # contradicts the executive report shipped in the same bundle.
+        "costs": _costs,
+        # Preformatted with thousands separators: Jinja's `format` filter is
+        # printf-style, and "%.2f" rendered the estate total as "$21865.97".
+        "cost_total_display": f"{_costs.total:,.2f}",
         "network": plan.network,
         "compute": plan.compute,
         "region": plan.region,

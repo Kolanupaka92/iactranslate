@@ -35,6 +35,7 @@ from ..agents.providers import get_provider
 from ..assessment import assess
 from ..confidence import score_plan
 from ..config import MAX_UPLOAD_BYTES, cors_origins
+from ..costing import estimate_costs
 from ..exec_report import build_executive_report
 from ..normalize import normalize
 from ..pipeline import run_pipeline
@@ -507,9 +508,15 @@ def _execute_run(project: Project) -> None:
     project.project_dir = result.project_dir
     project.zip_path = result.zip_path
     project.status = "completed"
+    _costs = estimate_costs(result.plan)
     project.summary = {
         "vm_count": result.plan.vm_count,
-        "estimated_monthly_cost_usd": result.plan.total_estimated_monthly_cost_usd,
+        # The itemized total, matching the executive report and the generated
+        # README in the same bundle (ADR 0039). `compute_monthly_cost_usd` is
+        # kept alongside it so a caller can still see the instance-only figure.
+        "estimated_monthly_cost_usd": _costs.total,
+        "compute_monthly_cost_usd": _costs.compute,
+        "cost_breakdown": _costs.model_dump(),
         "pricing_source": result.plan.pricing_source,
         "right_sized_count": sum(1 for c in result.plan.compute if c.right_sized),
         "provider_requested": project.provider,
