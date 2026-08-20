@@ -9,15 +9,26 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# `python` is not on PATH on a stock macOS (only `python3`), and is absent
+# outside an activated virtualenv — the script failed at its first line for
+# exactly that reason. Prefer the repo venv, then python3, then python.
+if [ -x "$(dirname "$0")/../.venv/bin/python" ]; then
+  PY="$(cd "$(dirname "$0")/.." && pwd)/.venv/bin/python"
+elif command -v python3 >/dev/null 2>&1; then
+  PY=python3
+else
+  PY=python
+fi
+
 BUILD="${1:-/tmp/iactranslate-site}"
 ALIAS="${2:-iactranslate-docs.vercel.app}"
 rm -rf "$BUILD"; mkdir -p "$BUILD"
 
-python scripts/build_docs_site.py "$BUILD/index.html"
-python scripts/build_deck_static.py "$BUILD/overview.html"
+"$PY" scripts/build_docs_site.py "$BUILD/index.html"
+"$PY" scripts/build_deck_static.py "$BUILD/overview.html"
 
 # Cross-link the two pages within the deployed site.
-python - "$BUILD" <<'PY'
+"$PY" - "$BUILD" <<'PY'
 import sys, pathlib
 b = pathlib.Path(sys.argv[1])
 idx, ov = b / "index.html", b / "overview.html"
