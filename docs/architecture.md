@@ -351,7 +351,7 @@ the cloud, IaCTranslate *generates* the import blocks for you — see the
 **Why not Azure Migrate?**
 Azure-only by design; it never emits portable IaC, and a Microsoft tool will
 never recommend AWS or GCP. IaCTranslate is cloud-neutral, emits Terraform/Pulumi
-you own, and compares all three clouds unbiased.
+you own, and compares all five clouds unbiased.
 
 **Why not AWS Migration Hub / Application Discovery Service?**
 AWS-only; no reusable Terraform; cannot compare clouds. Same structural limits as

@@ -26,7 +26,7 @@ CI proves the output is valid against the real cloud providers (`tofu validate`)
 - **Any source → any cloud.** Source registry (VMware · Hyper-V · Kubernetes ·
   generic CMDB · existing cloud fleet) and target registry (AWS · Azure · GCP · OCI · DigitalOcean),
   both behind protocols — new ones need no pipeline changes.
-- **Unbiased cloud recommendation.** Ranks all three clouds on cost, sizing fit,
+- **Unbiased cloud recommendation.** Ranks all five clouds on cost, sizing fit,
   and OS affinity, with explicit weights and plain-English rationale. No vendor
   gets a thumb on the scale.
 - **Right-sized from real usage.** When utilization data is present, instances
@@ -169,7 +169,7 @@ scope, and assumptions — is in **[docs/architecture.md](docs/architecture.md)*
 ## Test & lint
 
 ```bash
-pytest                 # ~446 tests: parsers, sizing, validation, all 3 clouds, renderers, API
+pytest                 # ~446 tests: parsers, sizing, validation, all 5 clouds, renderers, API
 ruff check src tests
 ```
 
