@@ -46,5 +46,6 @@ Format: [Michael Nygard's ADR template](https://cognitect.com/blog/2011/11/15/do
 | [0036](0036-workspace-ui-not-a-scrolling-wizard.md) | The web UI becomes a project workspace: completed steps collapse, results come first | Accepted |
 | [0037](0037-publish-the-scoring-weights.md) | Publish the recommendation's scoring weights so the ranking is checkable by hand | Accepted |
 | [0038](0038-a-cloud-that-cannot-run-the-estate-is-not-a-candidate.md) | A cloud that cannot run the estate is not a candidate: truthful `image_key`, OS-family flags, eligibility gate | Accepted |
+| [0039](0039-cost-the-whole-bill-not-just-the-instances.md) | Cost the whole bill — storage, Windows licensing and load balancers, not just instances | Accepted |
 
 See also the [Architecture & Design](../architecture.md) overview.

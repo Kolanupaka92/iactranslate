@@ -28,3 +28,4 @@ venv/
 # demo output
 /out/
 iactranslate-demo/
+_preview_report.html

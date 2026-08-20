@@ -15,6 +15,7 @@ from typing import Dict, List, Optional
 from .assessment import assess
 from .assessment.models import Severity
 from .confidence import score_plan
+from .costing import estimate_costs
 from .diagram import architecture_svg
 from .display import display_cloud, display_source, plural
 from .models import MigrationPlan, NormalizedVM
@@ -140,7 +141,14 @@ def build_executive_report(
         else '<span class="ai-badge muted">Rule-based summary — generated deterministically</span>'
     )
 
-    total_cost = plan.total_estimated_monthly_cost_usd
+    # `plan.total_estimated_monthly_cost_usd` is instance cost only. Headlining
+    # it understated the realistic 25-VM AWS estate by 27% — storage, Windows
+    # licensing and the load balancers the plan itself provisions were all
+    # missing. Understating is the dangerous direction: a client budgets against
+    # this number. See ADR 0039.
+    costs = estimate_costs(plan)
+    total_cost = costs.total
+    compute_cost = costs.compute
     right_sized = [c for c in plan.compute if c.right_sized]
     band_color = _BAND_COLOR.get(assessment.readiness.band, "#64748b")
     conf_color = _CONF_COLOR.get(confidence.level, "#64748b")
@@ -160,18 +168,39 @@ def build_executive_report(
     )
     stats = [
         _stat(str(plan.vm_count), "workloads"),
-        _stat(_money(total_cost) + "/mo", "est. cloud spend"),
+        _stat(_money(total_cost), "est. total spend / month"),
         _stat(f"{assessment.readiness.score}", "readiness", band_color),
         _stat(f"{confidence.overall * 100:.0f}%", "confidence", conf_color),
         _stat(display_cloud(plan.target), "target cloud"),
         right_sizing_stat,
     ]
 
+    # Itemized estimate. Zero-value lines are dropped rather than shown as
+    # "$0.00" — a DigitalOcean plan has no Windows licensing because the cloud
+    # has no Windows, and a row of zeros invites the reader to wonder whether
+    # the line failed to compute.
+    _breakdown_lines = [
+        ("Compute", costs.compute, f"{plan.vm_count} instances, Linux-equivalent rate"),
+        ("Block storage", costs.storage, f"{costs.total_storage_gib:,.0f} GiB attached"),
+        ("Windows licensing", costs.windows_licensing,
+         f"{plural(costs.windows_workloads, 'Windows workload')}, license-included"),
+        ("Load balancers", costs.load_balancers,
+         plural(costs.load_balancer_count, "load balancer")),
+    ]
+    breakdown_rows = "\n".join(
+        f'<tr><td>{_esc(label)}</td><td class="num">{_money(value)}</td>'
+        f'<td class="num">{(value / total_cost * 100) if total_cost else 0:.0f}%</td>'
+        f'<td class="muted">{_esc(basis)}</td></tr>'
+        for label, value, basis in _breakdown_lines
+        if value > 0
+    )
+    excludes_html = "\n".join(f"<li>{_esc(x)}</li>" for x in costs.excludes)
+
     # Cost by tier.
     tier_rows = "\n".join(
         f'<tr><td class="cap">{_esc(t)}</td><td class="num">{n}</td>'
         f'<td class="num">{_money(cost)}</td>'
-        f'<td class="num">{(cost / total_cost * 100) if total_cost else 0:.0f}%</td></tr>'
+        f'<td class="num">{(cost / compute_cost * 100) if compute_cost else 0:.0f}%</td></tr>'
         for t, n, cost in _cost_by_tier(plan)
     )
 
@@ -224,7 +253,8 @@ def build_executive_report(
   .wrap {{ max-width:920px; margin:0 auto; padding:40px 20px 72px; }}
   header h1 {{ margin:0 0 4px; font-size:1.7rem; }}
   header .sub {{ color:var(--muted); margin:0; }}
-  .stats {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin:28px 0; }}
+  .stats {{ display:grid; grid-template-columns:repeat(2,1fr); gap:12px; margin:28px 0; }}
+  @media (min-width:760px) {{ .stats {{ grid-template-columns:repeat(3,1fr); }} }}
   .stat {{ background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; text-align:center; }}
   .stat .v {{ display:block; font-size:clamp(1.05rem,2.1vw,1.5rem); font-weight:700; overflow-wrap:anywhere; }}
   .stat .l {{ display:block; font-size:.72rem; color:var(--muted); margin-top:2px; text-transform:uppercase; letter-spacing:.04em; }}
@@ -234,6 +264,9 @@ def build_executive_report(
   .up {{ text-transform:uppercase; }}
   .cap {{ text-transform:capitalize; }}
   .muted {{ color:var(--muted); }}
+  h3.sub {{ margin:20px 0 8px; font-size:.9rem; font-weight:600; color:var(--muted);
+            text-transform:uppercase; letter-spacing:.04em; }}
+  ul.excludes {{ margin:0; padding-left:18px; color:var(--muted); font-size:.88rem; line-height:1.7; }}
   .narrative {{ font-size:.95rem; line-height:1.7; white-space:pre-line; }}
   .ai-badge {{ display:inline-block; font-size:.68rem; font-weight:600; letter-spacing:.02em;
     padding:2px 9px; border-radius:999px; background:var(--accent-soft); color:var(--accent);
@@ -271,14 +304,31 @@ def build_executive_report(
   </section>
 
   <section>
-    <h2>Cost breakdown by tier</h2>
+    <h2>Estimated monthly cost — {_money(total_cost)}</h2>
+    <div class="scroll"><table>
+      <thead><tr><th>Line</th><th class="num">$/mo</th><th class="num">Share</th><th>Basis</th></tr></thead>
+      <tbody>{breakdown_rows}</tbody>
+      <tfoot><tr><td><strong>Total</strong></td>
+        <td class="num"><strong>{_money(total_cost)}</strong></td>
+        <td class="num">100%</td><td></td></tr></tfoot>
+    </table></div>
+    <p class="muted">{_esc(costs.pricing_basis)}. Committed-use discounts (Reserved
+      Instances, Savings Plans, CUDs) typically reduce compute 30–60% and are deliberately
+      not applied here.</p>
+    <h3 class="sub">Not included in this figure</h3>
+    <ul class="excludes">{excludes_html}</ul>
+  </section>
+
+  <section>
+    <h2>Compute by tier</h2>
     <div class="scroll"><table>
       <thead><tr><th>Tier</th><th class="num">Workloads</th><th class="num">$/mo</th><th class="num">Share</th></tr></thead>
       <tbody>{tier_rows}</tbody>
-      <tfoot><tr><td class="cap"><strong>Total</strong></td><td class="num"><strong>{plan.vm_count}</strong></td>
-        <td class="num"><strong>{_money(total_cost)}</strong></td><td class="num">100%</td></tr></tfoot>
+      <tfoot><tr><td class="cap"><strong>Compute subtotal</strong></td><td class="num"><strong>{plan.vm_count}</strong></td>
+        <td class="num"><strong>{_money(compute_cost)}</strong></td><td class="num">100%</td></tr></tfoot>
     </table></div>
-    <p class="muted">Pricing: {'live market rates' if plan.pricing_source == 'live' else 'curated static rates'}, on-demand.
+    <p class="muted">Shares are of the compute subtotal, not of the {_money(total_cost)} total above.
+      Pricing: {'live market rates' if plan.pricing_source == 'live' else 'curated static rates'}, on-demand.
       {len(right_sized)} of {plan.vm_count} workloads were right-sized to observed utilization.</p>
   </section>
 

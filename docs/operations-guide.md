@@ -55,7 +55,7 @@ diagrams, infrastructure diff, brownfield adoption, load balancer topology,
 managed-DB re-platforming advice, migration wave planning, a Kubernetes discovery source,
 Pulumi/CloudFormation/Bicep/CDK/Kubernetes renderers, a policy engine, an
 Infrastructure Graph IR, async jobs + audit, and opt-in GitOps.
-~435 tests, 7 green CI jobs (lint, pytest 3.9/3.11/3.12, Docker health, web build, real
+~444 tests, 8 green CI jobs (lint, pytest 3.9/3.11/3.12, Docker health, web build, real
 Terraform validate). Repo: `github.com/Kolanupaka92/iactranslate` (public).
 
 ---
@@ -546,7 +546,7 @@ Interactive docs at `/docs` (Swagger) when the server is running.
 ## 10. Testing & CI
 
 ```bash
-pytest                                   # full suite (fast, offline) — ~184 tests
+pytest                                   # full suite (fast, offline) — ~444 tests
 ruff check src tests                     # lint
 cd web && npm run lint && npm run build  # frontend
 

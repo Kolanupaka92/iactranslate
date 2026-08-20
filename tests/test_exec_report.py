@@ -25,7 +25,7 @@ def test_report_is_valid_html(rvtools_path):
 def test_report_includes_core_sections(rvtools_path):
     plan, vms = _plan_and_vms(rvtools_path)
     html = build_executive_report(plan, vms)
-    for section in ("Cost breakdown by tier", "Migration readiness", "Translation confidence"):
+    for section in ("Estimated monthly cost", "Compute by tier", "Migration readiness", "Translation confidence"):
         assert section in html
     # Total cost is rendered.
     assert f"{plan.total_estimated_monthly_cost_usd:,.2f}" in html

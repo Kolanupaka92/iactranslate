@@ -28,6 +28,7 @@ from typing import Optional
 
 from .assessment.models import InfrastructureAssessment
 from .confidence import PlanConfidence
+from .costing import estimate_costs
 from .display import display_cloud, display_source, plural
 from .models import MigrationPlan
 
@@ -42,7 +43,7 @@ class Narrative:
 
 
 def _facts(plan: MigrationPlan, assessment: InfrastructureAssessment, confidence: PlanConfidence) -> str:
-    total_cost = plan.total_estimated_monthly_cost_usd
+    total_cost = estimate_costs(plan).total
     right_sized = sum(1 for c in plan.compute if c.right_sized)
     tiers = sorted({c.tier.value for c in plan.compute})
     low_conf = confidence.low_confidence()
@@ -63,7 +64,7 @@ def _deterministic_narrative(
 ) -> str:
     """A templated paragraph from the same facts an AI narrative would use —
     no LLM, always available, always accurate to the numbers above it."""
-    total_cost = plan.total_estimated_monthly_cost_usd
+    total_cost = estimate_costs(plan).total
     right_sized = sum(1 for c in plan.compute if c.right_sized)
     tiers = sorted({c.tier.value for c in plan.compute})
     low_conf = confidence.low_confidence()
