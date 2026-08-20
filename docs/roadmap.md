@@ -109,6 +109,16 @@ in CI on `main`.
   (cost 0.45 / fit 0.30 / OS 0.25) and names the runner-up, so an architect can
   reproduce the ranking by hand. "Unbiased" becomes verifiable rather than
   asserted (see [ADR 0037](adr/0037-publish-the-scoring-weights.md))
+- ✅ **Eligibility gates the recommendation** — a cloud that publishes no image
+  for part of the estate cannot be recommended, however cheap. DigitalOcean was
+  winning a Windows-heavy estate on cost precisely because it skips Windows
+  licensing for machines it cannot host
+  (see [ADR 0038](adr/0038-a-cloud-that-cannot-run-the-estate-is-not-a-candidate.md))
+- ✅ **The whole bill, not just the instances** — storage, Windows licensing and
+  load balancers are priced alongside compute, which was 73% of a realistic AWS
+  estate's cost. Every surface (report, README, `main.tf`, CLI, API, budget
+  policy) quotes the same total, and the estimate names what it excludes
+  (see [ADR 0039](adr/0039-cost-the-whole-bill-not-just-the-instances.md))
 - ✅ Model schema versioning (`NormalizedVM` / `MigrationPlan`)
 
 **Surfaces & delivery**
@@ -142,6 +152,12 @@ backends and integrations that plug into them, via the
 - ✅ Kubernetes/KubeVirt — VMs as `VirtualMachine` CRDs, SG ingress as
   `NetworkPolicy`, cloud-agnostic (see [ADR 0017](adr/0017-kubernetes-from-graph.md))
 - ◻ Migrate the rest of Terraform/Pulumi's resource generation onto the graph
+- ◻ **Rank the recommendation on the full breakdown** — `recommend()` still
+  compares clouds on compute alone, while every other surface now quotes the
+  itemized total. Windows licensing varies enough between clouds to move the
+  ranking, so this is a behaviour change worth making deliberately
+- ◻ **Live storage pricing** — compute already supports `--live-pricing`; the
+  storage, licensing and load-balancer rates are hardcoded and dated Aug 2026
 - ◻ **User-adjustable scoring weights** — a cost-insensitive regulated estate
   weights fit/OS far higher than 0.45/0.30/0.25; exposing the weights invites it
 - ◻ **Key identity on `VM UUID`** — real RVTools rows carry a stable UUID; de-dup

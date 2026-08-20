@@ -123,6 +123,7 @@ normalize                rightsize             policy (org rules)    Pulumi
 assessment*              network               cost/budget (policy)  reports*
 recommendation*          → MigrationPlan       ─────────────         diagram*
 diff*                    confidence*           (all read-only)       package · GitOps
+costing*
 ```
 
 *Starred stages are **analysis** — they read, never write, the plan (next section).*
@@ -150,19 +151,21 @@ flowchart TD
     AS[assessment]
     CF[confidence]
     DF[diff]
+    CO[costing]
     ER[executive report]
     DG[diagram]
   end
   PLAN --> AS
   PLAN --> CF
   PLAN --> DF
+  PLAN --> CO
   PLAN --> ER
   PLAN --> DG
 ```
 
 **Decision engines** build the plan. **Analysis engines** (assessment,
-confidence, diff, executive report, diagram) only *read* it — they never mutate
-it. This is the enforced counterpart of design principle #1: because nothing
+confidence, diff, costing, executive report, diagram) only *read* it — they
+never mutate it. This is the enforced counterpart of design principle #1: because nothing
 after planning can change the plan, rendering is deterministic and every report
 describes exactly what gets deployed.
 

@@ -145,7 +145,6 @@ def test_budget_policy_gates_on_the_real_bill(realistic_vms):
     while the actual spend is $21,866.
     """
     from iactranslate.policy.base import Severity
-
     from iactranslate.policy.builtins import max_monthly_cost
 
     plan = _plan(realistic_vms, "aws")
