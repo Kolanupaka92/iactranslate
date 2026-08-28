@@ -65,6 +65,12 @@ from .audit import create_audit_log
 from .auth import require_api_key
 from .delivery import deliver_reset_link
 from .events import Event, EventBus, EventType
+from .idempotency import (
+    BodyMismatch,
+    Conflict,
+    IdempotencyStore,
+    read_key,
+)
 from .jobs import JobQueue
 from .metrics import Metrics
 from .ratelimit import limit_auth, limit_reads, limit_writes
@@ -105,6 +111,9 @@ metrics.attach(bus)
 # Who may do what on which project. Separate from the project store because
 # a grant belongs to neither the project nor the user alone (see roles.py).
 memberships = Membership()
+
+# Replay protection for retried writes (ADR 0051).
+idempotency = IdempotencyStore()
 
 _ALLOWED_SUFFIXES = {".xlsx", ".xls", ".xlsm", ".csv"}
 _NAME_RE = re.compile(r"^[A-Za-z0-9 ._-]{1,128}$")
@@ -148,6 +157,72 @@ class CreateProject(BaseModel):
         if not _NAME_RE.match(v):
             raise ValueError("name must be 1-128 chars of letters, digits, space, '.', '_', '-'")
         return v
+
+
+@app.middleware("http")
+async def _idempotency(request: Request, call_next):
+    """Replay a completed response when a write is retried with the same key.
+
+    Applies only to POST: GET and DELETE are already idempotent by definition,
+    and wrapping them would add a cache with no benefit. Only 2xx responses are
+    remembered — a caller retrying after a 500 wants another attempt, not the
+    500 played back for a day.
+    """
+    if request.method != "POST":
+        return await call_next(request)
+
+    try:
+        key = read_key(request.headers)
+    except ValueError as e:
+        return JSONResponse(status_code=400, content={"detail": str(e)})
+    if key is None:
+        return await call_next(request)
+
+    body = await request.body()
+    user_id = request.cookies.get(SESSION_COOKIE) or None
+    cache_key = IdempotencyStore.cache_key(user_id, request.method, request.url.path, key)
+
+    try:
+        existing = idempotency.begin(cache_key, IdempotencyStore.fingerprint(body))
+    except Conflict as e:
+        return JSONResponse(
+            status_code=409,
+            content={"detail": str(e)},
+            headers={"Retry-After": str(e.retry_after)},
+        )
+    except BodyMismatch as e:
+        return JSONResponse(status_code=422, content={"detail": str(e)})
+
+    if existing is not None:
+        logger.info("replayed idempotent request", extra={"http.route": request.url.path})
+        return Response(
+            content=existing.body,
+            status_code=existing.status or 200,
+            media_type=existing.media_type,
+            headers={"Idempotency-Replayed": "true"},
+        )
+
+    try:
+        response = await call_next(request)
+    except Exception:
+        idempotency.abandon(cache_key)
+        raise
+
+    chunks = [chunk async for chunk in response.body_iterator]
+    payload = b"".join(chunks)
+    if 200 <= response.status_code < 300:
+        idempotency.complete(
+            cache_key, response.status_code, payload,
+            response.media_type or "application/json",
+        )
+    else:
+        idempotency.abandon(cache_key)
+    return Response(
+        content=payload,
+        status_code=response.status_code,
+        headers=dict(response.headers),
+        media_type=response.media_type,
+    )
 
 
 @app.middleware("http")
@@ -504,28 +579,74 @@ def whoami(user: Optional[User] = Depends(current_user)) -> dict:
     return {"authenticated": True, "multi_tenant": True, "id": user.id, "email": user.email}
 
 
+#: Page size when the caller asks for one. The default is `MAX_PROJECTS` — the
+#: existing cap — so an existing client that sends no paging parameters gets
+#: exactly what it got before.
+MAX_PAGE = 200
+
+
+def _link_header(path: str, limit: int, offset: int, total: int) -> Optional[str]:
+    """RFC 8288 `Link` relations for the current page."""
+    links = []
+    if offset + limit < total:
+        links.append(f'<{path}?limit={limit}&offset={offset + limit}>; rel="next"')
+    if offset > 0:
+        links.append(f'<{path}?limit={limit}&offset={max(0, offset - limit)}>; rel="prev"')
+        links.append(f'<{path}?limit={limit}&offset=0>; rel="first"')
+    return ", ".join(links) or None
+
+
 @router.get("/projects", dependencies=[Depends(limit_reads)])
-def list_projects(user: Optional[User] = Depends(current_user)) -> list:
+def list_projects(
+    request: Request,
+    response: Response,
+    limit: int = MAX_PAGE,
+    offset: int = 0,
+    user: Optional[User] = Depends(current_user),
+) -> list:
     """Projects the caller owns, plus any shared with them.
 
     A grant the recipient cannot see is a grant that does not work: they would
     have to be told the project id out of band before they could use it.
+
+    **Paged via `Link` and `X-Total-Count` headers (RFC 8288), not an envelope.**
+    An envelope is more discoverable, and it was the first thing written here —
+    but it changes the response from an array to an object, which is a breaking
+    change, and both the `/v1` and legacy mounts share this handler. Shipping
+    that one commit after ADR 0049, whose whole argument was not breaking
+    clients, would have been incoherent. Headers give real pagination while an
+    existing caller that sends no parameters sees no change at all.
+
+    Offset rather than a cursor: this list is per-tenant and bounded by
+    `MAX_PROJECTS`. A cursor is the right answer once a list can shift under a
+    reader mid-page, and over-engineering at this size.
     """
+    if limit < 1 or limit > MAX_PAGE:
+        raise HTTPException(400, f"limit must be between 1 and {MAX_PAGE}")
+    if offset < 0:
+        raise HTTPException(400, "offset must not be negative")
+
     owned = store.list_for_owner(user.id if user else None)
     if user is None:
-        return [_summary(p) for p in owned]
+        rows = [_summary(p) for p in owned]
+    else:
+        rows = [{**_summary(p), "role": Role.ADMIN.value, "owner": True} for p in owned]
+        seen = {p.id for p in owned}
+        for pid in memberships.projects_for(user.id):
+            if pid in seen:
+                continue
+            project = store.get(pid)
+            if project is None:
+                continue  # granted then deleted; nothing to show
+            role = memberships.role_for(pid, user.id, project.owner_id)
+            rows.append({**_summary(project), "role": role.value if role else None,
+                         "owner": False})
 
-    out = [{**_summary(p), "role": Role.ADMIN.value, "owner": True} for p in owned]
-    seen = {p.id for p in owned}
-    for pid in memberships.projects_for(user.id):
-        if pid in seen:
-            continue
-        project = store.get(pid)
-        if project is None:
-            continue  # granted then deleted; nothing to show
-        role = memberships.role_for(pid, user.id, project.owner_id)
-        out.append({**_summary(project), "role": role.value if role else None, "owner": False})
-    return out
+    response.headers["X-Total-Count"] = str(len(rows))
+    link = _link_header(request.url.path, limit, offset, len(rows))
+    if link:
+        response.headers["Link"] = link
+    return rows[offset:offset + limit]
 
 
 @router.post("/projects", status_code=201, dependencies=[Depends(require_api_key), Depends(limit_writes)])
