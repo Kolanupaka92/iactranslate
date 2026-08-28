@@ -16,6 +16,7 @@ from jinja2 import Environment, FileSystemLoader, StrictUndefined
 from ..costing import estimate_costs
 from ..graph import EdgeKind, NodeKind, build_graph
 from ..models import ComputePlan, MigrationPlan, SubnetTier, terraform_safe_name
+from ..state import StateBackend, resolve_backend
 from ..targets.base import Target
 
 
@@ -123,7 +124,15 @@ def _compute_split(
     return list(grouped.items())
 
 
-def build_files(plan: MigrationPlan, target: Target) -> Dict[str, str]:
+def build_files(
+    plan: MigrationPlan,
+    target: Target,
+    state_backend: Optional[StateBackend] = None,
+) -> Dict[str, str]:
+    # Default is an explicit *local* backend, not a silent one: `versions.tf`
+    # renders a warning banner and the README explains the consequence. See
+    # ADR 0041 — the original defect was that local state was never mentioned.
+    state_backend = state_backend or resolve_backend(target.name)
     env = _env(target.template_dir)
     subnet_of = _assign_subnets(plan)
     sg_resource = _sg_resource_map(plan)
@@ -141,6 +150,8 @@ def build_files(plan: MigrationPlan, target: Target) -> Dict[str, str]:
         # itemized total instead (ADR 0039) — otherwise the generated README
         # contradicts the executive report shipped in the same bundle.
         "costs": _costs,
+        "state_backend": state_backend,
+        "state_backend_block": state_backend.terraform_block(),
         # Preformatted with thousands separators: Jinja's `format` filter is
         # printf-style, and "%.2f" rendered the estate total as "$21865.97".
         "cost_total_display": f"{_costs.total:,.2f}",
@@ -173,6 +184,12 @@ def build_files(plan: MigrationPlan, target: Target) -> Dict[str, str]:
         for suffix, subset in groups:
             name = filename[: -len(".tf")] if filename.endswith(".tf") else filename
             out[f"{name}-{suffix}.tf"] = template.render(**{**context, "compute": subset})
+    # A named-but-incomplete backend ships the file the operator fills in.
+    # `terraform init` fails without it, which is the intended behaviour: we
+    # cannot invent a customer's bucket name, and falling back to local state
+    # is precisely the defect this feature exists to remove.
+    if not state_backend.is_local and not state_backend.is_complete:
+        out["backend.hcl.example"] = state_backend.example_hcl()
     # Drop files that rendered empty — e.g. imports.tf when there are no
     # brownfield resource ids to adopt.
     return {name: content for name, content in out.items() if content.strip()}

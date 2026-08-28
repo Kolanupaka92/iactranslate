@@ -17,6 +17,7 @@ from .graph import build_graph
 from .models import MigrationPlan, NormalizedVM
 from .renderers import render
 from .replatform import analyze_replatforming
+from .state import StateBackend
 from .targets.base import Target
 from .waves import plan_waves
 
@@ -142,6 +143,7 @@ def build_project(
     renderer: str = "terraform",
     gitops: bool = False,
     policy_result=None,
+    state_backend: Optional[StateBackend] = None,
 ) -> Path:
     """Write the full project tree to `out_dir` and return its path.
 
@@ -153,7 +155,7 @@ def build_project(
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
 
-    files: Dict[str, str] = render(renderer, plan, target)
+    files: Dict[str, str] = render(renderer, plan, target, state_backend)
     if gitops:
         files.update(gitops_files(plan, renderer))
     for filename, content in files.items():

@@ -29,6 +29,7 @@ from .packager import build_project, zip_project
 from .policy import PolicyResult, PolicyViolationError, evaluate
 from .pricing import live_enabled
 from .sources import resolve_source
+from .state import StateBackend
 from .targets import get_target
 from .validation import assert_valid
 
@@ -70,6 +71,7 @@ def run_pipeline(
     renderer: str = "terraform",
     gitops: bool = False,
     policy_config: Optional[Dict] = None,
+    state_backend: Optional[StateBackend] = None,
 ) -> PipelineResult:
     timings: List[StageTiming] = []
 
@@ -134,7 +136,7 @@ def run_pipeline(
     with stage("package"):
         project_dir = build_project(
             plan, out_dir, tgt, vms=vms, renderer=renderer, gitops=gitops,
-            policy_result=policy_result,
+            policy_result=policy_result, state_backend=state_backend,
         )
 
     zip_path = None

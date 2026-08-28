@@ -48,5 +48,6 @@ Format: [Michael Nygard's ADR template](https://cognitect.com/blog/2011/11/15/do
 | [0038](0038-a-cloud-that-cannot-run-the-estate-is-not-a-candidate.md) | A cloud that cannot run the estate is not a candidate: truthful `image_key`, OS-family flags, eligibility gate | Accepted |
 | [0039](0039-cost-the-whole-bill-not-just-the-instances.md) | Cost the whole bill — storage, Windows licensing and load balancers, not just instances | Accepted |
 | [0040](0040-structured-logging-and-request-correlation.md) | Structured JSON logging and request correlation, OTel field names without the SDK | Accepted |
+| [0041](0041-remote-state-backends-in-generated-terraform.md) | Remote state backends in generated Terraform; local state stated, never silent | Accepted |
 
 See also the [Architecture & Design](../architecture.md) overview.

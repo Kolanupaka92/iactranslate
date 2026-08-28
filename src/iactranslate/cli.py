@@ -23,8 +23,26 @@ from .policy import PolicyViolationError, UnknownPolicyError, load_policy_config
 from .recommend import recommend
 from .renderers import UnknownRendererError, list_renderers
 from .sources import UnknownSourceError, list_sources, resolve_source
+from .state import SUPPORTED as SUPPORTED_BACKENDS
+from .state import resolve_backend
 from .targets import UnknownTargetError, get_target, list_targets
 from .validation import PlanValidationError
+
+
+def _parse_kv(raw):
+    """`k=v,k2=v2` -> dict. Values may contain '=' (a state key can be a path)."""
+    if not raw:
+        return {}
+    out = {}
+    for part in raw.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if "=" not in part:
+            raise ValueError(f"expected key=value, got '{part}'")
+        key, value = part.split("=", 1)
+        out[key.strip()] = value.strip()
+    return out
 
 
 def _parse_column_map(raw: Optional[str]) -> Optional[Dict[str, str]]:
@@ -69,6 +87,11 @@ def _cmd_translate(args: argparse.Namespace) -> int:
             renderer=args.renderer,
             gitops=args.gitops,
             policy_config=policy_config,
+            state_backend=resolve_backend(
+                args.target,
+                getattr(args, "state_backend", None),
+                _parse_kv(getattr(args, "state_config", None)),
+            ),
         )
     except (UnknownTargetError, UnknownSourceError, UnknownRendererError, UnknownPolicyError) as e:
         print(f"error: {e}", file=sys.stderr)
@@ -297,6 +320,14 @@ def build_parser() -> argparse.ArgumentParser:
                         "Kubernetes (KubeVirt) works for any target.")
     t.add_argument("--gitops", action="store_true",
                    help="Include a GitOps CI/CD workflow (plan on PR, apply on merge) + .gitignore.")
+    t.add_argument("--state-backend", default=None, metavar="KIND",
+                   help="Terraform remote state backend: 'auto' for the target cloud's native "
+                        f"backend, or one of {', '.join(SUPPORTED_BACKENDS)}. Omitted means local "
+                        "state, which cannot be shared or locked — the generated files say so.")
+    t.add_argument("--state-config", default=None, metavar="K=V,...",
+                   help="Backend settings, e.g. 'bucket=acme-tfstate,key=prod.tfstate,"
+                        "region=us-east-1'. Anything missing is left for "
+                        "`terraform init -backend-config=backend.hcl`.")
     t.add_argument("--policy", default=None,
                    help="Path to a JSON policy config; `deny` violations abort, `warn` are reported.")
     t.add_argument("--provider", default=None, choices=("rule", "anthropic"),

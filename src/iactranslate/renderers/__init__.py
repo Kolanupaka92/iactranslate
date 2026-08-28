@@ -8,10 +8,11 @@ last, swappable step.
 """
 from __future__ import annotations
 
-from typing import Callable, Dict, List
+from typing import Callable, Dict, List, Optional
 
 from ..generator import build_files as _build_terraform
 from ..models import MigrationPlan
+from ..state import StateBackend
 from ..targets.base import Target
 from .bicep import build_bicep_files as _build_bicep
 from .cdk import build_cdk_files as _build_cdk
@@ -38,13 +39,27 @@ def list_renderers() -> List[str]:
     return list(_RENDERERS)
 
 
-def render(name: str, plan: MigrationPlan, target: Target) -> Dict[str, str]:
+def render(
+    name: str,
+    plan: MigrationPlan,
+    target: Target,
+    state_backend: Optional[StateBackend] = None,
+) -> Dict[str, str]:
+    """Render the plan with `name`.
+
+    `state_backend` is Terraform-only and deliberately not forwarded elsewhere:
+    Pulumi keeps state in its own service or a self-managed backend, and
+    CloudFormation/Bicep/CDK have no client-side state at all. Passing it to
+    them would imply a control they do not have.
+    """
     try:
         fn: Callable = _RENDERERS[name][0]
     except KeyError as e:
         raise UnknownRendererError(
             f"renderer '{name}' not supported (available: {', '.join(_RENDERERS)})"
         ) from e
+    if name == "terraform":
+        return fn(plan, target, state_backend)
     return fn(plan, target)
 
 
