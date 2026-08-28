@@ -156,7 +156,7 @@ jobs:
         run: docker build -t iactranslate:scan .
 
       - name: Scan image for OS and library CVEs
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: iactranslate:scan
           format: sarif
@@ -174,7 +174,7 @@ jobs:
       - name: Fail on fixable CRITICAL/HIGH findings
         # Reported to the Security tab above *and* enforced here — a report
         # nobody is required to read is not a control.
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: iactranslate:scan
           format: table
