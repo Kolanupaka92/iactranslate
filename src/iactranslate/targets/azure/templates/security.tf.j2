@@ -19,9 +19,9 @@ resource "azurerm_network_security_group" "{{ sg.resource_name }}" {
   }
 
 {% endfor %}
-  tags = {
+  tags = merge(local.common_tags, {
     Project = var.project_name
-  }
+  })
 }
 
 {% endfor %}

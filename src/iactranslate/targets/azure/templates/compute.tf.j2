@@ -10,9 +10,9 @@ resource "azurerm_public_ip" "{{ c.resource_name }}" {
   allocation_method   = "Static"
   sku                 = "Standard"
 
-  tags = {
+  tags = merge(local.common_tags, {
     SourceVM = "{{ c.vm_name }}"
-  }
+  })
 }
 
 {% endif %}
@@ -30,9 +30,9 @@ resource "azurerm_network_interface" "{{ c.resource_name }}" {
 {% endif %}
   }
 
-  tags = {
+  tags = merge(local.common_tags, {
     SourceVM = "{{ c.vm_name }}"
-  }
+  })
 }
 
 resource "azurerm_network_interface_security_group_association" "{{ c.resource_name }}" {
@@ -72,12 +72,12 @@ resource "azurerm_windows_virtual_machine" "{{ c.resource_name }}" {
     version   = "latest"
   }
 
-  tags = {
+  tags = merge(local.common_tags, {
     Name        = "{{ c.vm_name }}"
     Tier        = "{{ c.tier.value }}"
     Environment = "{{ c.environment.value }}"
     SourceVM    = "{{ c.vm_name }}"
-  }
+  })
 }
 {% else %}
 resource "azurerm_linux_virtual_machine" "{{ c.resource_name }}" {
@@ -106,12 +106,12 @@ resource "azurerm_linux_virtual_machine" "{{ c.resource_name }}" {
     version   = "latest"
   }
 
-  tags = {
+  tags = merge(local.common_tags, {
     Name        = "{{ c.vm_name }}"
     Tier        = "{{ c.tier.value }}"
     Environment = "{{ c.environment.value }}"
     SourceVM    = "{{ c.vm_name }}"
-  }
+  })
 }
 {% endif %}
 

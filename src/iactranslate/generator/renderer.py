@@ -15,6 +15,7 @@ from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 from ..costing import estimate_costs
 from ..graph import EdgeKind, NodeKind, build_graph
+from ..landing_zone import LandingZone, gcp_labels
 from ..models import ComputePlan, MigrationPlan, SubnetTier, terraform_safe_name
 from ..state import StateBackend, resolve_backend
 from ..targets.base import Target
@@ -136,6 +137,7 @@ def build_files(
     plan: MigrationPlan,
     target: Target,
     state_backend: Optional[StateBackend] = None,
+    zone: Optional[LandingZone] = None,
 ) -> Dict[str, str]:
     # Default is an explicit *local* backend, not a silent one: `versions.tf`
     # renders a warning banner and the README explains the consequence. See
@@ -151,6 +153,7 @@ def build_files(
         for key in _image_keys(plan.compute)
     }
     _costs = estimate_costs(plan)
+    _mandated = dict((zone or LandingZone()).tags)
     context = {
         "plan": plan,
         # `plan.total_estimated_monthly_cost_usd` is compute only. Templates
@@ -159,6 +162,12 @@ def build_files(
         # contradicts the executive report shipped in the same bundle.
         "costs": _costs,
         "state_backend": state_backend,
+        # Tags mandated by the customer's governance. Applied at the provider on
+        # AWS/GCP, via a locals block on Azure/OCI, and as tag resources on
+        # DigitalOcean — see ADR 0045.
+        "mandated_tags": _mandated,
+        "gcp_labels": gcp_labels(_mandated),
+        "mandated_do_tags": (zone or LandingZone()).do_tags(),
         "state_backend_block": state_backend.terraform_block(),
         # Preformatted with thousands separators: Jinja's `format` filter is
         # printf-style, and "%.2f" rendered the estate total as "$21865.97".

@@ -172,4 +172,15 @@ def test_digitalocean_tags_are_encoded_as_strings_not_dropped():
     """DO tags are a flat list; silently dropping mandated tags on one cloud is
     exactly the quiet divergence this tool exists to avoid."""
     zone = LandingZone(tags={"CostCenter": "CC-4417", "Owner": "platform team"})
-    assert zone.do_tags() == ["CostCenter:CC-4417", "Owner:platform_team"]
+    assert zone.do_tags() == ["costcenter:cc-4417", "owner:platform-team"]
+
+
+def test_digitalocean_tags_obey_the_api_charset():
+    """`tofu validate` rejects anything outside [a-z0-9:_-] — caught in review
+    on `Owner:platform@acme.com`."""
+    import re
+
+    zone = LandingZone(tags={"Owner": "platform@acme.com", "Cost.Center": "CC/4417"})
+    for tag in zone.do_tags():
+        assert re.fullmatch(r"[a-z0-9:_-]+", tag), tag
+        assert len(tag) <= 255

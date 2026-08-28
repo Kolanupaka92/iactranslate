@@ -138,7 +138,7 @@ def run_pipeline(
     with stage("package"):
         project_dir = build_project(
             plan, out_dir, tgt, vms=vms, renderer=renderer, gitops=gitops,
-            policy_result=policy_result, state_backend=state_backend,
+            policy_result=policy_result, state_backend=state_backend, zone=zone,
         )
 
     zip_path = None

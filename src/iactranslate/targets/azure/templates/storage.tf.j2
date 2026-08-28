@@ -9,9 +9,9 @@ resource "azurerm_managed_disk" "{{ v.resource_name }}" {
   create_option        = "Empty"
   disk_size_gb         = {{ v.size }}
 
-  tags = {
+  tags = merge(local.common_tags, {
     SourceVM = "{{ v.vm_name }}"
-  }
+  })
 }
 
 resource "azurerm_virtual_machine_data_disk_attachment" "{{ v.resource_name }}" {

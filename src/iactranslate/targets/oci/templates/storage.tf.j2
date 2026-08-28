@@ -7,9 +7,9 @@ resource "oci_core_volume" "{{ v.resource_name }}" {
   display_name        = "{{ v.vm_name }}-data-{{ v.lun }}"
   size_in_gbs          = {{ v.size }}
 
-  freeform_tags = {
+  freeform_tags = merge(local.common_tags, {
     SourceVM = "{{ v.vm_name }}"
-  }
+  })
 }
 
 resource "oci_core_volume_attachment" "{{ v.resource_name }}" {

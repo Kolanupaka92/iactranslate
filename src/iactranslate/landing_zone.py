@@ -44,6 +44,8 @@ SUBNET_PREFIX = 24
 #: at configuration time beats a provider error thousands of resources later.
 _TAG_KEY_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_.:/=+\-@]{0,127}$")
 _PREFIX_RE = re.compile(r"^[A-Za-z][A-Za-z0-9-]{0,31}$")
+#: DigitalOcean tag charset — enforced by the API, not just convention.
+_DO_TAG_RE = re.compile(r"[^a-z0-9:_-]+")
 
 
 class LandingZoneError(ValueError):
@@ -101,8 +103,17 @@ class LandingZone:
         `key:value` is DigitalOcean's own documented convention for encoding
         structure into them. Silently dropping mandated tags on one cloud would
         be exactly the kind of quiet divergence this tool exists to avoid.
+
+        DigitalOcean accepts only lowercase letters, digits, colons, dashes and
+        underscores — `tofu validate` rejects anything else outright, which is
+        how `Owner:platform@acme.com` was caught. Everything outside that set is
+        folded to a dash rather than dropped, so the tag still identifies its
+        key.
         """
-        return [f"{k}:{v}".replace(" ", "_") for k, v in sorted(self.tags.items())]
+        return [
+            _DO_TAG_RE.sub("-", f"{k}:{v}".lower()).strip("-")[:255]
+            for k, v in sorted(self.tags.items())
+        ]
 
 
 def carve_subnets(cidr: str, count_per_tier: int) -> Tuple[List[str], List[str]]:
@@ -139,3 +150,26 @@ def merge_tags(zone: Optional[LandingZone], project: str) -> Dict[str, str]:
     base = {"Project": project, "ManagedBy": "IaCTranslate"}
     base.update(zone.tags if zone else {})
     return base
+
+
+_GCP_LABEL_RE = re.compile(r"[^a-z0-9_-]+")
+
+
+def gcp_labels(tags: Dict[str, str]) -> Dict[str, str]:
+    """Mandated tags as GCP labels.
+
+    GCP labels are far stricter than tags elsewhere: lowercase letters, digits,
+    hyphens and underscores only, and they must start with a letter. Normalising
+    rather than dropping keeps the governance intent — a `CostCenter` tag that
+    silently vanished on one cloud is exactly the quiet divergence this tool
+    exists to avoid — while making it visible in the output that a rename
+    happened.
+    """
+    out: Dict[str, str] = {}
+    for key, value in sorted(tags.items()):
+        clean = _GCP_LABEL_RE.sub("-", key.lower()).strip("-")
+        if clean and not clean[0].isalpha():
+            clean = f"k-{clean}"
+        if clean:
+            out[clean[:63]] = _GCP_LABEL_RE.sub("-", value.lower()).strip("-")[:63]
+    return out

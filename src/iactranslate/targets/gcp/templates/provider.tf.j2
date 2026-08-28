@@ -3,4 +3,15 @@ provider "google" {
   project = var.gcp_project
   region  = var.region
   zone    = var.zone
+
+{% if gcp_labels %}
+  # GCP labels are stricter than tags elsewhere: lowercase letters, digits,
+  # hyphens and underscores only. Mandated tag keys are normalised to fit rather
+  # than dropped, so the governance intent survives the rename.
+  default_labels = {
+{% for key, value in gcp_labels.items() %}
+    {{ "%-12s"|format(key) }} = "{{ value }}"
+{% endfor %}
+  }
+{% endif %}
 }

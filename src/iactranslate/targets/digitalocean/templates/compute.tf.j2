@@ -18,6 +18,9 @@ resource "digitalocean_droplet" "{{ c.resource_name }}" {
   vpc_uuid = digitalocean_vpc.main.id
   tags     = [
     digitalocean_tag.{{ sg_resource[c.security_group] }}.name,
+{% for tag in mandated_do_tags %}
+    digitalocean_tag.mandated_{{ loop.index }}.name,
+{% endfor %}
 {% if c.vm_name in fronted_vm_names %}
     digitalocean_tag.{{ lb_resource_of[c.vm_name] }}_lb.name,
 {% endif %}

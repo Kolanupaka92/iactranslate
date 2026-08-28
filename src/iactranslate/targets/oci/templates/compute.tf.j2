@@ -37,11 +37,11 @@ resource "oci_core_instance" "{{ c.resource_name }}" {
   }
 {% endif %}
 
-  freeform_tags = {
+  freeform_tags = merge(local.common_tags, {
     Tier        = "{{ c.tier.value }}"
     Environment = "{{ c.environment.value }}"
     SourceVM    = "{{ c.vm_name }}"
-  }
+  })
 }
 
 {% endfor %}

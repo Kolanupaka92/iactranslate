@@ -2,10 +2,17 @@
 provider "aws" {
   region = var.region
 
+  # `default_tags` applies to every taggable resource the provider creates, so
+  # tags mandated by an SCP or tag policy cannot be missed on one resource type.
+  # A governed account rejecting `RunInstances` for a missing CostCenter is the
+  # single most common way a generated plan fails on apply.
   default_tags {
     tags = {
       Project   = var.project_name
       ManagedBy = "IaCTranslate"
+{% for key, value in mandated_tags.items() %}
+      {{ "%-9s"|format(key) }} = "{{ value }}"
+{% endfor %}
     }
   }
 }
