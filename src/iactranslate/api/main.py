@@ -21,6 +21,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -38,6 +39,7 @@ from ..config import MAX_UPLOAD_BYTES, cors_origins
 from ..costing import estimate_costs
 from ..exec_report import build_executive_report
 from ..normalize import normalize
+from ..observability import configure_logging, correlation_id, get_logger, new_correlation_id
 from ..pipeline import run_pipeline
 from ..policy import PolicyViolationError, list_policies
 from ..recommend import recommend
@@ -60,7 +62,12 @@ from .metrics import Metrics
 from .ratelimit import limit_auth, limit_reads, limit_writes
 from .store import Project, create_store
 
-logger = logging.getLogger("iactranslate.api")
+logger = get_logger("iactranslate.api")
+
+# Install the JSON handler once, at import of the app module. Doing it here
+# rather than in `iactranslate/__init__` keeps library importers free of our
+# logging config (see observability.configure_logging).
+configure_logging()
 
 app = FastAPI(title="IaCTranslate", version="0.1.0")
 store = create_store()
@@ -117,6 +124,56 @@ class CreateProject(BaseModel):
         if not _NAME_RE.match(v):
             raise ValueError("name must be 1-128 chars of letters, digits, space, '.', '_', '-'")
         return v
+
+
+@app.middleware("http")
+async def _correlate(request: Request, call_next):
+    """Give every request an id, and log its outcome exactly once.
+
+    An inbound `X-Request-Id` is honoured so a trace started at the load
+    balancer or the web app stays one trace through this service; otherwise we
+    mint one. It is echoed back on the response so a user reporting a problem
+    can quote the id from their browser's network tab, and every log record
+    emitted while handling the request carries it automatically.
+
+    The id is accepted only as an opaque token and truncated: it is attacker
+    -controlled input that lands in log files, and unbounded values are a log
+    -injection and log-volume problem.
+    """
+    incoming = request.headers.get("X-Request-Id", "").strip()
+    cid = "".join(c for c in incoming if c.isalnum() or c in "-_")[:64] or new_correlation_id()
+    token = correlation_id.set(cid)
+    started = time.perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception:
+        logger.exception(
+            "request failed",
+            extra={
+                "http.method": request.method,
+                "http.route": request.url.path,
+                "duration_ms": round((time.perf_counter() - started) * 1000, 2),
+            },
+        )
+        correlation_id.reset(token)
+        raise
+    duration = round((time.perf_counter() - started) * 1000, 2)
+    response.headers["X-Request-Id"] = cid
+    # /health and /metrics are polled continuously by probes and scrapers;
+    # logging them at INFO would bury real traffic in heartbeat noise.
+    noisy = request.url.path in ("/health", "/metrics")
+    logger.log(
+        logging.DEBUG if noisy else logging.INFO,
+        "request",
+        extra={
+            "http.method": request.method,
+            "http.route": request.url.path,
+            "http.status_code": response.status_code,
+            "duration_ms": duration,
+        },
+    )
+    correlation_id.reset(token)
+    return response
 
 
 @app.middleware("http")

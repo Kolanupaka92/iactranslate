@@ -11,6 +11,7 @@ is the seam, not the durable store — see docs/deployment.md.)
 """
 from __future__ import annotations
 
+import contextvars
 import threading
 import time
 import uuid
@@ -72,7 +73,13 @@ class JobQueue:
             self._order.append(job.id)
             self._evict_locked()
         self._bus.publish(Event(EventType.JOB_QUEUED, project_id=project_id, job_id=job.id))
-        self._executor.submit(self._run, job, work)
+        # Carry the caller's context (notably the correlation id) onto the
+        # worker thread. `ThreadPoolExecutor` does *not* inherit ContextVars, so
+        # without this copy an async translation logs under a blank trace id and
+        # the request that queued it can never be tied to the run that did the
+        # work — exactly the gap async jobs make hardest to debug.
+        ctx = contextvars.copy_context()
+        self._executor.submit(ctx.run, self._run, job, work)
         return job
 
     def get(self, job_id: str) -> Optional[Job]:

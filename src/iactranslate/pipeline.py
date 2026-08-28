@@ -11,7 +11,6 @@ function that records where its time goes.
 from __future__ import annotations
 
 import json
-import logging
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -25,6 +24,7 @@ from .agents.base import LLMProvider
 from .config import MAX_VMS
 from .models import MigrationPlan, NormalizedVM
 from .normalize import normalize
+from .observability import get_logger
 from .packager import build_project, zip_project
 from .policy import PolicyResult, PolicyViolationError, evaluate
 from .pricing import live_enabled
@@ -32,7 +32,7 @@ from .sources import resolve_source
 from .targets import get_target
 from .validation import assert_valid
 
-logger = logging.getLogger("iactranslate.pipeline")
+logger = get_logger("iactranslate.pipeline")
 
 
 class StageTiming(BaseModel):
@@ -75,9 +75,32 @@ def run_pipeline(
 
     @contextmanager
     def stage(name: str):
+        """Time a stage, logging it, and record the timing even when it fails.
+
+        The `finally` matters: previously a stage that raised appended no
+        timing at all, so the trace of a failed run stopped silently at the
+        last stage that *succeeded* and said nothing about the one that broke —
+        losing exactly the datum you want when a translation blows up on a
+        customer's export.
+        """
         t0 = time.perf_counter()
-        yield
-        timings.append(StageTiming(stage=name, duration_ms=round((time.perf_counter() - t0) * 1000, 3)))
+        try:
+            yield
+        except Exception as exc:
+            elapsed = round((time.perf_counter() - t0) * 1000, 3)
+            timings.append(StageTiming(stage=name, duration_ms=elapsed))
+            logger.error(
+                "stage %s failed", name,
+                extra={"stage": name, "duration_ms": elapsed,
+                       "outcome": "error", "error_type": type(exc).__name__},
+            )
+            raise
+        elapsed = round((time.perf_counter() - t0) * 1000, 3)
+        timings.append(StageTiming(stage=name, duration_ms=elapsed))
+        logger.debug(
+            "stage %s", name,
+            extra={"stage": name, "duration_ms": elapsed, "outcome": "ok"},
+        )
 
     tgt = get_target(target)  # raises UnknownTargetError for bad target
     src = resolve_source(input_path, source)  # auto-detect unless named
@@ -122,9 +145,17 @@ def run_pipeline(
     trace = PipelineTrace(stages=timings, total_ms=round(sum(t.duration_ms for t in timings), 3))
     # Structured, per-stage observability line + a machine-readable trace artifact.
     logger.info(
-        "pipeline complete: %s workloads, %.1f ms total (%s)",
-        len(vms), trace.total_ms,
-        ", ".join(f"{t.stage}={t.duration_ms:.1f}ms" for t in trace.stages),
+        "pipeline complete",
+        extra={
+            "vm_count": len(vms),
+            "duration_ms": trace.total_ms,
+            "target": tgt.name,
+            "source": src.name,
+            "renderer": renderer,
+            "region": plan.region,
+            "provider_used": plan.provider_used,
+            "stages": {t.stage: t.duration_ms for t in trace.stages},
+        },
     )
     (project_dir / "pipeline-trace.json").write_text(
         json.dumps(trace.model_dump(mode="json"), indent=2)
