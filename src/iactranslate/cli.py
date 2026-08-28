@@ -27,7 +27,9 @@ from .sources import UnknownSourceError, list_sources, resolve_source
 from .state import SUPPORTED as SUPPORTED_BACKENDS
 from .state import resolve_backend
 from .targets import UnknownTargetError, get_target, list_targets
+from .transfer import DEFAULT_LINK_SHARE, estimate_transfer
 from .validation import PlanValidationError
+from .waves import plan_waves
 
 
 def _parse_kv(raw):
@@ -266,6 +268,64 @@ def _load_inventory(path: str, source: str, column_map: Optional[str]):
     return normalize(src.parse(path, column_map=_parse_column_map(column_map)))
 
 
+def _cmd_transfer(args: argparse.Namespace) -> int:
+    """How long the data takes to move, and whether it fits the cutover window."""
+    try:
+        src = resolve_source(args.input, args.source)
+        vms = normalize(src.parse(args.input, column_map=_parse_column_map(args.map)))
+    except UnknownSourceError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+    except FileNotFoundError:
+        print(f"error: input file not found: {args.input}", file=sys.stderr)
+        return 2
+    if not vms:
+        print(f"error: no workloads found in {args.input}", file=sys.stderr)
+        return 2
+
+    try:
+        target = get_target(args.target)
+    except UnknownTargetError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+
+    plan = build_migration_plan(vms, project_name=args.name or Path(args.input).stem, target=target)
+    waves = plan_waves(plan)
+    est = estimate_transfer(
+        plan,
+        link_mbps=args.link_mbps,
+        link_share=args.link_share,
+        cutover_window_hours=args.window_hours,
+        waves=waves,
+    )
+
+    if args.json:
+        print(json.dumps(est.model_dump(mode="json"), indent=2))
+        return 0
+
+    print(f"Data to move:  {est.total_gib:,.0f} GiB ({est.total_tib:,.2f} TiB)")
+    print(f"Link:          {est.link_mbps:,.0f} Mbps nominal, "
+          f"{est.effective_mbps:,.0f} Mbps effective ({est.link_share:.0%} share)")
+    print(f"Elapsed:       {est.total_hours:,.1f} hours ({est.total_days:,.1f} days)")
+    if est.waves:
+        window = f", {args.window_hours:g}h window" if args.window_hours else ""
+        print(f"\nBy wave{window}:")
+        print(f"  {'#':>2}  {'WAVE':34} {'WL':>3}  {'GiB':>9}  {'HOURS':>8}")
+        print("  " + "-" * 62)
+        for w in est.waves:
+            flag = "" if w.fits_window else "  EXCEEDS"
+            print(f"  {w.sequence:>2}  {w.name[:34]:34} {w.workload_count:>3}  "
+                  f"{w.gib:>9,.0f}  {w.hours:>8,.1f}{flag}")
+    if est.warnings:
+        print()
+        for warning in est.warnings:
+            print(f"  ! {warning}")
+    print("\nAssumptions:")
+    for line in est.assumptions:
+        print(f"  - {line}")
+    return 0
+
+
 def _cmd_diff(args: argparse.Namespace) -> int:
     try:
         before = _load_inventory(args.before, args.source, args.map)
@@ -381,6 +441,25 @@ def build_parser() -> argparse.ArgumentParser:
     rp.add_argument("--no-recommend", action="store_true", help="Skip the 3-cloud recommendation section.")
     rp.add_argument("--out", default="executive-report.html", help="Output HTML path.")
     rp.set_defaults(func=_cmd_report)
+
+    tr = sub.add_parser(
+        "transfer",
+        help="Estimate data-transfer time and whether each wave fits the cutover window.",
+    )
+    tr.add_argument("input", help="Path to an inventory export (.xlsx/.csv).")
+    tr.add_argument("--target", default="aws", help=f"Target cloud ({', '.join(list_targets())}).")
+    tr.add_argument("--source", default="auto", help=src_help)
+    tr.add_argument("--map", default=None, help=map_help)
+    tr.add_argument("--name", default=None, help="Project name (defaults to input filename).")
+    tr.add_argument("--link-mbps", type=float, default=1000.0,
+                    help="Nominal bandwidth of the link to the cloud, in Mbps (default 1000).")
+    tr.add_argument("--link-share", type=float, default=DEFAULT_LINK_SHARE,
+                    help="Fraction of the link the migration may use, 0-1 (default 0.5). "
+                         "Migration traffic shares the link with production.")
+    tr.add_argument("--window-hours", type=float, default=None,
+                    help="Cutover window in hours. Waves that will not fit are flagged.")
+    tr.add_argument("--json", action="store_true", help="Emit the estimate as JSON.")
+    tr.set_defaults(func=_cmd_transfer)
 
     d = sub.add_parser("diff", help="Compare two inventory snapshots (drift detection).")
     d.add_argument("before", help="Earlier inventory export (.xlsx/.csv).")
