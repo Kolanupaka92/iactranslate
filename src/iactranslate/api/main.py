@@ -73,7 +73,7 @@ from .idempotency import (
     IdempotencyStore,
     read_key,
 )
-from .jobs import JobQueue
+from .jobs_sqlite import create_job_queue
 from .metrics import Metrics
 from .ratelimit import limit_auth, limit_reads, limit_writes
 from .roles import Membership, Role, at_least, parse_role
@@ -104,7 +104,10 @@ accounts = create_account_store()  # None unless IACTRANSLATE_AUTH=session
 # Runtime orchestration layer (single-node realization; swap for Redis/Celery +
 # Postgres in production — same interfaces). The pipeline stays a pure function.
 bus = EventBus()
-jobs = JobQueue(bus)
+# Durable when IACTRANSLATE_STORE=sqlite, in-memory otherwise. Handlers are
+# registered before the workers start: a durable queue whose workers race
+# registration would dead-letter surviving jobs on every restart (ADR 0053).
+jobs = create_job_queue(bus)
 audit = create_audit_log()
 audit.attach(bus)
 metrics = Metrics()
@@ -859,6 +862,23 @@ def run(pid: str, user: Optional[User] = Depends(current_user)) -> dict:
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
     return _summary(project)
+
+
+def _run_project_job(project_id: str) -> None:
+    """Durable-queue entry point: look the project up, then run it.
+
+    The queue stores a project id rather than a closure, so the work has to be
+    re-resolved from the store on whichever process picks it up — possibly a
+    different one from the process that accepted the request.
+    """
+    project = store.get(project_id)
+    if project is None:
+        raise RuntimeError(f"project {project_id} no longer exists")
+    _execute_run(project)
+
+
+jobs.register("run", _run_project_job)
+jobs.start()
 
 
 @router.post("/projects/{pid}/jobs", status_code=202, dependencies=[Depends(require_api_key), Depends(limit_writes)])

@@ -60,5 +60,6 @@ Format: [Michael Nygard's ADR template](https://cognitect.com/blog/2011/11/15/do
 | [0050](0050-project-roles.md) | Ordered project roles (viewer/editor/approver/admin); 404 absent, 403 insufficient | Accepted |
 | [0051](0051-idempotent-writes-and-paged-lists.md) | Idempotency-Key replay protection; paging via Link headers to avoid a breaking change | Accepted |
 | [0052](0052-pdf-output-for-every-report.md) | PDF for every report: a shared print stylesheet always, WeasyPrint optionally | Accepted |
+| [0053](0053-durable-job-queue.md) | A SQLite job queue that survives restart, with leases, backoff and dead letters | Accepted |
 
 See also the [Architecture & Design](../architecture.md) overview.
