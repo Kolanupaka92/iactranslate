@@ -205,3 +205,23 @@ def test_uploaded_inventory_is_encrypted_at_rest_and_still_usable(key, tmp_path,
     finally:
         monkeypatch.undo()
         importlib.reload(api_main)
+
+
+def test_the_upload_handler_does_not_encrypt_on_the_event_loop():
+    """`upload` is the one `async def` route handler — correctly, since it awaits
+    `file.read()`. Encrypting and writing 25 MB inside it stalled every other
+    request for 14-70 ms, measured at the MAX_UPLOAD_BYTES ceiling.
+
+    Non-async handlers are already run in a threadpool by FastAPI, which is why
+    the rest of the API does not have this problem — and why sync handlers are
+    the right choice for the CPU-bound pipeline work, not the defect an earlier
+    review called them.
+    """
+    import inspect
+
+    from iactranslate.api import main as api_main
+
+    source = inspect.getsource(api_main.upload)
+    assert "run_in_threadpool(write_file" in source, (
+        "the encrypt-and-write must stay off the event loop"
+    )

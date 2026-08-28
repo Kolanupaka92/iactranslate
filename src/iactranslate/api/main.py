@@ -31,6 +31,7 @@ from fastapi import APIRouter, Depends, FastAPI, HTTPException, Response, Upload
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 from pydantic import BaseModel, field_validator
+from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 
 from ..agents import build_migration_plan
@@ -757,7 +758,14 @@ async def upload(pid: str, file: UploadFile, user: Optional[User] = Depends(curr
             if total > MAX_UPLOAD_BYTES:
                 raise HTTPException(413, f"file exceeds the {MAX_UPLOAD_BYTES // (1024 * 1024)} MB limit")
             chunks.append(chunk)
-        write_file(dest, b"".join(chunks))
+        # Off the event loop. This is the one route handler that is `async def`
+        # — correctly, because it awaits `file.read()` — and encrypting plus
+        # writing 25 MB inside it stalls every other request for 14-70 ms
+        # (measured at the MAX_UPLOAD_BYTES ceiling). Non-async handlers are
+        # already run in a threadpool by FastAPI, which is why they do not have
+        # this problem and why sync handlers are the right choice for the
+        # CPU-bound pipeline work elsewhere.
+        await run_in_threadpool(write_file, dest, b"".join(chunks))
     except HTTPException:
         dest.unlink(missing_ok=True)
         raise
