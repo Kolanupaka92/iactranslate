@@ -16,10 +16,11 @@ Token bucket rather than a fixed window: a fixed window lets a caller spend its
 whole quota in the last second of one window and again in the first second of
 the next, giving 2x the intended burst across the boundary.
 
-**Honest boundary:** buckets live in this process's memory. Two API replicas
-therefore allow roughly twice the configured rate, and a restart forgets all
-counters. Correct enforcement across replicas needs shared state (Redis) —
-this is a real limit for a single node, not a distributed rate limiter.
+**Across replicas:** set `IACTRANSLATE_REDIS_URL` and buckets are shared, so
+the limit holds no matter which replica a request lands on. Without it, buckets
+live in this process's memory — two replicas then allow roughly twice the
+configured rate and a restart forgets all counters, which is correct enough for
+a single node and *not* a distributed rate limiter. See `ratelimit_redis`.
 """
 from __future__ import annotations
 
@@ -27,14 +28,30 @@ import os
 import threading
 import time
 from dataclasses import dataclass
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from fastapi import HTTPException, Request
+
+from .ratelimit_redis import RedisBuckets, create_backend
 
 # Bound the bucket table. Without a cap, an attacker rotating source addresses
 # would grow it without limit — the rate limiter would become the memory-
 # exhaustion vector it exists to prevent.
 _MAX_BUCKETS = 20_000
+
+
+_backend_cache: List[Optional["RedisBuckets"]] = []
+
+
+def _backend() -> Optional["RedisBuckets"]:
+    """The shared backend, created once. `reset_backend()` clears it for tests."""
+    if not _backend_cache:
+        _backend_cache.append(create_backend())
+    return _backend_cache[0]
+
+
+def reset_backend() -> None:
+    _backend_cache.clear()
 
 
 @dataclass
@@ -59,6 +76,11 @@ class RateLimiter:
         self.default = default
         self.period = float(period)
         self.name = name
+        # Stable namespace for shared buckets. Derived from the env var because
+        # it is unique per limiter and does not change when the human-readable
+        # `name` is reworded — a rename would otherwise silently reset every
+        # caller's bucket on deploy.
+        self.name_key = env_var.rsplit("_", 1)[-1].lower()
         self._buckets: Dict[str, _Bucket] = {}
         self._lock = threading.Lock()
 
@@ -70,10 +92,22 @@ class RateLimiter:
             return float(self.default)
 
     def check(self, key: str) -> Tuple[bool, int]:
-        """Consume one token. Returns `(allowed, retry_after_seconds)`."""
+        """Consume one token. Returns `(allowed, retry_after_seconds)`.
+
+        Shared buckets first when Redis is configured, so the limit holds across
+        replicas; the in-process bucket below is the fallback. See
+        `ratelimit_redis` for why falling back beats failing open or closed.
+        """
         limit = self.limit
         if limit <= 0:  # disabled
             return True, 0
+
+        backend = _backend()
+        if backend is not None:
+            shared = backend.check(self.name_key, key, limit, self.period)
+            if shared is not None:
+                return shared
+
         now = time.monotonic()
         refill_per_second = limit / self.period
 

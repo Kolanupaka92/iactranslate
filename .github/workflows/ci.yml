@@ -117,6 +117,37 @@ jobs:
             | tee /tmp/demo.log
           grep -q "Nothing is uploaded" /tmp/demo.log
 
+  redis-integration:
+    # The shared rate limiter is verified against `fakeredis` in the main suite so
+    # it runs offline. This job repeats those tests against a real Redis, because
+    # the Lua script, server-side TIME and TTL semantics are exactly what a
+    # reimplementation can get subtly wrong — and the limiter's correctness rests
+    # on them.
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,redis]"
+      - name: Shared rate limiting against a real Redis
+        env:
+          IACTRANSLATE_TEST_REDIS_URL: redis://localhost:6379/0
+        run: pytest tests/test_ratelimit_shared.py -v
+
   security:
     # Supply-chain gate. Enterprise procurement asks for an SBOM and a
     # vulnerability report in the first security review; before this job there
@@ -201,7 +232,7 @@ jobs:
 
   publish-image:
     # Publish only from main, so anyone can `docker run` it without cloning.
-    needs: [lint, test, docker, web, terraform-validate, security]
+    needs: [lint, test, docker, web, terraform-validate, security, redis-integration]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:

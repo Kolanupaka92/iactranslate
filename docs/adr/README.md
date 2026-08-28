@@ -53,5 +53,6 @@ Format: [Michael Nygard's ADR template](https://cognitect.com/blog/2011/11/15/do
 | [0043](0043-encryption-at-rest-for-uploaded-inventory.md) | AES-256-GCM encryption at rest for uploaded inventory, failing closed | Accepted |
 | [0044](0044-landing-zone-cidr-and-subnet-carving.md) | Landing-zone CIDRs, with subnets carved from them and ingress retargeted | Accepted |
 | [0045](0045-mandated-tags-in-every-clouds-native-form.md) | Mandated tags via each cloud's native mechanism; normalise, never drop | Accepted |
+| [0046](0046-shared-rate-limit-buckets.md) | Shared rate-limit buckets in Redis, atomic via Lua, degrading to per-replica | Accepted |
 
 See also the [Architecture & Design](../architecture.md) overview.
