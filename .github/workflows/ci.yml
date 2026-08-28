@@ -156,13 +156,16 @@ jobs:
         run: docker build -t iactranslate:scan .
 
       - name: Scan image for OS and library CVEs
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: iactranslate:scan
           format: sarif
           output: trivy.sarif
           severity: CRITICAL,HIGH
           ignore-unfixed: true
+          # Without this the SARIF carries every severity regardless of the
+          # filter above, burying the findings that gate the build.
+          limit-severities-for-sarif: true
 
       - name: Upload scan results
         uses: github/codeql-action/upload-sarif@v3
@@ -174,7 +177,7 @@ jobs:
       - name: Fail on fixable CRITICAL/HIGH findings
         # Reported to the Security tab above *and* enforced here — a report
         # nobody is required to read is not a control.
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: iactranslate:scan
           format: table
@@ -209,7 +212,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install cosign
-        uses: sigstore/cosign-installer@v3
+        uses: sigstore/cosign-installer@v4.1.2
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
@@ -240,7 +243,7 @@ jobs:
           DIGEST: ${{ steps.push.outputs.digest }}
 
       - name: Attest build provenance (SLSA)
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-name: ${{ env.IMAGE }}
           subject-digest: ${{ steps.push.outputs.digest }}
