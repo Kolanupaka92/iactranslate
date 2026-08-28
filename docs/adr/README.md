@@ -57,5 +57,6 @@ Format: [Michael Nygard's ADR template](https://cognitect.com/blog/2011/11/15/do
 | [0047](0047-data-transfer-and-cutover-windows.md) | Data-transfer time and cutover-window fit, per migration wave | Accepted |
 | [0048](0048-rank-the-recommendation-on-the-full-bill.md) | Rank the recommendation on the itemized total, not compute alone | Accepted |
 | [0049](0049-api-versioning.md) | Version the API at /v1 before it has clients; legacy mount marks itself deprecated | Accepted |
+| [0050](0050-project-roles.md) | Ordered project roles (viewer/editor/approver/admin); 404 absent, 403 insufficient | Accepted |
 
 See also the [Architecture & Design](../architecture.md) overview.

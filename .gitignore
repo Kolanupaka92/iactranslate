@@ -29,3 +29,9 @@ venv/
 /out/
 iactranslate-demo/
 _preview_report.html
+# SQLite stores. A test run without IACTRANSLATE_DB_PATH set drops one of
+# these in the repo root; it holds password hashes and session tokens.
+*.db
+*.db-journal
+*.db-wal
+*.db-shm

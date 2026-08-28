@@ -68,6 +68,7 @@ from .events import Event, EventBus, EventType
 from .jobs import JobQueue
 from .metrics import Metrics
 from .ratelimit import limit_auth, limit_reads, limit_writes
+from .roles import Membership, Role, at_least, parse_role
 from .store import Project, create_store
 
 logger = get_logger("iactranslate.api")
@@ -100,6 +101,10 @@ audit = create_audit_log()
 audit.attach(bus)
 metrics = Metrics()
 metrics.attach(bus)
+
+# Who may do what on which project. Separate from the project store because
+# a grant belongs to neither the project nor the user alone (see roles.py).
+memberships = Membership()
 
 _ALLOWED_SUFFIXES = {".xlsx", ".xls", ".xlsm", ".csv"}
 _NAME_RE = re.compile(r"^[A-Za-z0-9 ._-]{1,128}$")
@@ -256,20 +261,37 @@ def current_user(request: Request) -> Optional[User]:
     return user
 
 
-def _require_project(pid: str, user: Optional[User]) -> Project:
-    """Fetch a project the caller is allowed to see.
+def _require_project(pid: str, user: Optional[User], role: Role = Role.VIEWER) -> Project:
+    """Fetch a project the caller may access at `role` or above.
 
-    A project owned by someone else returns **404, not 403** — a 403 would
-    confirm that the id exists, letting an attacker enumerate other tenants'
-    projects. The caller cannot distinguish "no such project" from "not yours",
-    which is the point.
+    **No access is 404, never 403.** A 403 confirms the id exists, letting an
+    attacker enumerate other tenants' projects (ADR 0027). **Insufficient
+    access is 403**, because a caller who already holds *some* role knows the
+    project exists — 404 would tell them nothing they do not know and would
+    make a permissions problem look like a missing resource.
+
+    In single-tenant mode (`IACTRANSLATE_AUTH` unset) every project has
+    `owner_id = None` and the one operator is implicitly an admin, which keeps
+    the historical behaviour exactly.
     """
     project = store.get(pid)
     if project is None:
         raise HTTPException(404, "project not found")
-    expected_owner = user.id if user else None
-    if project.owner_id != expected_owner:
+    if user is None:
+        # Single-tenant: the sole operator administers everything. A project
+        # that *does* have an owner must not be reachable without a session.
+        if project.owner_id is not None:
+            raise HTTPException(404, "project not found")
+        return project
+
+    held = memberships.role_for(pid, user.id, project.owner_id)
+    if held is None:
         raise HTTPException(404, "project not found")
+    if not at_least(held, role):
+        raise HTTPException(
+            403,
+            f"this action requires the '{role.value}' role; you have '{held.value}'",
+        )
     return project
 
 
@@ -484,8 +506,26 @@ def whoami(user: Optional[User] = Depends(current_user)) -> dict:
 
 @router.get("/projects", dependencies=[Depends(limit_reads)])
 def list_projects(user: Optional[User] = Depends(current_user)) -> list:
-    """Every project the caller owns — the tenant's own view, nobody else's."""
-    return [_summary(p) for p in store.list_for_owner(user.id if user else None)]
+    """Projects the caller owns, plus any shared with them.
+
+    A grant the recipient cannot see is a grant that does not work: they would
+    have to be told the project id out of band before they could use it.
+    """
+    owned = store.list_for_owner(user.id if user else None)
+    if user is None:
+        return [_summary(p) for p in owned]
+
+    out = [{**_summary(p), "role": Role.ADMIN.value, "owner": True} for p in owned]
+    seen = {p.id for p in owned}
+    for pid in memberships.projects_for(user.id):
+        if pid in seen:
+            continue
+        project = store.get(pid)
+        if project is None:
+            continue  # granted then deleted; nothing to show
+        role = memberships.role_for(pid, user.id, project.owner_id)
+        out.append({**_summary(project), "role": role.value if role else None, "owner": False})
+    return out
 
 
 @router.post("/projects", status_code=201, dependencies=[Depends(require_api_key), Depends(limit_writes)])
@@ -542,23 +582,24 @@ def targets() -> list:
 
 @router.get("/projects/{pid}", dependencies=[Depends(require_api_key), Depends(limit_reads)])
 def get_project(pid: str, user: Optional[User] = Depends(current_user)) -> dict:
-    return _summary(_require_project(pid, user))
+    return _summary(_require_project(pid, user, Role.VIEWER))
 
 
 @router.delete("/projects/{pid}", status_code=204, dependencies=[Depends(require_api_key), Depends(limit_writes)])
 def delete_project(pid: str, user: Optional[User] = Depends(current_user)) -> None:
     # Ownership is checked *before* deleting — otherwise any signed-in user
     # could destroy another tenant's project by guessing its id.
-    _require_project(pid, user)
+    _require_project(pid, user, Role.ADMIN)
     if not store.delete(pid):
         raise HTTPException(404, "project not found")
+    memberships.drop_project(pid)
     logger.info("deleted project %s", pid)
     bus.publish(Event(EventType.PROJECT_DELETED, project_id=pid))
 
 
 @router.post("/projects/{pid}/upload", dependencies=[Depends(require_api_key), Depends(limit_writes)])
 async def upload(pid: str, file: UploadFile, user: Optional[User] = Depends(current_user)) -> dict:
-    project = _require_project(pid, user)
+    project = _require_project(pid, user, Role.EDITOR)
 
     suffix = Path(file.filename or "").suffix.lower()
     if suffix not in _ALLOWED_SUFFIXES:
@@ -675,7 +716,7 @@ def _execute_run(project: Project) -> None:
 @router.post("/projects/{pid}/run", dependencies=[Depends(require_api_key), Depends(limit_writes)])
 def run(pid: str, user: Optional[User] = Depends(current_user)) -> dict:
     """Synchronous run — generates in-request. See POST /jobs for the async path."""
-    project = _require_project(pid, user)
+    project = _require_project(pid, user, Role.EDITOR)
     if project.upload_path is None:
         raise HTTPException(400, "no file uploaded for this project")
     try:
@@ -693,7 +734,7 @@ def run(pid: str, user: Optional[User] = Depends(current_user)) -> dict:
 @router.post("/projects/{pid}/jobs", status_code=202, dependencies=[Depends(require_api_key), Depends(limit_writes)])
 def create_job(pid: str, user: Optional[User] = Depends(current_user)) -> dict:
     """Asynchronous run — enqueue the pipeline and return a job id to poll."""
-    project = _require_project(pid, user)
+    project = _require_project(pid, user, Role.EDITOR)
     if project.upload_path is None:
         raise HTTPException(400, "no file uploaded for this project")
     project.status = "queued"
@@ -742,7 +783,9 @@ def get_audit(
 
 @router.post("/projects/{pid}/recommend", dependencies=[Depends(require_api_key), Depends(limit_writes)])
 def recommend_cloud(pid: str, user: Optional[User] = Depends(current_user)) -> dict:
-    project = _require_project(pid, user)
+    # A recommendation is read-only analysis, but it builds a plan per cloud —
+    # five full pipelines of real CPU — so it is gated as work, not as a read.
+    project = _require_project(pid, user, Role.EDITOR)
     if project.upload_path is None:
         raise HTTPException(400, "no file uploaded for this project")
 
@@ -755,7 +798,7 @@ def recommend_cloud(pid: str, user: Optional[User] = Depends(current_user)) -> d
 
 @router.post("/projects/{pid}/assess", dependencies=[Depends(require_api_key), Depends(limit_writes)])
 def assess_estate(pid: str, user: Optional[User] = Depends(current_user)) -> dict:
-    project = _require_project(pid, user)
+    project = _require_project(pid, user, Role.EDITOR)
     if project.upload_path is None:
         raise HTTPException(400, "no file uploaded for this project")
 
@@ -774,7 +817,7 @@ def assess_estate(pid: str, user: Optional[User] = Depends(current_user)) -> dic
 )
 def executive_report(pid: str, include_recommendation: bool = True,
                      user: Optional[User] = Depends(current_user)) -> HTMLResponse:
-    project = _require_project(pid, user)
+    project = _require_project(pid, user, Role.VIEWER)
     if project.upload_path is None:
         raise HTTPException(400, "no file uploaded for this project")
 
@@ -792,7 +835,7 @@ def executive_report(pid: str, include_recommendation: bool = True,
 
 @router.get("/projects/{pid}/download", dependencies=[Depends(require_api_key), Depends(limit_reads)])
 def download(pid: str, user: Optional[User] = Depends(current_user)) -> FileResponse:
-    project = _require_project(pid, user)
+    project = _require_project(pid, user, Role.VIEWER)
     if not project.zip_path or not Path(project.zip_path).exists():
         raise HTTPException(409, "project has not been generated yet; call /run first")
     return FileResponse(
@@ -800,6 +843,63 @@ def download(pid: str, user: Optional[User] = Depends(current_user)) -> FileResp
         media_type="application/zip",
         filename=f"{project.name}.zip",
     )
+
+
+class GrantAccess(BaseModel):
+    email: str
+    role: str = Role.VIEWER.value
+
+
+@router.get("/projects/{pid}/members", dependencies=[Depends(require_api_key), Depends(limit_reads)])
+def list_members(pid: str, user: Optional[User] = Depends(current_user)) -> list:
+    """Who has access. Visible to anyone with access — knowing who else can see
+    a project is part of understanding your own exposure."""
+    project = _require_project(pid, user, Role.VIEWER)
+    return memberships.members(pid, project.owner_id)
+
+
+@router.post("/projects/{pid}/members", status_code=201,
+             dependencies=[Depends(require_api_key), Depends(limit_writes)])
+def grant_access(pid: str, body: GrantAccess,
+                 user: Optional[User] = Depends(current_user)) -> dict:
+    """Grant a user a role on this project. Admin only."""
+    project = _require_project(pid, user, Role.ADMIN)
+    if accounts is None:
+        raise HTTPException(400, "sharing requires multi-tenant mode (IACTRANSLATE_AUTH=session)")
+    try:
+        role = parse_role(body.role)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+    target_user = accounts.get_user_by_email(body.email)
+    if target_user is None:
+        # Deliberately explicit: the caller is an admin of this project and is
+        # naming someone they intend to work with. Hiding the difference between
+        # "no such account" and "granted" would leave them unable to tell a typo
+        # from a silent success.
+        raise HTTPException(404, f"no account for '{body.email}'")
+    if target_user.id == project.owner_id:
+        raise HTTPException(400, "the owner already administers this project")
+
+    memberships.grant(pid, target_user.id, role)
+    logger.info("granted %s on project %s", role.value, pid,
+                extra={"project_id": pid, "role": role.value})
+    return {"user_id": target_user.id, "role": role.value, "owner": False}
+
+
+@router.delete("/projects/{pid}/members/{user_id}",
+               dependencies=[Depends(require_api_key), Depends(limit_writes)])
+def revoke_access(pid: str, user_id: str,
+                  user: Optional[User] = Depends(current_user)) -> dict:
+    """Revoke a grant. Admin only, and the owner cannot be removed —
+    a project with no administrator is unrecoverable without a database edit."""
+    project = _require_project(pid, user, Role.ADMIN)
+    if user_id == project.owner_id:
+        raise HTTPException(400, "the owner cannot be removed from their own project")
+    if not memberships.revoke(pid, user_id):
+        raise HTTPException(404, "no such grant on this project")
+    logger.info("revoked access on project %s", pid, extra={"project_id": pid})
+    return {"revoked": user_id}
 
 
 # --------------------------------------------------------------------------- #
