@@ -18,6 +18,8 @@ from .costing import estimate_costs
 from .dependencies import DependencyError, analyze_dependencies, parse_flows
 from .diff import diff_inventories
 from .exec_report import build_executive_report
+from .identity import IdentityError
+from .identity import parse_mode as parse_identity_mode
 from .landing_zone import DEFAULT_CIDR, LandingZone, LandingZoneError
 from .normalize import normalize
 from .pdf import PdfUnavailable
@@ -93,6 +95,7 @@ def _cmd_translate(args: argparse.Namespace) -> int:
             renderer=args.renderer,
             gitops=args.gitops,
             policy_config=policy_config,
+            identity=parse_identity_mode(getattr(args, "instance_identity", None)),
             zone=LandingZone(
                 cidr=getattr(args, "vpc_cidr", None) or DEFAULT_CIDR,
                 tags=_parse_kv(getattr(args, "tags", None)),
@@ -104,7 +107,7 @@ def _cmd_translate(args: argparse.Namespace) -> int:
                 _parse_kv(getattr(args, "state_config", None)),
             ),
         )
-    except LandingZoneError as e:
+    except (LandingZoneError, IdentityError) as e:
         print(f"error: {e}", file=sys.stderr)
         return 2
     except (UnknownTargetError, UnknownSourceError, UnknownRendererError, UnknownPolicyError) as e:
@@ -502,6 +505,11 @@ def build_parser() -> argparse.ArgumentParser:
                         "commonly reject resources that lack mandated tags.")
     t.add_argument("--name-prefix", default=None, metavar="PREFIX",
                    help="Prefix for generated resource names, where a naming convention is enforced.")
+    t.add_argument("--instance-identity", default="basic", metavar="MODE",
+                   help="Workload identity per tier: 'basic' (role/identity with no "
+                        "permissions, wired to the instances), 'ssm' (basic plus AWS "
+                        "Session Manager for keyless access), or 'none'. Permissions are "
+                        "never generated — see the README in the output.")
     t.add_argument("--state-backend", default=None, metavar="KIND",
                    help="Terraform remote state backend: 'auto' for the target cloud's native "
                         f"backend, or one of {', '.join(SUPPORTED_BACKENDS)}. Omitted means local "

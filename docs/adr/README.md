@@ -64,5 +64,6 @@ Format: [Michael Nygard's ADR template](https://cognitect.com/blog/2011/11/15/do
 | [0054](0054-oidc-single-sign-on.md) | OIDC SSO with PKCE, tested against a mock issuer; validation by PyJWT, not by hand | Accepted |
 | [0055](0055-dependencies-from-observed-flows.md) | Application dependencies from a flow export; wave violations and external systems | Accepted |
 | [0056](0056-durable-project-grants.md) | Project grants persist; half-durable authorization was a bug, not a limitation | Accepted |
+| [0057](0057-workload-identity-without-permissions.md) | An identity per tier, wired to instances, with no permissions — guessing them creates the breach | Accepted |
 
 See also the [Architecture & Design](../architecture.md) overview.

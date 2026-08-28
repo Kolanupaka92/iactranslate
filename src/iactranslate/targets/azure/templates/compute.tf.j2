@@ -51,6 +51,12 @@ resource "azurerm_network_interface_backend_address_pool_association" "{{ c.reso
 
 {% if c.image_key.startswith('windows') %}
 resource "azurerm_windows_virtual_machine" "{{ c.resource_name }}" {
+{% if identity_roles %}
+  identity {
+    type         = "UserAssigned"
+    identity_ids = [azurerm_user_assigned_identity.{{ c.tier.value }}.id]
+  }
+{% endif %}
   name                  = "{{ vm_slug[c.vm_name] }}"
   resource_group_name   = azurerm_resource_group.main.name
   location              = azurerm_resource_group.main.location

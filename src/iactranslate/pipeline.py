@@ -22,6 +22,7 @@ from pydantic import BaseModel
 from .agents import build_migration_plan
 from .agents.base import LLMProvider
 from .config import MAX_VMS
+from .identity import IdentityMode
 from .landing_zone import LandingZone
 from .models import MigrationPlan, NormalizedVM
 from .normalize import normalize
@@ -74,6 +75,7 @@ def run_pipeline(
     policy_config: Optional[Dict] = None,
     state_backend: Optional[StateBackend] = None,
     zone: Optional[LandingZone] = None,
+    identity: Optional[IdentityMode] = None,
 ) -> PipelineResult:
     timings: List[StageTiming] = []
 
@@ -139,6 +141,7 @@ def run_pipeline(
         project_dir = build_project(
             plan, out_dir, tgt, vms=vms, renderer=renderer, gitops=gitops,
             policy_result=policy_result, state_backend=state_backend, zone=zone,
+            identity=identity,
         )
 
     zip_path = None

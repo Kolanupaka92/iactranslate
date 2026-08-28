@@ -14,6 +14,7 @@ from .display import plural
 from .exec_report import build_executive_report
 from .gitops import gitops_files
 from .graph import build_graph
+from .identity import IdentityMode
 from .landing_zone import LandingZone
 from .models import MigrationPlan, NormalizedVM
 from .renderers import render
@@ -146,6 +147,7 @@ def build_project(
     policy_result=None,
     state_backend: Optional[StateBackend] = None,
     zone: Optional[LandingZone] = None,
+    identity: Optional[IdentityMode] = None,
 ) -> Path:
     """Write the full project tree to `out_dir` and return its path.
 
@@ -157,7 +159,7 @@ def build_project(
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
 
-    files: Dict[str, str] = render(renderer, plan, target, state_backend, zone)
+    files: Dict[str, str] = render(renderer, plan, target, state_backend, zone, identity)
     if gitops:
         files.update(gitops_files(plan, renderer))
     for filename, content in files.items():

@@ -15,6 +15,13 @@ from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 from ..costing import estimate_costs
 from ..graph import EdgeKind, NodeKind, build_graph
+from ..identity import (
+    SSM_MANAGED_POLICY,
+    IdentityMode,
+    roles_for,
+)
+from ..identity import notes as identity_notes
+from ..identity import supported as identity_supported
 from ..landing_zone import LandingZone, gcp_labels
 from ..models import ComputePlan, MigrationPlan, SubnetTier, terraform_safe_name
 from ..state import StateBackend, resolve_backend
@@ -138,6 +145,7 @@ def build_files(
     target: Target,
     state_backend: Optional[StateBackend] = None,
     zone: Optional[LandingZone] = None,
+    identity: Optional[IdentityMode] = None,
 ) -> Dict[str, str]:
     # Default is an explicit *local* backend, not a silent one: `versions.tf`
     # renders a warning banner and the README explains the consequence. See
@@ -154,6 +162,7 @@ def build_files(
     }
     _costs = estimate_costs(plan)
     _mandated = dict((zone or LandingZone()).tags)
+    _identity = identity or IdentityMode.BASIC
     context = {
         "plan": plan,
         # `plan.total_estimated_monthly_cost_usd` is compute only. Templates
@@ -165,6 +174,14 @@ def build_files(
         # Tags mandated by the customer's governance. Applied at the provider on
         # AWS/GCP, via a locals block on Azure/OCI, and as tag resources on
         # DigitalOcean — see ADR 0045.
+        # Workload identity. Empty for clouds without a per-instance identity
+        # model, which is why the templates guard on it (ADR 0057).
+        "identity_mode": _identity.value,
+        "identity_roles": (
+            roles_for(plan.compute, _identity) if identity_supported(target.name) else []
+        ),
+        "ssm_policy_arn": SSM_MANAGED_POLICY,
+        "identity_notes": identity_notes(target.name, _identity),
         "mandated_tags": _mandated,
         "gcp_labels": gcp_labels(_mandated),
         "mandated_do_tags": (zone or LandingZone()).do_tags(),

@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Callable, Dict, List, Optional
 
 from ..generator import build_files as _build_terraform
+from ..identity import IdentityMode
 from ..landing_zone import LandingZone
 from ..models import MigrationPlan
 from ..state import StateBackend
@@ -46,6 +47,7 @@ def render(
     target: Target,
     state_backend: Optional[StateBackend] = None,
     zone: Optional[LandingZone] = None,
+    identity: Optional[IdentityMode] = None,
 ) -> Dict[str, str]:
     """Render the plan with `name`.
 
@@ -61,7 +63,7 @@ def render(
             f"renderer '{name}' not supported (available: {', '.join(_RENDERERS)})"
         ) from e
     if name == "terraform":
-        return fn(plan, target, state_backend, zone)
+        return fn(plan, target, state_backend, zone, identity)
     return fn(plan, target)
 
 
