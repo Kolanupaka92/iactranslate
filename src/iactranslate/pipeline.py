@@ -22,6 +22,7 @@ from pydantic import BaseModel
 from .agents import build_migration_plan
 from .agents.base import LLMProvider
 from .config import MAX_VMS
+from .landing_zone import LandingZone
 from .models import MigrationPlan, NormalizedVM
 from .normalize import normalize
 from .observability import get_logger
@@ -72,6 +73,7 @@ def run_pipeline(
     gitops: bool = False,
     policy_config: Optional[Dict] = None,
     state_backend: Optional[StateBackend] = None,
+    zone: Optional[LandingZone] = None,
 ) -> PipelineResult:
     timings: List[StageTiming] = []
 
@@ -120,7 +122,7 @@ def run_pipeline(
         plan = build_migration_plan(
             vms, project_name=project_name, target=tgt, region=region, provider=provider,
             source_platform=getattr(src, "source_platform", src.name),
-            live_pricing=live_enabled(),
+            live_pricing=live_enabled(), zone=zone,
         )
 
     with stage("validate"):

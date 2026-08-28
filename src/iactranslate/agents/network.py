@@ -9,11 +9,13 @@ is deterministic so the same inventory always yields the same network.
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
+from ..landing_zone import LandingZone, carve_subnets
 from ..models import (
     ComputePlan,
     Environment,
+    IngressRule,
     LoadBalancerListener,
     LoadBalancerPlan,
     NetworkPlan,
@@ -71,15 +73,52 @@ def _plan_load_balancers(
     return load_balancers
 
 
-def plan_network(compute: List[ComputePlan], target: Target) -> NetworkPlan:
-    vpc_cidr = target.vpc_cidr
+def _retarget_ingress(
+    rules: List[IngressRule], default_cidr: str, actual_cidr: str
+) -> List[IngressRule]:
+    """Point intra-VPC ingress rules at the VPC that actually exists.
+
+    Each target's default ingress hardcodes its own `VPC_CIDR` as the source
+    range for internal traffic (database ports reachable from the VPC, and so
+    on). Once the VPC range can be supplied by the customer's IPAM team, those
+    rules would allow a range the VPC does not use and — worse — *not* allow the
+    range it does, silently producing a network that both over-permits an
+    unrelated block and fails to work.
+
+    Only rules whose source is exactly the target's default VPC range are
+    rewritten; `0.0.0.0/0` on a public HTTP listener is deliberate and left alone.
+    """
+    if actual_cidr == default_cidr:
+        return rules
+    return [
+        rule.model_copy(
+            update={"cidr_blocks": [actual_cidr if c == default_cidr else c
+                                    for c in rule.cidr_blocks]}
+        )
+        for rule in rules
+    ]
+
+
+def plan_network(
+    compute: List[ComputePlan],
+    target: Target,
+    zone: Optional[LandingZone] = None,
+) -> NetworkPlan:
+    # The VPC range comes from the landing zone when the customer's network team
+    # allocated one; otherwise the target's default.
+    vpc_cidr = zone.cidr if zone else target.vpc_cidr
+    # Carved from that range rather than hardcoded. Subnets used to be fixed at
+    # `10.0.{az}.0/24` while the VPC took its CIDR from the target, so any other
+    # range produced subnets outside their own VPC — latent only because every
+    # target happened to use 10.0.0.0/16.
+    public_cidrs, private_cidrs = carve_subnets(vpc_cidr, _AZ_COUNT)
     subnets: List[Subnet] = []
     for az in range(_AZ_COUNT):
         subnets.append(
             Subnet(
                 name=f"public-{az}",
                 resource_name=f"public_{az}",
-                cidr=f"10.0.{az}.0/24",
+                cidr=public_cidrs[az],
                 tier=SubnetTier.PUBLIC,
                 availability_zone_index=az,
             )
@@ -88,7 +127,7 @@ def plan_network(compute: List[ComputePlan], target: Target) -> NetworkPlan:
             Subnet(
                 name=f"private-{az}",
                 resource_name=f"private_{az}",
-                cidr=f"10.0.{az + 10}.0/24",
+                cidr=private_cidrs[az],
                 tier=SubnetTier.PRIVATE,
                 availability_zone_index=az,
             )
@@ -102,7 +141,9 @@ def plan_network(compute: List[ComputePlan], target: Target) -> NetworkPlan:
             name=sg_name,
             resource_name=terraform_safe_name(sg_name),
             description=f"Security group for {sg_name}",
-            ingress=target.default_ingress.get(sg_name, fallback),
+            ingress=_retarget_ingress(
+                target.default_ingress.get(sg_name, fallback), target.vpc_cidr, vpc_cidr
+            ),
         )
         for sg_name in used
     ]

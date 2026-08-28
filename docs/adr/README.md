@@ -51,5 +51,6 @@ Format: [Michael Nygard's ADR template](https://cognitect.com/blog/2011/11/15/do
 | [0041](0041-remote-state-backends-in-generated-terraform.md) | Remote state backends in generated Terraform; local state stated, never silent | Accepted |
 | [0042](0042-supply-chain-security.md) | Supply-chain security: SBOM, pip-audit, bandit, Trivy, cosign signing, SLSA provenance | Accepted |
 | [0043](0043-encryption-at-rest-for-uploaded-inventory.md) | AES-256-GCM encryption at rest for uploaded inventory, failing closed | Accepted |
+| [0044](0044-landing-zone-cidr-and-subnet-carving.md) | Landing-zone CIDRs, with subnets carved from them and ingress retargeted | Accepted |
 
 See also the [Architecture & Design](../architecture.md) overview.

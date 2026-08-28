@@ -17,6 +17,7 @@ from .confidence import score_plan
 from .costing import estimate_costs
 from .diff import diff_inventories
 from .exec_report import build_executive_report
+from .landing_zone import DEFAULT_CIDR, LandingZone, LandingZoneError
 from .normalize import normalize
 from .pipeline import run_pipeline
 from .policy import PolicyViolationError, UnknownPolicyError, load_policy_config
@@ -87,12 +88,20 @@ def _cmd_translate(args: argparse.Namespace) -> int:
             renderer=args.renderer,
             gitops=args.gitops,
             policy_config=policy_config,
+            zone=LandingZone(
+                cidr=getattr(args, "vpc_cidr", None) or DEFAULT_CIDR,
+                tags=_parse_kv(getattr(args, "tags", None)),
+                name_prefix=getattr(args, "name_prefix", None),
+            ),
             state_backend=resolve_backend(
                 args.target,
                 getattr(args, "state_backend", None),
                 _parse_kv(getattr(args, "state_config", None)),
             ),
         )
+    except LandingZoneError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
     except (UnknownTargetError, UnknownSourceError, UnknownRendererError, UnknownPolicyError) as e:
         print(f"error: {e}", file=sys.stderr)
         return 2
@@ -320,6 +329,16 @@ def build_parser() -> argparse.ArgumentParser:
                         "Kubernetes (KubeVirt) works for any target.")
     t.add_argument("--gitops", action="store_true",
                    help="Include a GitOps CI/CD workflow (plan on PR, apply on merge) + .gitignore.")
+    t.add_argument("--vpc-cidr", default=None, metavar="CIDR",
+                   help="Network range for the new VPC/VNet, e.g. '172.20.8.0/21'. Subnets are "
+                        "carved from it. Use the range your IPAM team allocated — the default "
+                        "10.0.0.0/16 will collide in most enterprise networks.")
+    t.add_argument("--tags", default=None, metavar="K=V,...",
+                   help="Tags applied to every resource, e.g. "
+                        "'CostCenter=CC-4417,Owner=platform@acme.com'. Governed accounts "
+                        "commonly reject resources that lack mandated tags.")
+    t.add_argument("--name-prefix", default=None, metavar="PREFIX",
+                   help="Prefix for generated resource names, where a naming convention is enforced.")
     t.add_argument("--state-backend", default=None, metavar="KIND",
                    help="Terraform remote state backend: 'auto' for the target cloud's native "
                         f"backend, or one of {', '.join(SUPPORTED_BACKENDS)}. Omitted means local "
