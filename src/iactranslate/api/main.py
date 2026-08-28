@@ -77,7 +77,7 @@ from .idempotency import (
 from .jobs_sqlite import create_job_queue
 from .metrics import Metrics
 from .ratelimit import limit_auth, limit_reads, limit_writes
-from .roles import Membership, Role, at_least, parse_role
+from .roles import Role, at_least, create_membership, parse_role
 from .store import Project, create_store
 
 logger = get_logger("iactranslate.api")
@@ -116,7 +116,7 @@ metrics.attach(bus)
 
 # Who may do what on which project. Separate from the project store because
 # a grant belongs to neither the project nor the user alone (see roles.py).
-memberships = Membership()
+memberships = create_membership()
 
 # SSO. `None` unless IACTRANSLATE_OIDC_ISSUER is set (ADR 0054).
 sso_config = _oidc.config_from_env()

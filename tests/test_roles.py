@@ -234,3 +234,87 @@ def test_single_tenant_mode_is_unchanged(tmp_path, monkeypatch):
     finally:
         monkeypatch.undo()
         importlib.reload(api_main)
+
+
+# --- durability --------------------------------------------------------------
+
+def test_grants_survive_a_restart(tmp_path, monkeypatch):
+    """A deployment with IACTRANSLATE_STORE=sqlite kept its projects across a
+    restart and lost who may see them: every grant silently revoked, noticed
+    only when someone reports losing access. Half-durable authorization is worse
+    than none."""
+    from iactranslate.api.roles import SqliteMembership
+
+    db = str(tmp_path / "grants.db")
+    first = SqliteMembership(db)
+    first.grant("proj-1", "user-2", Role.EDITOR)
+    first.grant("proj-1", "user-3", Role.VIEWER)
+
+    second = SqliteMembership(db)          # a fresh process, same file
+    assert second.role_for("proj-1", "user-2", "owner") is Role.EDITOR
+    assert second.role_for("proj-1", "user-3", "owner") is Role.VIEWER
+
+
+def test_a_revocation_survives_a_restart(tmp_path):
+    """The dangerous direction: access that comes *back* after a restart."""
+    from iactranslate.api.roles import SqliteMembership
+
+    db = str(tmp_path / "grants.db")
+    first = SqliteMembership(db)
+    first.grant("proj-1", "user-2", Role.ADMIN)
+    assert first.revoke("proj-1", "user-2")
+
+    assert SqliteMembership(db).role_for("proj-1", "user-2", "owner") is None
+
+
+def test_a_role_change_survives_a_restart(tmp_path):
+    from iactranslate.api.roles import SqliteMembership
+
+    db = str(tmp_path / "grants.db")
+    first = SqliteMembership(db)
+    first.grant("proj-1", "user-2", Role.ADMIN)
+    first.grant("proj-1", "user-2", Role.VIEWER)   # demote
+    assert SqliteMembership(db).role_for("proj-1", "user-2", "owner") is Role.VIEWER
+
+
+def test_deleting_a_project_removes_its_grants_from_disk(tmp_path):
+    """Otherwise a recycled id inherits access from a project that is gone."""
+    from iactranslate.api.roles import SqliteMembership
+
+    db = str(tmp_path / "grants.db")
+    first = SqliteMembership(db)
+    first.grant("proj-1", "user-2", Role.EDITOR)
+    first.drop_project("proj-1")
+    assert SqliteMembership(db).role_for("proj-1", "user-2", "owner") is None
+
+
+def test_an_unreadable_role_costs_one_grant_not_the_deployment(tmp_path):
+    """A row written by a newer version should not crash every request."""
+    import sqlite3
+
+    from iactranslate.api.roles import SqliteMembership
+
+    db = str(tmp_path / "grants.db")
+    first = SqliteMembership(db)
+    first.grant("proj-1", "user-2", Role.EDITOR)
+    conn = sqlite3.connect(db, isolation_level=None)
+    conn.execute(
+        "INSERT INTO project_members VALUES ('proj-1','user-9','archdruid',0)"
+    )
+    conn.close()
+
+    reloaded = SqliteMembership(db)
+    assert reloaded.role_for("proj-1", "user-2", "owner") is Role.EDITOR
+    assert reloaded.role_for("proj-1", "user-9", "owner") is None
+
+
+def test_membership_follows_the_store_setting(monkeypatch, tmp_path):
+    """One switch, so a deployment cannot persist some state and lose the rest."""
+    from iactranslate.api.roles import Membership, SqliteMembership, create_membership
+
+    monkeypatch.setenv("IACTRANSLATE_STORE", "memory")
+    assert type(create_membership()) is Membership
+
+    monkeypatch.setenv("IACTRANSLATE_STORE", "sqlite")
+    monkeypatch.setenv("IACTRANSLATE_DB_PATH", str(tmp_path / "m.db"))
+    assert isinstance(create_membership(), SqliteMembership)

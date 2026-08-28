@@ -34,6 +34,8 @@ exists, so 403 tells them nothing new and 404 would be actively confusing.
 """
 from __future__ import annotations
 
+import os
+import time
 from enum import Enum
 from typing import Dict, List, Optional
 
@@ -128,3 +130,82 @@ class Membership:
         """Forget every grant on a deleted project, so a recycled id cannot
         inherit access from a project that no longer exists."""
         self._grants.pop(project_id, None)
+
+
+class SqliteMembership(Membership):
+    """The same grants, persisted.
+
+    Without this, a deployment with `IACTRANSLATE_STORE=sqlite` keeps its
+    projects across a restart and loses *who may see them* — the surviving
+    projects become visible only to their owners, and every grant an
+    administrator made is silently revoked. Half-durable authorization is worse
+    than none, because nobody notices until someone reports they lost access.
+
+    Grants are small and read on every request, so they are cached in memory and
+    written through; SQLite is the record, not the hot path.
+    """
+
+    _SCHEMA = """
+        CREATE TABLE IF NOT EXISTS project_members (
+            project_id TEXT NOT NULL,
+            user_id TEXT NOT NULL,
+            role TEXT NOT NULL,
+            granted_at REAL NOT NULL,
+            PRIMARY KEY (project_id, user_id)
+        )
+    """
+
+    def __init__(self, db_path: str) -> None:
+        super().__init__()
+        import sqlite3
+        from pathlib import Path as _Path
+
+        _Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+        self._conn = sqlite3.connect(db_path, check_same_thread=False, isolation_level=None)
+        self._conn.execute(self._SCHEMA)
+        self._load()
+
+    def _load(self) -> None:
+        for project_id, user_id, role in self._conn.execute(
+            "SELECT project_id, user_id, role FROM project_members"
+        ):
+            try:
+                self._grants.setdefault(project_id, {})[user_id] = Role(role)
+            except ValueError:
+                # A role written by a newer version. Skipped rather than
+                # crashing every request — an unreadable grant should cost that
+                # one person access, not take the deployment down.
+                continue
+
+    def grant(self, project_id: str, user_id: str, role: Role) -> None:
+        super().grant(project_id, user_id, role)
+        self._conn.execute(
+            "INSERT INTO project_members (project_id, user_id, role, granted_at)"
+            " VALUES (?,?,?,?)"
+            " ON CONFLICT(project_id, user_id) DO UPDATE SET role=excluded.role",
+            (project_id, user_id, role.value, time.time()),
+        )
+
+    def revoke(self, project_id: str, user_id: str) -> bool:
+        removed = super().revoke(project_id, user_id)
+        if removed:
+            self._conn.execute(
+                "DELETE FROM project_members WHERE project_id=? AND user_id=?",
+                (project_id, user_id),
+            )
+        return removed
+
+    def drop_project(self, project_id: str) -> None:
+        super().drop_project(project_id)
+        self._conn.execute("DELETE FROM project_members WHERE project_id=?", (project_id,))
+
+
+def create_membership() -> Membership:
+    """Follows `IACTRANSLATE_STORE`, like the project store and the job queue.
+
+    One switch, so a deployment cannot end up persisting some of its state and
+    losing the rest.
+    """
+    if os.getenv("IACTRANSLATE_STORE", "memory").strip().lower() == "sqlite":
+        return SqliteMembership(os.getenv("IACTRANSLATE_DB_PATH", "./iactranslate.db"))
+    return Membership()
