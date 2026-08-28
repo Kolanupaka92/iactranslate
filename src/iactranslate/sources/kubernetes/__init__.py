@@ -86,7 +86,9 @@ def _resource(container: dict, dimension: str) -> Optional[str]:
     resources = container.get("resources", {}) or {}
     requests = resources.get("requests", {}) or {}
     limits = resources.get("limits", {}) or {}
-    return requests.get(dimension) or limits.get(dimension)
+    # `requests` is the pod spec's resource-requests mapping, not the HTTP
+    # library — this is a dict lookup and makes no network call.
+    return requests.get(dimension) or limits.get(dimension)  # nosec B113
 
 
 def _storage_gib(obj: dict) -> List[float]:

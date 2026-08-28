@@ -49,5 +49,6 @@ Format: [Michael Nygard's ADR template](https://cognitect.com/blog/2011/11/15/do
 | [0039](0039-cost-the-whole-bill-not-just-the-instances.md) | Cost the whole bill — storage, Windows licensing and load balancers, not just instances | Accepted |
 | [0040](0040-structured-logging-and-request-correlation.md) | Structured JSON logging and request correlation, OTel field names without the SDK | Accepted |
 | [0041](0041-remote-state-backends-in-generated-terraform.md) | Remote state backends in generated Terraform; local state stated, never silent | Accepted |
+| [0042](0042-supply-chain-security.md) | Supply-chain security: SBOM, pip-audit, bandit, Trivy, cosign signing, SLSA provenance | Accepted |
 
 See also the [Architecture & Design](../architecture.md) overview.

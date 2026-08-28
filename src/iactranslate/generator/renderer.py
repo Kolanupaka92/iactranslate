@@ -29,7 +29,15 @@ def _rfc1035_slug(value: str) -> str:
 
 
 def _env(template_dir: Path) -> Environment:
-    return Environment(
+    # Autoescaping is deliberately off, and turning it on would be a bug: these
+    # templates emit Terraform HCL, not HTML. HTML-escaping the output would
+    # corrupt every `&`, `<` and `"` in generated configuration.
+    #
+    # Injection is defended at a different layer — `normalize.sanitize_identifier`
+    # strips the characters that let a hostile inventory value escape into
+    # generated code, once, for all six renderers (ADR 0031). Escaping here would
+    # be both wrong and redundant. (nosec: B701 assumes a web template.)
+    return Environment(  # nosec B701
         loader=FileSystemLoader(str(template_dir)),
         trim_blocks=True,
         lstrip_blocks=True,

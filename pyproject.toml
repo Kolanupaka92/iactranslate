@@ -29,6 +29,8 @@ dev = [
     "ruff>=0.6",
     "hypothesis>=6.100",  # property-based tests (tests/test_properties.py)
     "markdown>=3.5",  # scripts/build_guide_artifact.py (docs → HTML for the Artifact)
+    "pip-audit>=2.7",  # dependency vulnerability gate (CI `security` job)
+    "bandit[toml]>=1.7",  # static security analysis (CI `security` job)
 ]
 
 [project.scripts]
@@ -60,3 +62,10 @@ ignore = ["B008"]
 "src/iactranslate/assessment/report.py" = ["E501"]
 "src/iactranslate/exec_report.py" = ["E501"]
 "src/iactranslate/diagram.py" = ["E501"]
+
+
+[tool.bandit]
+# Scan `src` only: `tests` deliberately exercises hostile input and asserts on
+# weak/unsafe constructs, so scanning it produces findings that are the point of
+# the test rather than defects.
+exclude_dirs = ["tests", "web", "scripts"]

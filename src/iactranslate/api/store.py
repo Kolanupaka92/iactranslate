@@ -254,8 +254,13 @@ class SqliteProjectStore:
 
     def get(self, pid: str) -> Optional[Project]:
         with self._lock:
+            # The f-string interpolates `self._COLUMNS` only — a class constant
+            # tuple of column names, never caller input. The one caller-supplied
+            # value is bound as `?`. (nosec: B608 flags the f-string shape, not
+            # a reachable injection.)
             row = self._conn.execute(
-                f"SELECT {', '.join(self._COLUMNS)} FROM projects WHERE id = ?", (pid,)
+                f"SELECT {', '.join(self._COLUMNS)} FROM projects WHERE id = ?",  # nosec B608
+                (pid,),
             ).fetchone()
         return self._row_to_project(row) if row else None
 
@@ -263,8 +268,11 @@ class SqliteProjectStore:
         """Projects belonging to one owner, newest first."""
         clause = "owner_id IS ?" if owner_id is None else "owner_id = ?"
         with self._lock:
+            # As above: `clause` is chosen from two literals and `_COLUMNS` is a
+            # constant; `owner_id` is bound. SQLite cannot bind `IS NULL`, which
+            # is why the clause is selected rather than parameterized.
             rows = self._conn.execute(
-                f"SELECT {', '.join(self._COLUMNS)} FROM projects WHERE {clause} ORDER BY rowid DESC",
+                f"SELECT {', '.join(self._COLUMNS)} FROM projects WHERE {clause} ORDER BY rowid DESC",  # nosec B608
                 (owner_id,),
             ).fetchall()
         return [self._row_to_project(row) for row in rows]

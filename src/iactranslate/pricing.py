@@ -95,7 +95,10 @@ def _azure_hourly(instance_type: str, region: str) -> Optional[float]:
     )
     url = "https://prices.azure.com/api/retail/prices?" + urllib.parse.urlencode({"$filter": flt})
     try:
-        with urllib.request.urlopen(url, timeout=_HTTP_TIMEOUT) as resp:  # noqa: S310 — fixed host
+        # Scheme and host are literal `https://prices.azure.com`; only query
+        # parameters vary and they are urlencoded. No file:/ or custom scheme
+        # is reachable. (nosec: B310 cannot see the scheme is constant.)
+        with urllib.request.urlopen(url, timeout=_HTTP_TIMEOUT) as resp:  # noqa: S310  # nosec B310
             data = json.load(resp)
     except Exception:  # noqa: BLE001
         return None
@@ -190,7 +193,9 @@ def _gcp_fetch_skus(api_key: str) -> list:
             params["pageToken"] = page_token
         url = base + "?" + urllib.parse.urlencode(params)
         try:
-            with urllib.request.urlopen(url, timeout=_HTTP_TIMEOUT) as resp:  # noqa: S310
+            # Literal `https://cloudbilling.googleapis.com` host; only query
+            # parameters vary. See the note in `_azure_hourly`.
+            with urllib.request.urlopen(url, timeout=_HTTP_TIMEOUT) as resp:  # noqa: S310  # nosec B310
                 data = json.load(resp)
         except Exception:  # noqa: BLE001
             return skus

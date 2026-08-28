@@ -1,0 +1,30 @@
+# Dependency updates. Without this, the ">=" ranges in pyproject.toml drift
+# silently: CI resolves whatever is newest at build time, so a compromised or
+# vulnerable release lands with no PR, no review, and no record.
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 5
+    groups:
+      # One PR for routine patches — dozens of individual bumps get ignored,
+      # and an ignored dependency PR is the same as not having Dependabot.
+      python-patch:
+        update-types: [patch]
+
+  - package-ecosystem: npm
+    directory: /web
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }
+
+  - package-ecosystem: docker
+    directory: /
+    schedule: { interval: weekly }
