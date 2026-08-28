@@ -69,6 +69,11 @@ Still open: this is **project-scoped** RBAC, not organisation-scoped. There are 
 teams, no groups, and no inherited roles, so granting twenty people access to
 forty projects is eight hundred grants. Orgs and group membership are the next
 step, and ABAC (attribute conditions such as environment or data
-classification) is beyond that. The membership store is in-memory like the rest
-of the single-node runtime, so grants do not survive a restart — the same
-limitation as the job queue, and it moves when the Postgres store does.
+classification) is beyond that.
+
+*Superseded in part by [ADR 0056](0056-durable-project-grants.md).* This record
+originally closed by noting that grants were in-memory and did not survive a
+restart, framed as a consistent single-node limitation. That framing was wrong:
+projects, accounts and sessions were already durable, so a restart silently
+revoked every grant while keeping everything it applied to. Grants now follow
+`IACTRANSLATE_STORE` like the rest.
