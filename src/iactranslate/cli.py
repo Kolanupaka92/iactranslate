@@ -15,6 +15,7 @@ from .agents.providers import get_provider
 from .assessment import assess, to_html, to_json
 from .confidence import score_plan
 from .costing import estimate_costs
+from .dependencies import DependencyError, analyze_dependencies, parse_flows
 from .diff import diff_inventories
 from .exec_report import build_executive_report
 from .landing_zone import DEFAULT_CIDR, LandingZone, LandingZoneError
@@ -350,6 +351,84 @@ def _cmd_transfer(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_depends(args: argparse.Namespace) -> int:
+    """Application dependencies from observed network flows."""
+    try:
+        vms = _load_inventory(args.input, args.source, args.map)
+    except UnknownSourceError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+    except FileNotFoundError:
+        print(f"error: input file not found: {args.input}", file=sys.stderr)
+        return 2
+    if not vms:
+        print(f"error: no workloads found in {args.input}", file=sys.stderr)
+        return 2
+
+    try:
+        flows = parse_flows(args.flows)
+    except FileNotFoundError:
+        print(f"error: flow export not found: {args.flows}", file=sys.stderr)
+        return 2
+    except DependencyError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+
+    waves = None
+    if not args.no_waves:
+        try:
+            target = get_target(args.target)
+        except UnknownTargetError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 2
+        waves = plan_waves(build_migration_plan(
+            vms, project_name=args.name or Path(args.input).stem, target=target
+        ))
+
+    report = analyze_dependencies(flows, vms, waves=waves)
+
+    if args.json:
+        print(json.dumps(report.model_dump(mode="json"), indent=2))
+        return 0
+
+    print(f"Flows:        {len(flows)} ({report.mapped_flows} mapped, "
+          f"{report.unmapped_flows} unmapped, {report.filtered_flows} filtered) "
+          f"— {report.coverage_pct:.0f}% coverage")
+    print(f"Dependencies: {len(report.dependencies)}")
+    for dep in report.dependencies[: args.limit]:
+        ports = ",".join(str(p) for p in dep.ports)
+        print(f"  {dep.source} -> {dep.target}  :{ports}  ({dep.connections:,} conns)")
+    if len(report.dependencies) > args.limit:
+        print(f"  … {len(report.dependencies) - args.limit} more (use --json for all)")
+
+    if report.must_move_together:
+        print("\nMust move together (mutual calls):")
+        for group in report.must_move_together:
+            print(f"  {' + '.join(group)}")
+
+    if report.external:
+        print("\nOutside the inventory — these do not migrate and must stay reachable:")
+        for ext in report.external[: args.limit]:
+            kind = "internal, unlisted" if ext.is_private else "third-party"
+            ports = ",".join(str(p) for p in ext.ports)
+            print(f"  {ext.source} -> {ext.address}:{ports}  ({kind})")
+
+    if report.violations:
+        print("\nWAVE VIOLATIONS — each is a cutover that fails:")
+        for v in report.violations[: args.limit]:
+            ports = ",".join(str(p) for p in v.ports)
+            print(f"  wave {v.source_wave} moves {v.source} before {v.target} "
+                  f"(wave {v.target_wave}) :{ports}")
+    elif waves is not None:
+        print("\nWave order: no dependency is scheduled after something that needs it.")
+
+    if report.notes:
+        print()
+        for note in report.notes:
+            print(f"  ! {note}")
+    return 0
+
+
 def _cmd_diff(args: argparse.Namespace) -> int:
     try:
         before = _load_inventory(args.before, args.source, args.map)
@@ -489,6 +568,25 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Cutover window in hours. Waves that will not fit are flagged.")
     tr.add_argument("--json", action="store_true", help="Emit the estimate as JSON.")
     tr.set_defaults(func=_cmd_transfer)
+
+    dep = sub.add_parser(
+        "depends",
+        help="Map application dependencies from a network-flow export, and check "
+             "the migration waves against them.",
+    )
+    dep.add_argument("input", help="Path to an inventory export (.xlsx/.csv).")
+    dep.add_argument("--flows", required=True,
+                     help="Network-flow export (CSV) from vRNI, Tetration, NetFlow, etc. "
+                          "Needs source, destination and destination-port columns.")
+    dep.add_argument("--target", default="aws", help=f"Target cloud ({', '.join(list_targets())}).")
+    dep.add_argument("--source", default="auto", help=src_help)
+    dep.add_argument("--map", default=None, help=map_help)
+    dep.add_argument("--name", default=None, help="Project name (defaults to input filename).")
+    dep.add_argument("--no-waves", action="store_true",
+                     help="Skip wave planning and the ordering check.")
+    dep.add_argument("--limit", type=int, default=20, help="Rows to print per section.")
+    dep.add_argument("--json", action="store_true", help="Emit the full report as JSON.")
+    dep.set_defaults(func=_cmd_depends)
 
     d = sub.add_parser("diff", help="Compare two inventory snapshots (drift detection).")
     d.add_argument("before", help="Earlier inventory export (.xlsx/.csv).")
