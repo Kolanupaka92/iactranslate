@@ -14,7 +14,7 @@ from typing import Dict, List, Optional, Tuple
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 from ..costing import estimate_costs
-from ..graph import EdgeKind, NodeKind, build_graph
+from ..graph import NodeKind, assign_subnets, build_graph
 from ..identity import (
     SSM_MANAGED_POLICY,
     IdentityMode,
@@ -54,22 +54,14 @@ def _env(template_dir: Path) -> Environment:
     )
 
 
-def _assign_subnets(plan: MigrationPlan) -> Dict[str, str]:
-    """Map each compute vm_name -> a subnet resource name.
-
-    Derived from the Infrastructure Graph's `placed_in` edges (see
-    `graph.assign_subnets` / ADR 0016) rather than re-deriving placement here,
-    so Terraform/Pulumi and the graph-based renderers (CloudFormation, Bicep,
-    CDK) and the diagram can never disagree about where an instance lands.
-    """
-    graph = build_graph(plan)
-    subnet_resource_by_id = {n.id: n.id.split(":", 1)[1] for n in graph.nodes_of(NodeKind.SUBNET)}
-    mapping: Dict[str, str] = {}
-    for inst in graph.nodes_of(NodeKind.INSTANCE):
-        placed_in = graph.out_edges(inst.id, EdgeKind.PLACED_IN)
-        if placed_in:
-            mapping[inst.name] = subnet_resource_by_id[placed_in[0].target]
-    return mapping
+# Placement is decided once, in `graph.assign_subnets`. This module used to hold
+# a second implementation that built the graph and read the answer back out of
+# its `placed_in` edges — the same mapping, obtained by a round trip. Verified
+# identical on every fixture and target before removing it.
+#
+# It also meant Pulumi imported a *private* name across a module boundary, so a
+# rename here would have broken that renderer silently.
+_assign_subnets = assign_subnets
 
 
 def _sg_resource_map(plan: MigrationPlan) -> Dict[str, str]:
