@@ -33,6 +33,9 @@ redis = ["redis>=5.0"]
 # and Cairo, which are system libraries rather than wheels; browser Save-as-PDF
 # works with no install at all.
 pdf = ["weasyprint>=61.0"]
+# OIDC single sign-on (ADR 0054). Optional: a single-operator deployment has no
+# identity provider, and PyJWT pulls in cryptography.
+sso = ["pyjwt[crypto]>=2.8"]
 dev = [
     "pytest>=8.0",
     "httpx>=0.27",
@@ -40,6 +43,7 @@ dev = [
     "ruff>=0.6",
     "hypothesis>=6.100",  # property-based tests (tests/test_properties.py)
     "cryptography>=42.0",  # tests/test_crypto.py exercises encryption at rest
+    "pyjwt[crypto]>=2.8",  # tests/test_sso.py
     "redis>=5.0",  # tests/test_ratelimit_shared.py
     "fakeredis[lua]>=2.21",  # ... offline, without a Redis server
     "markdown>=3.5",  # scripts/build_guide_artifact.py (docs → HTML for the Artifact)

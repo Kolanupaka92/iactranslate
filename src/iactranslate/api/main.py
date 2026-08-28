@@ -56,6 +56,7 @@ from ..recommend import recommend
 from ..sources import list_sources, resolve_source
 from ..targets import get_target, list_targets
 from ..validation import PlanValidationError
+from . import oidc as _oidc
 from .accounts import (
     SESSION_COOKIE,
     EmailTaken,
@@ -116,6 +117,10 @@ metrics.attach(bus)
 # Who may do what on which project. Separate from the project store because
 # a grant belongs to neither the project nor the user alone (see roles.py).
 memberships = Membership()
+
+# SSO. `None` unless IACTRANSLATE_OIDC_ISSUER is set (ADR 0054).
+sso_config = _oidc.config_from_env()
+sso_logins = _oidc.LoginStore()
 
 # Replay protection for retried writes (ADR 0051).
 idempotency = IdempotencyStore()
@@ -1072,6 +1077,67 @@ def revoke_access(pid: str, user_id: str,
     logger.info("revoked access on project %s", pid, extra={"project_id": pid})
     return {"revoked": user_id}
 
+
+@router.get("/auth/sso/login", dependencies=[Depends(limit_auth)])
+def sso_login(request: Request) -> Response:
+    """Start the authorization-code flow: redirect the browser to the provider."""
+    if sso_config is None:
+        raise HTTPException(404, "single sign-on is not configured on this deployment")
+    _require_accounts()
+    login = sso_logins.begin()
+    try:
+        url = _oidc.authorization_url(sso_config, login)
+    except _oidc.OidcError as e:
+        logger.error("sso login could not start", exc_info=True)
+        raise HTTPException(502, f"identity provider unavailable: {e}") from e
+    # 302 rather than a JSON body: this is a browser flow, and the caller is a
+    # browser following a link.
+    return Response(status_code=302, headers={"Location": url})
+
+
+@router.get("/auth/sso/callback", dependencies=[Depends(limit_auth)])
+def sso_callback(request: Request, code: str = "", state: str = "",
+                 error: str = "") -> JSONResponse:
+    """Complete the flow: validate the ID token and establish a session."""
+    if sso_config is None:
+        raise HTTPException(404, "single sign-on is not configured on this deployment")
+    accts = _require_accounts()
+    if error:
+        # The provider's own error, echoed back to the browser. Not trusted as
+        # markup — it lands in a JSON body, never in HTML.
+        raise HTTPException(400, f"identity provider returned an error: {error[:200]}")
+    if not code or not state:
+        raise HTTPException(400, "callback is missing code or state")
+
+    try:
+        login = sso_logins.consume(state)
+        tokens = _oidc.exchange_code(sso_config, code, login.verifier)
+        id_token = tokens.get("id_token")
+        if not id_token:
+            raise _oidc.OidcError("token response carried no id_token")
+        claims = _oidc.verify_id_token(sso_config, id_token, login.nonce)
+        subject, email = _oidc.identity_from_claims(sso_config, claims)
+    except _oidc.OidcError as e:
+        # Logged with detail, returned without: the message can name issuers,
+        # audiences and claim contents, which is diagnostic for us and
+        # reconnaissance for anyone probing the endpoint.
+        logger.warning("sso callback rejected", exc_info=True, extra={"reason": str(e)})
+        raise HTTPException(401, "single sign-on failed") from e
+
+    user = accts.get_user_by_email(email)
+    if user is None:
+        # Just-in-time provisioning. The password is random and never used —
+        # an SSO account must not also be reachable by password, or the identity
+        # provider stops being the only way in.
+        user = accts.create_user(email, secrets.token_urlsafe(32))
+        logger.info("provisioned user from sso", extra={"user_id": user.id})
+
+    response = JSONResponse(
+        status_code=200, content={"id": user.id, "email": user.email, "via": "sso"}
+    )
+    _set_session_cookie(response, accts.create_session(user.id))
+    logger.info("sso login", extra={"user_id": user.id, "subject": subject})
+    return response
 
 # --------------------------------------------------------------------------- #
 # Mounting
