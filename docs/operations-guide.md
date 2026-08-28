@@ -491,7 +491,7 @@ All env vars (see `src/iactranslate/config.py`):
 | `ANTHROPIC_API_KEY` | — | Required for `anthropic`; absent → auto-fallback to `rule` (see §6.7, ADR 0021). |
 | `IACTRANSLATE_ANTHROPIC_MODEL` | `claude-opus-4-8` | Model for classify/rightsize. |
 | `IACTRANSLATE_MAX_UPLOAD_MB` | `25` | Upload cap → `413`. Streamed, never buffered whole. |
-| `IACTRANSLATE_MAX_VMS` | `5000` | Inventory size cap → `400`. |
+| `IACTRANSLATE_MAX_VMS` | `20000` | Inventory size cap → `400`. |
 | `IACTRANSLATE_MAX_PROJECTS` | `200` | Store capacity cap; oldest evicted (temp dirs deleted). |
 | `IACTRANSLATE_STORE` | `memory` | `memory` (dies on restart, zero setup) or `sqlite` (persists project metadata **and the audit trail** to `IACTRANSLATE_DB_PATH`, surviving a restart — see ADR 0025, 0026). |
 | `IACTRANSLATE_DB_PATH` | `./iactranslate.db` | SQLite file path when `IACTRANSLATE_STORE=sqlite`. |
@@ -650,9 +650,24 @@ diagram, and the `.zip`.
 | 1,000 | ~0.035 s | ~0.08 s | ~0.21 s | ~90 MB |
 | 5,000 | ~0.16 s | ~0.31 s | ~0.68 s | ~170 MB |
 
+Measured again at larger sizes with `scripts/bench_scale.py`, because the
+earlier numbers stopped at the old 5,000 cap and that cap had hardened into an
+assumed architectural limit:
+
+| Workloads | CSV parse+normalize | XLSX parse+normalize | plan | peak RSS |
+|---|---|---|---|---|
+| 20,000 | ~0.94 s | ~9.2 s | ~0.64 s | 129–190 MB |
+| 50,000 | ~3.7 s | — | ~3.3 s | ~357 MB |
+
 Notes:
-- Scaling is roughly linear in workload count; 5,000 (`IACTRANSLATE_MAX_VMS`
-  default) is comfortably sub-second end-to-end.
+- **Memory is not the constraint.** 50,000 workloads peak around 357 MB, and the
+  `.xlsx` path actually uses *less* than CSV. `IACTRANSLATE_MAX_VMS` now defaults
+  to 20,000 on the strength of these numbers.
+- **The constraint is CPU on `.xlsx`** — roughly 10× slower than CSV for the same
+  rows. A very large estate is much cheaper exported as CSV, and worth saying to
+  a customer before they wait nine seconds for twenty thousand rows.
+- Cost per workload rises gently with size (0.06 → 0.14 ms), so the curve is
+  slightly superlinear rather than flat; extrapolate with that in mind.
 - The `anthropic` provider and `live` pricing add network latency (per-call, with
   a 24 h price cache) — those paths are I/O-bound, not CPU-bound.
 - Reproduce with `scripts/` bench or the snippet in the repo; numbers are

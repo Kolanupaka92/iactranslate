@@ -12,7 +12,14 @@ from typing import List
 MAX_UPLOAD_BYTES: int = int(os.getenv("IACTRANSLATE_MAX_UPLOAD_MB", "25")) * 1024 * 1024
 
 # Reject inventories with more VMs than this (bounds plan/output size + CPU).
-MAX_VMS: int = int(os.getenv("IACTRANSLATE_MAX_VMS", "5000"))
+#: Ceiling on workloads per translation. Raised from 5,000 on measurement
+#: (`scripts/bench_scale.py`): 20,000 workloads parse and plan in ~9s from
+#: `.xlsx` and ~1.6s from CSV, at 129-190 MB — nowhere near a memory wall. The
+#: old value was a guess that had hardened into an assumed architectural limit.
+#:
+#: The real constraint is CPU on `.xlsx`, roughly 10x slower than CSV for the
+#: same rows, so a very large estate is much cheaper exported as CSV.
+MAX_VMS: int = int(os.getenv("IACTRANSLATE_MAX_VMS", "20000"))
 
 # Cap the in-memory project store; oldest projects are evicted (their temp
 # workspaces are deleted) beyond this to bound disk usage.
