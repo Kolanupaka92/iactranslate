@@ -27,7 +27,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from fastapi import Depends, FastAPI, HTTPException, Response, UploadFile
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 from pydantic import BaseModel, field_validator
@@ -78,6 +78,17 @@ logger = get_logger("iactranslate.api")
 configure_logging()
 
 app = FastAPI(title="IaCTranslate", version="0.1.0")
+
+# Routes are declared on a router and mounted twice: under `/v1`, and at the
+# legacy unprefixed paths. Adding the prefix now costs nothing; adding it after
+# clients exist means breaking every one of them, and the first breaking change
+# to an unversioned API is the expensive one. The unprefixed mount keeps the web
+# app and any existing caller working, and marks itself deprecated so a client
+# can discover the move without reading a changelog.
+#
+# `/health` and `/metrics` stay unversioned deliberately — probes and scrapers
+# point at fixed paths and are infrastructure, not API surface.
+router = APIRouter()
 store = create_store()
 accounts = create_account_store()  # None unless IACTRANSLATE_AUTH=session
 
@@ -344,7 +355,7 @@ def _set_session_cookie(response: JSONResponse, token: str) -> None:
     )
 
 
-@app.post("/auth/register", status_code=201)
+@router.post("/auth/register", status_code=201)
 def register(body: Credentials, request: Request) -> JSONResponse:
     # Throttled by IP and by target email — see ratelimit.limit_auth.
     limit_auth(request, body.email)
@@ -362,7 +373,7 @@ def register(body: Credentials, request: Request) -> JSONResponse:
     return response
 
 
-@app.post("/auth/login")
+@router.post("/auth/login")
 def login(body: Credentials, request: Request) -> JSONResponse:
     # The most attackable endpoint in the product: it accepts a password and
     # reports whether it was right. Per-email throttling matters as much as
@@ -378,7 +389,7 @@ def login(body: Credentials, request: Request) -> JSONResponse:
     return response
 
 
-@app.post("/auth/logout", status_code=204)
+@router.post("/auth/logout", status_code=204)
 def logout(request: Request) -> Response:
     if accounts is not None:
         accounts.delete_session(request.cookies.get(SESSION_COOKIE, ""))
@@ -401,7 +412,7 @@ class ChangePassword(BaseModel):
     new_password: str
 
 
-@app.post("/auth/forgot-password", status_code=202)
+@router.post("/auth/forgot-password", status_code=202)
 def forgot_password(body: ForgotPassword, request: Request) -> dict:
     """Start a reset. Always 202, whether or not the account exists.
 
@@ -416,7 +427,7 @@ def forgot_password(body: ForgotPassword, request: Request) -> dict:
     return {"status": "if that account exists, a reset link has been sent"}
 
 
-@app.post("/auth/reset-password", status_code=204)
+@router.post("/auth/reset-password", status_code=204)
 def reset_password(body: ResetPassword, request: Request) -> Response:
     limit_auth(request)
     accts = _require_accounts()
@@ -436,7 +447,7 @@ def reset_password(body: ResetPassword, request: Request) -> Response:
     return response
 
 
-@app.post("/auth/change-password", status_code=204)
+@router.post("/auth/change-password", status_code=204)
 def change_password(
     body: ChangePassword, request: Request, user: Optional[User] = Depends(current_user)
 ) -> Response:
@@ -464,20 +475,20 @@ def change_password(
     return response
 
 
-@app.get("/auth/me")
+@router.get("/auth/me")
 def whoami(user: Optional[User] = Depends(current_user)) -> dict:
     if user is None:
         return {"authenticated": False, "multi_tenant": False}
     return {"authenticated": True, "multi_tenant": True, "id": user.id, "email": user.email}
 
 
-@app.get("/projects", dependencies=[Depends(limit_reads)])
+@router.get("/projects", dependencies=[Depends(limit_reads)])
 def list_projects(user: Optional[User] = Depends(current_user)) -> list:
     """Every project the caller owns — the tenant's own view, nobody else's."""
     return [_summary(p) for p in store.list_for_owner(user.id if user else None)]
 
 
-@app.post("/projects", status_code=201, dependencies=[Depends(require_api_key), Depends(limit_writes)])
+@router.post("/projects", status_code=201, dependencies=[Depends(require_api_key), Depends(limit_writes)])
 def create_project(body: CreateProject, user: Optional[User] = Depends(current_user)) -> dict:
     if body.target not in list_targets():
         raise HTTPException(400, f"target '{body.target}' not supported (available: {', '.join(list_targets())})")
@@ -514,13 +525,13 @@ def prometheus_metrics() -> PlainTextResponse:
     )
 
 
-@app.get("/policies")
+@router.get("/policies")
 def policies() -> dict:
     """Available policy rules (name -> description) for building a policy config."""
     return list_policies()
 
 
-@app.get("/targets")
+@router.get("/targets")
 def targets() -> list:
     """Targets and their advertised capabilities — lets a UI enable features declaratively."""
     return [
@@ -529,12 +540,12 @@ def targets() -> list:
     ]
 
 
-@app.get("/projects/{pid}", dependencies=[Depends(require_api_key), Depends(limit_reads)])
+@router.get("/projects/{pid}", dependencies=[Depends(require_api_key), Depends(limit_reads)])
 def get_project(pid: str, user: Optional[User] = Depends(current_user)) -> dict:
     return _summary(_require_project(pid, user))
 
 
-@app.delete("/projects/{pid}", status_code=204, dependencies=[Depends(require_api_key), Depends(limit_writes)])
+@router.delete("/projects/{pid}", status_code=204, dependencies=[Depends(require_api_key), Depends(limit_writes)])
 def delete_project(pid: str, user: Optional[User] = Depends(current_user)) -> None:
     # Ownership is checked *before* deleting — otherwise any signed-in user
     # could destroy another tenant's project by guessing its id.
@@ -545,7 +556,7 @@ def delete_project(pid: str, user: Optional[User] = Depends(current_user)) -> No
     bus.publish(Event(EventType.PROJECT_DELETED, project_id=pid))
 
 
-@app.post("/projects/{pid}/upload", dependencies=[Depends(require_api_key), Depends(limit_writes)])
+@router.post("/projects/{pid}/upload", dependencies=[Depends(require_api_key), Depends(limit_writes)])
 async def upload(pid: str, file: UploadFile, user: Optional[User] = Depends(current_user)) -> dict:
     project = _require_project(pid, user)
 
@@ -661,7 +672,7 @@ def _execute_run(project: Project) -> None:
     logger.info("project %s generated %d instances", project.id, result.plan.vm_count)
 
 
-@app.post("/projects/{pid}/run", dependencies=[Depends(require_api_key), Depends(limit_writes)])
+@router.post("/projects/{pid}/run", dependencies=[Depends(require_api_key), Depends(limit_writes)])
 def run(pid: str, user: Optional[User] = Depends(current_user)) -> dict:
     """Synchronous run — generates in-request. See POST /jobs for the async path."""
     project = _require_project(pid, user)
@@ -679,7 +690,7 @@ def run(pid: str, user: Optional[User] = Depends(current_user)) -> dict:
     return _summary(project)
 
 
-@app.post("/projects/{pid}/jobs", status_code=202, dependencies=[Depends(require_api_key), Depends(limit_writes)])
+@router.post("/projects/{pid}/jobs", status_code=202, dependencies=[Depends(require_api_key), Depends(limit_writes)])
 def create_job(pid: str, user: Optional[User] = Depends(current_user)) -> dict:
     """Asynchronous run — enqueue the pipeline and return a job id to poll."""
     project = _require_project(pid, user)
@@ -691,7 +702,7 @@ def create_job(pid: str, user: Optional[User] = Depends(current_user)) -> dict:
     return job.to_dict()
 
 
-@app.get("/jobs/{job_id}", dependencies=[Depends(require_api_key), Depends(limit_reads)])
+@router.get("/jobs/{job_id}", dependencies=[Depends(require_api_key), Depends(limit_reads)])
 def get_job(job_id: str, user: Optional[User] = Depends(current_user)) -> dict:
     job = jobs.get(job_id)
     if job is None:
@@ -706,7 +717,7 @@ def get_job(job_id: str, user: Optional[User] = Depends(current_user)) -> dict:
     return data
 
 
-@app.get("/audit", dependencies=[Depends(require_api_key), Depends(limit_reads)])
+@router.get("/audit", dependencies=[Depends(require_api_key), Depends(limit_reads)])
 def get_audit(
     project_id: Optional[str] = None,
     limit: int = 100,
@@ -729,7 +740,7 @@ def get_audit(
     return [e.to_dict() for e in events if e.project_id in owned]
 
 
-@app.post("/projects/{pid}/recommend", dependencies=[Depends(require_api_key), Depends(limit_writes)])
+@router.post("/projects/{pid}/recommend", dependencies=[Depends(require_api_key), Depends(limit_writes)])
 def recommend_cloud(pid: str, user: Optional[User] = Depends(current_user)) -> dict:
     project = _require_project(pid, user)
     if project.upload_path is None:
@@ -742,7 +753,7 @@ def recommend_cloud(pid: str, user: Optional[User] = Depends(current_user)) -> d
         raise HTTPException(400, str(e)) from e
 
 
-@app.post("/projects/{pid}/assess", dependencies=[Depends(require_api_key), Depends(limit_writes)])
+@router.post("/projects/{pid}/assess", dependencies=[Depends(require_api_key), Depends(limit_writes)])
 def assess_estate(pid: str, user: Optional[User] = Depends(current_user)) -> dict:
     project = _require_project(pid, user)
     if project.upload_path is None:
@@ -756,7 +767,7 @@ def assess_estate(pid: str, user: Optional[User] = Depends(current_user)) -> dic
     return a.model_dump(mode="json")
 
 
-@app.post(
+@router.post(
     "/projects/{pid}/report",
     response_class=HTMLResponse,
     dependencies=[Depends(require_api_key), Depends(limit_writes)],
@@ -779,7 +790,7 @@ def executive_report(pid: str, include_recommendation: bool = True,
     return HTMLResponse(build_executive_report(plan, vms, recommendation=rec))
 
 
-@app.get("/projects/{pid}/download", dependencies=[Depends(require_api_key), Depends(limit_reads)])
+@router.get("/projects/{pid}/download", dependencies=[Depends(require_api_key), Depends(limit_reads)])
 def download(pid: str, user: Optional[User] = Depends(current_user)) -> FileResponse:
     project = _require_project(pid, user)
     if not project.zip_path or not Path(project.zip_path).exists():
@@ -789,3 +800,37 @@ def download(pid: str, user: Optional[User] = Depends(current_user)) -> FileResp
         media_type="application/zip",
         filename=f"{project.name}.zip",
     )
+
+
+# --------------------------------------------------------------------------- #
+# Mounting
+# --------------------------------------------------------------------------- #
+
+API_VERSION = "v1"
+_DEPRECATION_NOTE = (
+    'unversioned paths are deprecated; use /v1'
+)
+
+app.include_router(router, prefix=f"/{API_VERSION}")
+
+# Legacy, unprefixed mount. Kept so the web app and any existing caller keep
+# working; removing it is a breaking change and belongs in a major release.
+app.include_router(router, include_in_schema=False)
+
+
+@app.middleware("http")
+async def _deprecate_unversioned(request: Request, call_next):
+    """Mark responses served from the legacy unprefixed paths.
+
+    A client should be able to discover the move without reading a changelog,
+    and a deployment should be able to measure how much traffic still needs
+    migrating before the legacy mount is removed. `/health` and `/metrics` are
+    versionless by design and are not flagged.
+    """
+    response = await call_next(request)
+    path = request.url.path
+    if not path.startswith(f"/{API_VERSION}/") and path not in ("/health", "/metrics"):
+        response.headers.setdefault("Deprecation", "true")
+        response.headers.setdefault("Warning", f'299 - "{_DEPRECATION_NOTE}"')
+        response.headers.setdefault("Link", f'</{API_VERSION}{path}>; rel="successor-version"')
+    return response

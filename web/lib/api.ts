@@ -3,6 +3,13 @@
 export const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
+/**
+ * Versioned API root. The backend also serves the unprefixed paths for
+ * back-compat, but those return a `Deprecation` header — our own client should
+ * not be the thing triggering it.
+ */
+export const API_BASE = `${API_URL}/v1`;
+
 export type Target = "aws" | "azure" | "gcp" | "oci" | "digitalocean";
 export type Source = "auto" | "vmware" | "hyperv" | "kubernetes" | "cloud" | "generic";
 export type Provider = "rule" | "anthropic";
@@ -126,7 +133,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     // app and API are separate origins in dev). The API must therefore echo a
     // specific Origin in IACTRANSLATE_CORS_ORIGINS — "*" is rejected by the
     // browser whenever credentials are included.
-    res = await fetch(`${API_URL}${path}`, { credentials: "include", ...init });
+    res = await fetch(`${API_BASE}${path}`, { credentials: "include", ...init });
   } catch {
     throw new ApiError(
       0,
@@ -200,11 +207,11 @@ export function deleteProject(projectId: string): Promise<void> {
  *  exactly why auth here is a cookie and not a bearer token: a navigation has
  *  no fetch call to hang an Authorization header on. */
 export function downloadUrl(projectId: string): string {
-  return `${API_URL}/projects/${projectId}/download`;
+  return `${API_BASE}/projects/${projectId}/download`;
 }
 
 export function reportUrl(projectId: string): string {
-  return `${API_URL}/projects/${projectId}/report`;
+  return `${API_BASE}/projects/${projectId}/report`;
 }
 
 /** POST the report and return its HTML.

@@ -55,5 +55,7 @@ Format: [Michael Nygard's ADR template](https://cognitect.com/blog/2011/11/15/do
 | [0045](0045-mandated-tags-in-every-clouds-native-form.md) | Mandated tags via each cloud's native mechanism; normalise, never drop | Accepted |
 | [0046](0046-shared-rate-limit-buckets.md) | Shared rate-limit buckets in Redis, atomic via Lua, degrading to per-replica | Accepted |
 | [0047](0047-data-transfer-and-cutover-windows.md) | Data-transfer time and cutover-window fit, per migration wave | Accepted |
+| [0048](0048-rank-the-recommendation-on-the-full-bill.md) | Rank the recommendation on the itemized total, not compute alone | Accepted |
+| [0049](0049-api-versioning.md) | Version the API at /v1 before it has clients; legacy mount marks itself deprecated | Accepted |
 
 See also the [Architecture & Design](../architecture.md) overview.

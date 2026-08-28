@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 
 from .agents import build_migration_plan
 from .config import MAX_VMS
+from .costing import estimate_costs
 from .models import NormalizedVM
 from .sizing import effective_demand
 from .targets import get_target, list_targets
@@ -36,7 +37,13 @@ _AWS_OS_BASELINE = 0.6
 
 class CloudScore(BaseModel):
     cloud: str
-    total_monthly_cost_usd: float
+    total_monthly_cost_usd: float = Field(
+        description="Itemized monthly total — compute, storage, licensing, load balancers"
+    )
+    compute_monthly_cost_usd: float = Field(
+        default=0.0,
+        description="Instance cost alone, so the itemized total can be checked against it",
+    )
     annual_cost_usd: float = 0.0
     windows_vms: int
     linux_vms: int
@@ -155,8 +162,17 @@ def recommend(vms: List[NormalizedVM], targets: Optional[List[str]] = None) -> R
     for name in names:
         target = get_target(name)
         plan = build_migration_plan(vms, project_name="recommendation", target=target)
+        # The itemized total, not `plan.total_estimated_monthly_cost_usd`, which
+        # is compute only (ADR 0039). Ranking on compute while every other
+        # surface quoted the full bill left the recommendation arguing from a
+        # number the customer would never see — and the gap between the two is
+        # not a constant: it ranges from 12% on DigitalOcean to 79% on OCI,
+        # because storage and Windows licensing scale differently per cloud.
+        costs = estimate_costs(plan)
         raw[name] = {
-            "cost": plan.total_estimated_monthly_cost_usd,
+            "cost": costs.total,
+            "compute": costs.compute,
+            "breakdown": costs,
             "fit": _fit(vms, plan.compute),
             "os": _os_affinity(name, windows_fraction),
             "unsupported": _unsupported_count(target, vms),
@@ -235,6 +251,7 @@ def recommend(vms: List[NormalizedVM], targets: Optional[List[str]] = None) -> R
             CloudScore(
                 cloud=name,
                 total_monthly_cost_usd=r["cost"],
+                compute_monthly_cost_usd=r["compute"],
                 annual_cost_usd=round(r["cost"] * 12, 2),
                 windows_vms=windows,
                 linux_vms=linux,
