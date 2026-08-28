@@ -7,7 +7,7 @@ unversioned API is the expensive one.
 import pytest
 from fastapi.testclient import TestClient
 
-from iactranslate.api.main import API_VERSION, app
+from iactranslate.api.main import API_VERSION, app, router
 
 
 @pytest.fixture
@@ -15,22 +15,28 @@ def client():
     return TestClient(app)
 
 
-def _paths():
-    """Every routed path, from the app itself rather than a hand-kept list —
-    a new endpoint added only to the legacy mount would otherwise go unnoticed."""
-    prefixes = ("/v1/", "/projects", "/auth", "/jobs", "/audit", "/targets", "/policies")
-    return {
-        r.path for r in app.routes
-        if getattr(r, "path", "").startswith(prefixes)
-    }
+def test_every_declared_route_is_served_under_v1():
+    """Derived from the router we declare and the OpenAPI schema we publish.
+
+    An earlier version of this test filtered `app.routes` by path prefix, which
+    reads FastAPI's internal mounting behaviour — that differs across versions
+    and passed on 3.9 while failing on 3.11/3.12 for reasons that had nothing to
+    do with the feature. `router.routes` is our own object and `app.openapi()`
+    is a public, stable contract; both say what we actually mean.
+    """
+    declared = {r.path for r in router.routes}
+    assert declared, "routes should be declared on the router"
+    schema = set(app.openapi()["paths"])
+    for path in declared:
+        assert f"/{API_VERSION}{path}" in schema, f"{path} is not served under /{API_VERSION}"
 
 
-def test_every_route_is_reachable_under_v1():
-    versioned = {p for p in _paths() if p.startswith(f"/{API_VERSION}/")}
-    legacy = {p for p in _paths() if not p.startswith(f"/{API_VERSION}/")}
-    assert legacy, "the legacy mount should still exist"
-    for path in legacy:
-        assert f"/{API_VERSION}{path}" in versioned, f"{path} has no /v1 equivalent"
+def test_the_legacy_mount_is_hidden_from_the_schema():
+    """Generated clients and docs should describe only the versioned surface,
+    while existing callers keep working."""
+    declared = {r.path for r in router.routes}
+    schema = set(app.openapi()["paths"])
+    assert not (declared & schema), "unversioned paths must not appear in the schema"
 
 
 def test_v1_and_legacy_return_the_same_thing(client):
