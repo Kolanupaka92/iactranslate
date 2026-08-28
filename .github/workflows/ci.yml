@@ -109,6 +109,29 @@ jobs:
             sleep 1
           done
           echo "health check failed"; docker logs iac; exit 1
+      - name: Smoke-test server-side PDF rendering
+        # The one place PDF rendering can actually be exercised: WeasyPrint needs
+        # Pango and Cairo, which the image installs and a developer laptop
+        # usually does not. Verifies a real PDF comes out, not just that the
+        # import succeeded.
+        run: |
+          docker run --rm iactranslate:ci python -c "
+          from iactranslate import pdf
+          assert pdf.available(), 'weasyprint should be importable in the image'
+          from iactranslate.normalize import normalize
+          from iactranslate.parsers import parse
+          from iactranslate.agents import build_migration_plan
+          from iactranslate.targets import get_target
+          from iactranslate.exec_report import build_executive_report
+          from iactranslate.cli import sample_estate_path
+          vms = normalize(parse(str(sample_estate_path())))
+          plan = build_migration_plan(vms, 'ci', get_target('aws'))
+          out = pdf.render(build_executive_report(plan, vms))
+          assert out.startswith(b'%PDF-'), out[:20]
+          assert len(out) > 5000, len(out)
+          print('rendered', len(out), 'byte PDF')
+          "
+
       - name: Smoke-test the zero-input demo
         # The path a first-time evaluator takes: no inventory, no account,
         # no upload. If this breaks, nobody can try the product.

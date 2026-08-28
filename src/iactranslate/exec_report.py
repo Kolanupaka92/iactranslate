@@ -20,6 +20,7 @@ from .diagram import architecture_svg
 from .display import display_cloud, display_source, plural
 from .models import MigrationPlan, NormalizedVM
 from .narrative import generate_narrative
+from .print_style import PRINT_CSS
 from .recommend import Recommendation
 from .waves import WaveReport, plan_waves
 
@@ -287,7 +288,8 @@ def build_executive_report(
   .bar-fill {{ height:100%; background:var(--accent); border-radius:99px; }}
   .bar-val {{ width:44px; text-align:right; font-variant-numeric:tabular-nums; font-size:.82rem; }}
   footer {{ margin-top:28px; text-align:center; color:var(--muted); font-size:.78rem; }}
-</style>
+
+{PRINT_CSS}</style>
 </head>
 <body>
 <div class="wrap">

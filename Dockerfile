@@ -19,6 +19,11 @@ FROM python:3.12-slim AS runtime
 # from becoming a list someone has to maintain by hand.
 RUN apt-get update \
     && apt-get upgrade -y --no-install-recommends \
+    # Pango/Cairo back WeasyPrint, so the API can return a PDF without a
+    # browser in the loop. Installed here rather than made a Python dependency:
+    # a bare `pip install iactranslate` should not need a compiler toolchain.
+    && apt-get install -y --no-install-recommends \
+        libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz0b libffi8 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -28,7 +33,7 @@ WORKDIR /app
 
 # Install only the built wheel + its runtime deps (no build toolchain).
 COPY --from=builder /wheels /wheels
-RUN pip install --no-cache-dir /wheels/*.whl \
+RUN pip install --no-cache-dir /wheels/*.whl weasyprint \
     && rm -rf /wheels
 
 USER appuser

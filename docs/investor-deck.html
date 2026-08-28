@@ -88,6 +88,18 @@
   .cta a{color:var(--accent);text-underline-offset:3px;}
   code{font-family:var(--mono);background:var(--panel);border:1px solid var(--line);border-radius:5px;padding:1px 6px;font-size:.85em;color:var(--accent);}
   .hint{position:fixed;top:18px;right:22px;z-index:20;font-family:var(--mono);font-size:11px;color:var(--faint);}
+
+  @page { size: A4 landscape; margin: 10mm; }
+  @media print {
+    :root { color-scheme: light; }
+    html, body { background:#fff !important; color:#111 !important; }
+    section { break-after: page; page-break-after: always; break-inside: avoid; }
+    section:last-of-type { break-after: auto; page-break-after: auto; }
+    .card, .stat { box-shadow:none !important; break-inside: avoid; }
+    .grid { break-inside: avoid; }
+    a[href^="http"]::after { content:" (" attr(href) ")"; font-size:8pt; color:#555; }
+    nav, button, .no-print { display:none !important; }
+  }
 </style>
 
 <div class="deck" id="deck">

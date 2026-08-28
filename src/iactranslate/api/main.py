@@ -48,6 +48,8 @@ from ..crypto import (
 from ..exec_report import build_executive_report
 from ..normalize import normalize
 from ..observability import configure_logging, correlation_id, get_logger, new_correlation_id
+from ..pdf import PdfUnavailable
+from ..pdf import render as render_pdf
 from ..pipeline import run_pipeline
 from ..policy import PolicyViolationError, list_policies
 from ..recommend import recommend
@@ -302,6 +304,13 @@ async def _unhandled(request: Request, exc: Exception) -> JSONResponse:
     # Never leak internals/tracebacks to clients; log server-side with context.
     logger.exception("unhandled error on %s %s", request.method, request.url.path)
     return JSONResponse(status_code=500, content={"detail": "internal server error"})
+
+
+def _safe_filename(name: str) -> str:
+    """A project name is user-supplied and lands in a Content-Disposition header,
+    where a quote or newline is a header-injection primitive."""
+    cleaned = "".join(c if (c.isalnum() or c in " ._-") else "-" for c in name).strip()
+    return (cleaned or "report")[:64]
 
 
 def _summary(project: Project) -> dict:
@@ -937,7 +946,8 @@ def assess_estate(pid: str, user: Optional[User] = Depends(current_user)) -> dic
     dependencies=[Depends(require_api_key), Depends(limit_writes)],
 )
 def executive_report(pid: str, include_recommendation: bool = True,
-                     user: Optional[User] = Depends(current_user)) -> HTMLResponse:
+                     format: str = "html",
+                     user: Optional[User] = Depends(current_user)) -> Response:
     project = _require_project(pid, user, Role.VIEWER)
     if project.upload_path is None:
         raise HTTPException(400, "no file uploaded for this project")
@@ -951,7 +961,27 @@ def executive_report(pid: str, include_recommendation: bool = True,
         source_platform=getattr(src, "source_platform", src.name),
     )
     rec = recommend(vms) if include_recommendation else None
-    return HTMLResponse(build_executive_report(plan, vms, recommendation=rec))
+    html = build_executive_report(plan, vms, recommendation=rec)
+
+    if format.lower() == "pdf":
+        try:
+            pdf = render_pdf(html)
+        except PdfUnavailable as e:
+            # 501, not 500: the request was valid and the server simply does not
+            # offer this representation. A 500 would send the caller hunting for
+            # a bug that does not exist.
+            raise HTTPException(501, str(e)) from e
+        return Response(
+            content=pdf,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition":
+                    f'attachment; filename="{_safe_filename(project.name)}-report.pdf"'
+            },
+        )
+    if format.lower() != "html":
+        raise HTTPException(400, "format must be 'html' or 'pdf'")
+    return HTMLResponse(html)
 
 
 @router.get("/projects/{pid}/download", dependencies=[Depends(require_api_key), Depends(limit_reads)])

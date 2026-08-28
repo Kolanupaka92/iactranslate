@@ -9,6 +9,7 @@ import html
 import json
 from typing import List
 
+from ..print_style import PRINT_CSS
 from .models import Finding, InfrastructureAssessment, Severity
 
 _BAND_COLOR = {
@@ -129,7 +130,7 @@ def to_html(assessment: InfrastructureAssessment) -> str:
   @media (prefers-color-scheme: dark) {{ .chip {{ background:#1e293b; color:#cbd5e1; }} }}
   .none {{ color:#16a34a; font-weight:600; }}
   footer {{ margin-top:32px; color:#94a3b8; font-size:.8rem; text-align:center; }}
-</style>
+{PRINT_CSS}</style>
 </head>
 <body>
 <div class="wrap">

@@ -19,6 +19,8 @@ from .diff import diff_inventories
 from .exec_report import build_executive_report
 from .landing_zone import DEFAULT_CIDR, LandingZone, LandingZoneError
 from .normalize import normalize
+from .pdf import PdfUnavailable
+from .pdf import render as render_pdf
 from .pipeline import run_pipeline
 from .policy import PolicyViolationError, UnknownPolicyError, load_policy_config
 from .recommend import recommend
@@ -206,7 +208,15 @@ def _cmd_assess(args: argparse.Namespace) -> int:
         print(to_json(a))
         return 0
     if args.html_out:
-        Path(args.html_out).write_text(to_html(a), encoding="utf-8")
+        out = Path(args.html_out)
+        if getattr(args, "pdf", False) or out.suffix.lower() == ".pdf":
+            try:
+                out.write_bytes(render_pdf(to_html(a)))
+            except PdfUnavailable as e:
+                print(f"error: {e}", file=sys.stderr)
+                return 2
+        else:
+            out.write_text(to_html(a), encoding="utf-8")
 
     r = a.readiness
     print(f"Assessment: {a.project_name} (source: {a.source_platform})")
@@ -258,8 +268,22 @@ def _cmd_report(args: argparse.Namespace) -> int:
     rec = None if args.no_recommend else recommend(vms)
     html = build_executive_report(plan, vms, recommendation=rec)
 
+    # `--out report.pdf` means a PDF was wanted even without the flag; writing
+    # HTML into a .pdf path would produce a file no viewer can open.
+    want_pdf = getattr(args, "pdf", False) or str(args.out).lower().endswith(".pdf")
+    if want_pdf:
+        try:
+            Path(args.out).write_bytes(render_pdf(html))
+        except PdfUnavailable as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 2
+        print(f"Executive report written to {args.out}")
+        return 0
+
     Path(args.out).write_text(html, encoding="utf-8")
     print(f"Executive report written to {args.out}")
+    print("To share as PDF: open it in a browser and choose Save as PDF "
+          "(the report carries a print stylesheet), or re-run with --pdf.")
     return 0
 
 
@@ -429,6 +453,8 @@ def build_parser() -> argparse.ArgumentParser:
     a.add_argument("--name", default=None, help="Project name (defaults to input filename).")
     a.add_argument("--json", action="store_true", help="Emit the assessment as JSON to stdout.")
     a.add_argument("--html-out", default=None, help="Also write a standalone HTML report to this path.")
+    a.add_argument("--pdf", action="store_true",
+                   help="Write --html-out as a PDF. Needs `pip install 'iactranslate[pdf]'`.")
     a.set_defaults(func=_cmd_assess)
 
     rp = sub.add_parser("report", help="Generate a client-facing executive migration report (HTML).")
@@ -440,6 +466,9 @@ def build_parser() -> argparse.ArgumentParser:
     rp.add_argument("--region", default=None, help="Target region/location (defaults per cloud).")
     rp.add_argument("--no-recommend", action="store_true", help="Skip the 3-cloud recommendation section.")
     rp.add_argument("--out", default="executive-report.html", help="Output HTML path.")
+    rp.add_argument("--pdf", action="store_true",
+                    help="Render a PDF instead of HTML. Needs `pip install 'iactranslate[pdf]'`; "
+                         "otherwise open the HTML in a browser and Save as PDF.")
     rp.set_defaults(func=_cmd_report)
 
     tr = sub.add_parser(
