@@ -152,6 +152,13 @@ backends and integrations that plug into them, via the
 - ✅ Kubernetes/KubeVirt — VMs as `VirtualMachine` CRDs, SG ingress as
   `NetworkPolicy`, cloud-agnostic (see [ADR 0017](adr/0017-kubernetes-from-graph.md))
 - ◻ Migrate the rest of Terraform/Pulumi's resource generation onto the graph
+- ◻ **PostgreSQL store / job queue / grants** — deliberately *not* built yet.
+  SQLite already removes the actual defect (data loss on restart) and the
+  `create_store` / `create_job_queue` / `create_membership` seams make Postgres a
+  mechanical addition. It buys multi-*replica*, which is a scaling property with
+  no load to scale for; writing it speculatively would be several hundred lines
+  verifiable only through CI round-trips. Build it when a deployment needs a
+  second replica, not before.
 - ◻ **Rank the recommendation on the full breakdown** — `recommend()` still
   compares clouds on compute alone, while every other surface now quotes the
   itemized total. Windows licensing varies enough between clouds to move the
