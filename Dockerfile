@@ -10,6 +10,18 @@ RUN pip install --no-cache-dir --upgrade pip build \
 
 FROM python:3.12-slim AS runtime
 
+# Apply outstanding OS security updates. The base image is rebuilt on its own
+# schedule and lags Debian's security archive — CI's Trivy gate caught three
+# fixed HIGH CVEs this way, including CVE-2026-14456 in libssl3t64, where the
+# patched package was already published and simply not yet in the base.
+#
+# Upgrading at build time rather than pinning individual packages keeps this
+# from becoming a list someone has to maintain by hand.
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
 # Run as a non-root user.
 RUN useradd --create-home --uid 10001 appuser
 WORKDIR /app

@@ -21,7 +21,9 @@ from __future__ import annotations
 import logging
 import os
 import re
+import secrets
 import time
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -37,6 +39,12 @@ from ..assessment import assess
 from ..confidence import score_plan
 from ..config import MAX_UPLOAD_BYTES, cors_origins
 from ..costing import estimate_costs
+from ..crypto import (
+    EncryptionUnavailable,
+    decrypt_bytes,
+    is_encrypted,
+    write_file,
+)
 from ..exec_report import build_executive_report
 from ..normalize import normalize
 from ..observability import configure_logging, correlation_id, get_logger, new_correlation_id
@@ -254,11 +262,48 @@ def _require_project(pid: str, user: Optional[User]) -> Project:
     return project
 
 
+@contextmanager
+def _plaintext_upload(project: Project):
+    """Yield a filesystem path the parsers can read.
+
+    The `Source` protocol is path-based — `detect(path)` sniffs headers and
+    `parse(path)` hands the path to pandas — so an encrypted upload has to touch
+    the filesystem in the clear to be read at all. This is the single place that
+    happens, so the exposure is one auditable window rather than scattered.
+
+    The plaintext copy is created 0600 inside the project's own workspace (same
+    volume, so no spill onto a shared `/tmp` with different permissions or a
+    different retention policy) and is removed in a `finally`. When encryption
+    is off there is no copy — the original path is yielded unchanged.
+
+    Eliminating this window entirely means teaching every source to parse from a
+    buffer; that is tracked, not done here.
+    """
+    path = Path(str(project.upload_path))
+    blob = path.read_bytes()
+    if not is_encrypted(blob):
+        yield str(path)
+        return
+    plaintext = decrypt_bytes(blob)
+    tmp = path.with_name(f".plain-{secrets.token_hex(8)}{path.suffix}")
+    fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        os.write(fd, plaintext)
+        os.close(fd)
+        fd = None
+        yield str(tmp)
+    finally:
+        if fd is not None:
+            os.close(fd)
+        tmp.unlink(missing_ok=True)
+
+
 def _parse_inventory(project: Project) -> List:
     """Parse + normalize the project's upload, mapping any parser failure to 400."""
     try:
-        src = resolve_source(str(project.upload_path), project.source)
-        vms = normalize(src.parse(str(project.upload_path), column_map=project.column_map))
+        with _plaintext_upload(project) as readable:
+            src = resolve_source(readable, project.source)
+            vms = normalize(src.parse(readable, column_map=project.column_map))
     except HTTPException:
         raise
     except Exception:  # noqa: BLE001 — malformed upload must not 500/leak a traceback
@@ -510,16 +555,29 @@ async def upload(pid: str, file: UploadFile, user: Optional[User] = Depends(curr
 
     dest = project.workspace / f"upload{suffix}"
     total = 0
+    # Buffered rather than streamed to disk because the bytes are encrypted as a
+    # unit (one authenticated blob per file). MAX_UPLOAD_BYTES already bounds
+    # this — it is the same ceiling the streaming version enforced, and the
+    # chunk loop still stops the moment it is crossed, so an oversized upload is
+    # never fully buffered.
+    chunks: List[bytes] = []
     try:
-        with open(dest, "wb") as out:
-            while chunk := await file.read(_UPLOAD_CHUNK):
-                total += len(chunk)
-                if total > MAX_UPLOAD_BYTES:
-                    raise HTTPException(413, f"file exceeds the {MAX_UPLOAD_BYTES // (1024 * 1024)} MB limit")
-                out.write(chunk)
+        while chunk := await file.read(_UPLOAD_CHUNK):
+            total += len(chunk)
+            if total > MAX_UPLOAD_BYTES:
+                raise HTTPException(413, f"file exceeds the {MAX_UPLOAD_BYTES // (1024 * 1024)} MB limit")
+            chunks.append(chunk)
+        write_file(dest, b"".join(chunks))
     except HTTPException:
         dest.unlink(missing_ok=True)
         raise
+    except EncryptionUnavailable as e:
+        # Configured-but-broken encryption must not degrade to plaintext.
+        dest.unlink(missing_ok=True)
+        logger.error("upload rejected: encryption unavailable", extra={"project_id": project.id})
+        raise HTTPException(500, str(e)) from e
+    finally:
+        chunks.clear()
 
     project.upload_path = dest
     project.status = "uploaded"
@@ -538,18 +596,19 @@ def _execute_run(project: Project) -> None:
     """
     out_dir = project.workspace / "project"
     try:
-        result = run_pipeline(
-            input_path=str(project.upload_path),
-            project_name=project.name,
-            out_dir=str(out_dir),
-            target=project.target,
-            source=project.source,
-            column_map=project.column_map,
-            region=project.region,
-            provider=get_provider(get_target(project.target), name=project.provider),
-            make_zip=True,
-            policy_config=project.policy,
-        )
+        with _plaintext_upload(project) as readable:
+            result = run_pipeline(
+                input_path=readable,
+                project_name=project.name,
+                out_dir=str(out_dir),
+                target=project.target,
+                source=project.source,
+                column_map=project.column_map,
+                region=project.region,
+                provider=get_provider(get_target(project.target), name=project.provider),
+                make_zip=True,
+                policy_config=project.policy,
+            )
     except (PlanValidationError, PolicyViolationError, ValueError) as e:
         project.status = "failed"
         if isinstance(e, PlanValidationError):
@@ -690,7 +749,9 @@ def assess_estate(pid: str, user: Optional[User] = Depends(current_user)) -> dic
         raise HTTPException(400, "no file uploaded for this project")
 
     vms = _parse_inventory(project)
-    src = resolve_source(str(project.upload_path), project.source)
+    # `resolve_source` sniffs the file to auto-detect, so it needs plaintext too.
+    with _plaintext_upload(project) as readable:
+        src = resolve_source(readable, project.source)
     a = assess(vms, project_name=project.name, source_platform=src.name)
     return a.model_dump(mode="json")
 
@@ -707,7 +768,8 @@ def executive_report(pid: str, include_recommendation: bool = True,
         raise HTTPException(400, "no file uploaded for this project")
 
     vms = _parse_inventory(project)
-    src = resolve_source(str(project.upload_path), project.source)
+    with _plaintext_upload(project) as readable:
+        src = resolve_source(readable, project.source)
     target = get_target(project.target)
     plan = build_migration_plan(
         vms, project_name=project.name, target=target, region=project.region,

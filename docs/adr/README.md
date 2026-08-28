@@ -50,5 +50,6 @@ Format: [Michael Nygard's ADR template](https://cognitect.com/blog/2011/11/15/do
 | [0040](0040-structured-logging-and-request-correlation.md) | Structured JSON logging and request correlation, OTel field names without the SDK | Accepted |
 | [0041](0041-remote-state-backends-in-generated-terraform.md) | Remote state backends in generated Terraform; local state stated, never silent | Accepted |
 | [0042](0042-supply-chain-security.md) | Supply-chain security: SBOM, pip-audit, bandit, Trivy, cosign signing, SLSA provenance | Accepted |
+| [0043](0043-encryption-at-rest-for-uploaded-inventory.md) | AES-256-GCM encryption at rest for uploaded inventory, failing closed | Accepted |
 
 See also the [Architecture & Design](../architecture.md) overview.
