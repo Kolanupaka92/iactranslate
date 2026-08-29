@@ -134,6 +134,9 @@ TEMPLATE_MAP: Dict[str, str] = {
     "networking.tf.j2": "networking.tf",
     "security.tf.j2": "security.tf",
     "identity.tf.j2": "identity.tf",
+    # Renders empty unless observed flows show the estate depends on networks
+    # that are not migrating; the renderer drops empty files.
+    "hybrid.tf.j2": "hybrid.tf",
     "loadbalancer.tf.j2": "loadbalancer.tf",
     "compute.tf.j2": "compute.tf",
     "storage.tf.j2": "storage.tf",

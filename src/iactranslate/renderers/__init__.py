@@ -48,10 +48,12 @@ def render(
     state_backend: Optional[StateBackend] = None,
     zone: Optional[LandingZone] = None,
     identity: Optional[IdentityMode] = None,
+    hybrid=None,
 ) -> Dict[str, str]:
     """Render the plan with `name`.
 
-    `state_backend` is Terraform-only and deliberately not forwarded elsewhere:
+    `state_backend` and `hybrid` are Terraform-only and deliberately not
+    forwarded elsewhere:
     Pulumi keeps state in its own service or a self-managed backend, and
     CloudFormation/Bicep/CDK have no client-side state at all. Passing it to
     them would imply a control they do not have.
@@ -63,7 +65,7 @@ def render(
             f"renderer '{name}' not supported (available: {', '.join(_RENDERERS)})"
         ) from e
     if name == "terraform":
-        return fn(plan, target, state_backend, zone, identity)
+        return fn(plan, target, state_backend, zone, identity, hybrid)
     return fn(plan, target)
 
 

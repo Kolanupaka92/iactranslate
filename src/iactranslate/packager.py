@@ -148,6 +148,7 @@ def build_project(
     state_backend: Optional[StateBackend] = None,
     zone: Optional[LandingZone] = None,
     identity: Optional[IdentityMode] = None,
+    hybrid=None,
 ) -> Path:
     """Write the full project tree to `out_dir` and return its path.
 
@@ -159,7 +160,7 @@ def build_project(
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
 
-    files: Dict[str, str] = render(renderer, plan, target, state_backend, zone, identity)
+    files: Dict[str, str] = render(renderer, plan, target, state_backend, zone, identity, hybrid)
     if gitops:
         files.update(gitops_files(plan, renderer))
     for filename, content in files.items():

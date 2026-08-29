@@ -15,6 +15,7 @@ from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 from ..costing import estimate_costs
 from ..graph import NodeKind, assign_subnets, build_graph
+from ..hybrid import SUMMARY_PREFIX, HybridPlan
 from ..identity import (
     SSM_MANAGED_POLICY,
     IdentityMode,
@@ -138,6 +139,7 @@ def build_files(
     state_backend: Optional[StateBackend] = None,
     zone: Optional[LandingZone] = None,
     identity: Optional[IdentityMode] = None,
+    hybrid: Optional[HybridPlan] = None,
 ) -> Dict[str, str]:
     # Default is an explicit *local* backend, not a silent one: `versions.tf`
     # renders a warning banner and the README explains the consequence. See
@@ -174,6 +176,11 @@ def build_files(
         ),
         "ssm_policy_arn": SSM_MANAGED_POLICY,
         "identity_notes": identity_notes(target.name, _identity),
+        # On-prem networks the estate still depends on. None when no flow export
+        # was supplied, in which case `hybrid.tf` renders empty and is dropped —
+        # absence of evidence, stated as nothing rather than as "no dependency".
+        "hybrid": hybrid,
+        "SUMMARY_PREFIX": SUMMARY_PREFIX,
         "mandated_tags": _mandated,
         "gcp_labels": gcp_labels(_mandated),
         "mandated_do_tags": (zone or LandingZone()).do_tags(),

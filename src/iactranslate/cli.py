@@ -96,6 +96,7 @@ def _cmd_translate(args: argparse.Namespace) -> int:
             gitops=args.gitops,
             policy_config=policy_config,
             identity=parse_identity_mode(getattr(args, "instance_identity", None)),
+            flows_path=getattr(args, "flows", None),
             zone=LandingZone(
                 cidr=getattr(args, "vpc_cidr", None) or DEFAULT_CIDR,
                 tags=_parse_kv(getattr(args, "tags", None)),
@@ -510,6 +511,11 @@ def build_parser() -> argparse.ArgumentParser:
                         "permissions, wired to the instances), 'ssm' (basic plus AWS "
                         "Session Manager for keyless access), or 'none'. Permissions are "
                         "never generated — see the README in the output.")
+    t.add_argument("--flows", default=None, metavar="PATH",
+                   help="Network-flow export (vRNI, Cisco Secure Workload, NetFlow, ss/netstat). "
+                        "Flows to addresses that are not in the inventory identify systems that "
+                        "are NOT migrating, and hybrid.tf is generated so the estate can still "
+                        "reach them. Without this the output assumes a self-contained estate.")
     t.add_argument("--state-backend", default=None, metavar="KIND",
                    help="Terraform remote state backend: 'auto' for the target cloud's native "
                         f"backend, or one of {', '.join(SUPPORTED_BACKENDS)}. Omitted means local "

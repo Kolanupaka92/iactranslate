@@ -22,6 +22,8 @@ from pydantic import BaseModel
 from .agents import build_migration_plan
 from .agents.base import LLMProvider
 from .config import MAX_VMS
+from .dependencies import analyze_dependencies, parse_flows
+from .hybrid import plan_hybrid
 from .identity import IdentityMode
 from .landing_zone import LandingZone
 from .models import MigrationPlan, NormalizedVM
@@ -76,6 +78,7 @@ def run_pipeline(
     state_backend: Optional[StateBackend] = None,
     zone: Optional[LandingZone] = None,
     identity: Optional[IdentityMode] = None,
+    flows_path: Optional[str] = None,
 ) -> PipelineResult:
     timings: List[StageTiming] = []
 
@@ -137,11 +140,22 @@ def run_pipeline(
     if not policy_result.ok:
         raise PolicyViolationError(policy_result.denials)
 
+    # On-prem networks the estate still depends on, from an optional flow
+    # export. Runs after the plan because it needs the VPC range to detect an
+    # on-prem network that collides with it. Analysis only — the plan is
+    # immutable by here and this reads it (ADR 0007).
+    hybrid = None
+    if flows_path:
+        with stage("hybrid"):
+            hybrid = plan_hybrid(
+                analyze_dependencies(parse_flows(flows_path), vms), plan.network.vpc_cidr
+            )
+
     with stage("package"):
         project_dir = build_project(
             plan, out_dir, tgt, vms=vms, renderer=renderer, gitops=gitops,
             policy_result=policy_result, state_backend=state_backend, zone=zone,
-            identity=identity,
+            identity=identity, hybrid=hybrid,
         )
 
     zip_path = None
