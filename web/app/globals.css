@@ -1,13 +1,34 @@
 @import "tailwindcss";
 
+/* Design tokens.
+ *
+ * The console established the vocabulary and this extends it rather than
+ * forking one: near-black is the primary/action colour, emerald means
+ * *verified* (it is the checkmark on a completed step), and neutral greys carry
+ * everything else. A marketing page in a different palette to the product it
+ * links to reads as two products. */
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  --surface: #fafafa;
+  --border: #e5e5e5;
+  /* Contrast-checked against --surface, not eyeballed. neutral-500 (#737373)
+   * measured 4.54:1 — it passes AA by 0.04, which is not a margin. */
+  --muted: #666666;
+  /* emerald-700, not the 600 the console uses for its checkmark badges. The
+   * accent here carries small text — section eyebrows at 12px, table values at
+   * 14px — and 600 measured 3.61:1 on this surface, which fails AA for anything
+   * that is not large text. 700 measures 5.25:1. */
+  --accent: #047857;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-border-subtle: var(--border);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -16,11 +37,33 @@
   :root {
     --background: #0a0a0a;
     --foreground: #ededed;
+    --surface: #121212;
+    --border: #262626;
+    --muted: #a3a3a3;
+    --accent: #34d399;
   }
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  /* Geist, not Arial. The previous rule hardcoded `Arial, Helvetica,
+   * sans-serif` here, which meant the app paid for a Geist webfont request on
+   * every load, wired it into `--font-sans`, and then rendered every element in
+   * Arial anyway — `font-sans` was applied to nothing. Geist Mono was fine,
+   * because `font-mono` *is* used. */
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Respect a user who has asked for less motion. The landing page animates
+ * section entrances; nothing there is worth triggering vestibular symptoms. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
