@@ -42,6 +42,20 @@ CI proves the output is valid against the real cloud providers (`tofu validate`)
   `depends_on` chains, rollback strategy, and validation checks per wave
   (`waves.json`) — honest about not discovering cross-application dependencies
   it has no signal for.
+- **Hybrid connectivity from observed flows.** Point `--flows` at a network-flow
+  export (vRNI, Cisco Secure Workload, NetFlow, `ss`/`netstat`) and traffic to
+  addresses absent from the inventory identifies systems that are *not*
+  migrating: `hybrid.tf` generates routes and a VPN/gateway scaffold so the
+  estate can still reach them. It also catches the failure no route can fix —
+  an on-prem range that overlaps the landing-zone CIDR, where the VPC claims
+  the address and traffic never leaves. Physical circuits (Direct Connect,
+  ExpressRoute, Interconnect) are deliberately never generated; they bill on
+  apply. Without `--flows`, output is unchanged.
+- **Inventory is de-identified before any AI call.** Hostnames, cluster,
+  datacenter and VLAN names are pseudonymised consistently — `acme-prod-db-01`
+  becomes `w1-prod-db-01`, so grouping signal survives and identity does not —
+  and addresses, tags and cloud resource ids are dropped. On by default; the
+  deterministic engine runs locally and is unaffected.
 - **Persistent store + bearer auth (stopgap).** Project metadata survives a
   process restart via an opt-in SQLite store (`IACTRANSLATE_STORE=sqlite`),
   and endpoints require `Authorization: Bearer <key>` when
@@ -169,7 +183,7 @@ scope, and assumptions — is in **[docs/architecture.md](docs/architecture.md)*
 ## Test & lint
 
 ```bash
-pytest                 # ~702 tests: parsers, sizing, validation, all 5 clouds, renderers, API
+pytest                 # ~778 tests: parsers, sizing, validation, all 5 clouds, renderers, API
 ruff check src tests
 ```
 

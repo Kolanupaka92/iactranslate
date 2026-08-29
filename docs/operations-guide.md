@@ -55,7 +55,7 @@ diagrams, infrastructure diff, brownfield adoption, load balancer topology,
 managed-DB re-platforming advice, migration wave planning, a Kubernetes discovery source,
 Pulumi/CloudFormation/Bicep/CDK/Kubernetes renderers, a policy engine, an
 Infrastructure Graph IR, async jobs + audit, and opt-in GitOps.
-~702 tests, 9 green CI jobs (lint, pytest 3.9/3.11/3.12, Docker health, web build, real
+~778 tests, 9 green CI jobs (lint, pytest 3.9/3.11/3.12, Docker health, web build, real
 Terraform validate). Repo: `github.com/Kolanupaka92/iactranslate` (public).
 
 ---
@@ -489,6 +489,7 @@ All env vars (see `src/iactranslate/config.py`):
 |---|---|---|
 | `IACTRANSLATE_LLM_PROVIDER` | `rule` | Default engine when `--provider`/`provider` isn't given: `rule` or `anthropic`. |
 | `ANTHROPIC_API_KEY` | — | Required for `anthropic`; absent → auto-fallback to `rule` (see §6.7, ADR 0021). |
+| `IACTRANSLATE_AI_DEIDENTIFY` | `1` (on) | Replace customer identifiers before inventory reaches a remote model — hostnames, cluster/datacenter/VLAN names are pseudonymised consistently; addresses, tags and `external_id` are dropped. Set `0` to send raw inventory. Rule engine is local and unaffected (ADR 0058). |
 | `IACTRANSLATE_ANTHROPIC_MODEL` | `claude-opus-4-8` | Model for classify/rightsize. |
 | `IACTRANSLATE_MAX_UPLOAD_MB` | `25` | Upload cap → `413`. Streamed, never buffered whole. |
 | `IACTRANSLATE_MAX_VMS` | `20000` | Inventory size cap → `400`. |
@@ -506,7 +507,7 @@ All env vars (see `src/iactranslate/config.py`):
 | `IACTRANSLATE_APP_URL` | `http://localhost:3000` | Public origin of the web app, used to build the password-reset link. The API's own origin is usually wrong here — the reset form lives in the frontend. |
 | `IACTRANSLATE_SPLIT_COMPUTE_ABOVE` | `50` | Workload count above which compute output is split into `compute-<env>-<tier>.tf` files for reviewability. `0` keeps a single `compute.tf`. Purely organizational — no state impact. |
 | `IACTRANSLATE_TARGET_UTILIZATION` | `0.65` | When a source carries utilization, size instances so they run at ~this utilization (right-sizing). |
-| `IACTRANSLATE_PRICING` | `static` | `static` (curated catalog rates, offline) or `live` (real market prices, cached, falls back to static). |
+| `IACTRANSLATE_PRICING` | `static` | `static` (curated catalog rates, offline) or `live` (real market prices, cached, falls back to static). A cloud whose billing endpoint fails 3 times in a row is skipped for 5 minutes rather than retried per SKU; the run summary reports `pricing_source` (`live`/`degraded`/`static`) and `pricing_source_degraded` (ADR 0059). |
 | `IACTRANSLATE_GCP_BILLING_API_KEY` | (none) | API key for GCP live pricing (Cloud Billing Catalog). Without it, GCP live falls back to static. |
 | `IACTRANSLATE_PRICE_CACHE` | temp file | Path for the on-disk live-price cache (24h TTL). |
 | `IACTRANSLATE_CORS_ORIGINS` | (none) | Comma-separated allowed origins for the frontend. `*` = all (dev only). |
@@ -546,7 +547,7 @@ Interactive docs at `/docs` (Swagger) when the server is running.
 ## 10. Testing & CI
 
 ```bash
-pytest                                   # full suite (fast, offline) — ~702 tests
+pytest                                   # full suite (fast, offline) — ~778 tests
 ruff check src tests                     # lint
 cd web && npm run lint && npm run build  # frontend
 
