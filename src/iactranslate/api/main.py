@@ -832,6 +832,9 @@ def _execute_run(project: Project) -> None:
         "compute_monthly_cost_usd": _costs.compute,
         "cost_breakdown": _costs.model_dump(),
         "pricing_source": result.plan.pricing_source,
+        # Surfaced so a dashboard can say *why* the numbers are catalog rates
+        # rather than leaving a customer to assume they are real market prices.
+        "pricing_source_degraded": result.plan.pricing_source_degraded,
         "right_sized_count": sum(1 for c in result.plan.compute if c.right_sized),
         "provider_requested": project.provider,
         "provider_used": result.plan.provider_used,

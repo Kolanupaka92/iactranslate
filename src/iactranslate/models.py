@@ -254,6 +254,15 @@ class MigrationPlan(BaseModel):
             "this field is the honest record of what actually ran, not what was asked for."
         ),
     )
+    live_pricing_requested: bool = Field(
+        default=False,
+        description=(
+            "Whether live market pricing was asked for. Needed to tell 'this "
+            "estate was priced from the catalog by choice' apart from 'the live "
+            "endpoints were unreachable and it fell back' — those carry very "
+            "different confidence and the numbers alone cannot distinguish them."
+        ),
+    )
 
     @property
     def total_estimated_monthly_cost_usd(self) -> float:
@@ -265,5 +274,26 @@ class MigrationPlan(BaseModel):
 
     @property
     def pricing_source(self) -> str:
-        """'live' if any instance was priced from a live source, else 'static'."""
-        return "live" if any(c.price_source == "live" for c in self.compute) else "static"
+        """'live', 'degraded' or 'static'.
+
+        This used to report 'live' if *any* single instance got a live price,
+        which meant an estate where 1,492 of 1,493 workloads silently fell back
+        to catalog rates was presented as live-priced. A customer builds a
+        business case on that number, so the mixed case gets its own name.
+        """
+        if not self.compute:
+            return "static"
+        sources = {c.price_source for c in self.compute}
+        if sources == {"live"}:
+            return "live"
+        return "degraded" if "live" in sources else "static"
+
+    @property
+    def pricing_source_degraded(self) -> bool:
+        """True when live pricing was asked for and not fully delivered.
+
+        Covers the total-blackout case that `pricing_source` cannot: if every
+        endpoint was unreachable, every workload is 'static' and the plan is
+        indistinguishable from one that never wanted live prices.
+        """
+        return self.live_pricing_requested and self.pricing_source != "live"

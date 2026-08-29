@@ -104,3 +104,158 @@ def test_cache_roundtrip(monkeypatch, tmp_path):
     b = pricing.live_hourly("azure", "Standard_D4as_v5", "eastus")  # served from cache
     assert a == b == 0.2
     assert calls["n"] == 1  # fetched once, cached thereafter
+
+
+# --- circuit breaker ---------------------------------------------------------
+#
+# The per-call fallback was already correct. What it was not is *cheap*: a
+# corporate network that blackholes the billing endpoints made every distinct
+# instance type pay the full socket timeout, every run.
+
+import pytest  # noqa: E402
+
+from iactranslate.agents import build_migration_plan  # noqa: E402
+from iactranslate.normalize import normalize  # noqa: E402
+from iactranslate.parsers import parse  # noqa: E402
+from iactranslate.targets import get_target  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _clean_breakers():
+    """Endpoint health is process-wide state, so it must not leak between tests."""
+    pricing.reset_breakers()
+    yield
+    pricing.reset_breakers()
+
+
+class _CountingEndpoint:
+    """A fetcher that records how often it was actually called."""
+
+    def __init__(self, price=None):
+        self.calls = 0
+        self._price = price
+
+    def __call__(self, instance_type, region):
+        self.calls += 1
+        return self._price
+
+
+def _price_many(cloud, endpoint, count, monkeypatch, tmp_path):
+    monkeypatch.setattr(pricing, "_FETCHERS", {cloud: endpoint})
+    monkeypatch.setenv("IACTRANSLATE_PRICE_CACHE", str(tmp_path / "cache.json"))
+    for i in range(count):
+        pricing.live_hourly(cloud, f"type-{i}", "us-east-1")
+
+
+def test_a_dead_endpoint_is_called_a_bounded_number_of_times(monkeypatch, tmp_path):
+    """The defect this exists for: 20 instance types meant 20 socket timeouts."""
+    endpoint = _CountingEndpoint(price=None)
+    _price_many("aws", endpoint, 20, monkeypatch, tmp_path)
+    assert endpoint.calls == pricing.BREAKER_THRESHOLD
+
+
+def test_a_healthy_endpoint_is_never_short_circuited(monkeypatch, tmp_path):
+    endpoint = _CountingEndpoint(price=0.10)
+    _price_many("aws", endpoint, 20, monkeypatch, tmp_path)
+    assert endpoint.calls == 20
+    assert not pricing.breaker_open("aws")
+
+
+def test_one_success_clears_a_partial_failure_streak(monkeypatch, tmp_path):
+    """A blip must not spend the estate's real prices."""
+    monkeypatch.setenv("IACTRANSLATE_PRICE_CACHE", str(tmp_path / "c.json"))
+    prices = [None, None, 0.10, None, None]
+    monkeypatch.setattr(pricing, "_FETCHERS", {"aws": lambda t, r: prices.pop(0)})
+    for i in range(5):
+        pricing.live_hourly("aws", f"type-{i}", "us-east-1")
+    assert not pricing.breaker_open("aws"), "two failures either side of a success"
+
+
+def test_the_breaker_is_per_cloud(monkeypatch, tmp_path):
+    """Azure being blocked says nothing about AWS."""
+    dead, alive = _CountingEndpoint(None), _CountingEndpoint(0.10)
+    monkeypatch.setenv("IACTRANSLATE_PRICE_CACHE", str(tmp_path / "c.json"))
+    monkeypatch.setattr(pricing, "_FETCHERS", {"azure": dead, "aws": alive})
+    for i in range(10):
+        pricing.live_hourly("azure", f"t{i}", "eastus")
+        pricing.live_hourly("aws", f"t{i}", "us-east-1")
+    assert pricing.breaker_open("azure")
+    assert not pricing.breaker_open("aws")
+    assert alive.calls == 10
+
+
+def test_an_open_breaker_lets_one_probe_through_after_the_reset(monkeypatch, tmp_path):
+    endpoint = _CountingEndpoint(price=None)
+    _price_many("aws", endpoint, 10, monkeypatch, tmp_path)
+    assert pricing.breaker_open("aws")
+    monkeypatch.setattr(pricing, "BREAKER_RESET_S", 0.0)
+    assert not pricing.breaker_open("aws"), "half-open after the window"
+
+
+def test_a_cached_price_is_served_even_with_the_breaker_open(monkeypatch, tmp_path):
+    """A price already on disk is just as good whether or not the endpoint is up."""
+    cache = tmp_path / "c.json"
+    monkeypatch.setenv("IACTRANSLATE_PRICE_CACHE", str(cache))
+    monkeypatch.setattr(pricing, "_FETCHERS", {"aws": _CountingEndpoint(0.10)})
+    assert pricing.live_hourly("aws", "m5.large", "us-east-1") == 0.10
+    monkeypatch.setattr(pricing, "_FETCHERS", {"aws": _CountingEndpoint(None)})
+    for i in range(10):
+        pricing.live_hourly("aws", f"other-{i}", "us-east-1")
+    assert pricing.breaker_open("aws")
+    assert pricing.live_hourly("aws", "m5.large", "us-east-1") == 0.10
+
+
+def test_falling_back_still_produces_catalog_prices(monkeypatch, tmp_path):
+    """Degrading must never mean failing."""
+    _price_many("aws", _CountingEndpoint(None), 5, monkeypatch, tmp_path)
+    usd, source = pricing.monthly_cost("aws", "m5.large", "us-east-1", 70.08, live=True)
+    assert (usd, source) == (70.08, "static")
+
+
+# --- honest reporting of degradation -----------------------------------------
+
+
+def _plan(monkeypatch, sources):
+    """A plan whose workloads carry the given price_source values."""
+    vms = normalize(parse("tests/fixtures/rvtools_sample.xlsx"))
+    calls = {"n": 0}
+
+    def _cost(cloud, itype, region, static, live):
+        i = calls["n"]
+        calls["n"] += 1
+        source = sources[i % len(sources)]
+        return (99.0, "live") if source == "live" else (static, "static")
+
+    import iactranslate.agents.rightsizing as rs
+    monkeypatch.setattr(rs, "monthly_cost", _cost)
+    return build_migration_plan(vms, "p", get_target("aws"), live_pricing=True)
+
+
+def test_one_live_price_no_longer_reports_the_estate_as_live_priced(monkeypatch):
+    """The old property returned 'live' if *any* instance got a live price, so an
+    estate that fell back on all but one was presented as market-priced — and a
+    customer builds a business case on that number."""
+    plan = _plan(monkeypatch, ["live"] + ["static"] * 20)
+    assert plan.pricing_source == "degraded"
+    assert plan.pricing_source_degraded
+
+
+def test_a_fully_live_estate_still_reports_live(monkeypatch):
+    plan = _plan(monkeypatch, ["live"])
+    assert plan.pricing_source == "live"
+    assert not plan.pricing_source_degraded
+
+
+def test_a_total_blackout_is_still_flagged(monkeypatch):
+    """Every workload falls back, so the plan looks exactly like one that never
+    wanted live prices. Only the requested mode tells them apart."""
+    plan = _plan(monkeypatch, ["static"])
+    assert plan.pricing_source == "static"
+    assert plan.pricing_source_degraded
+
+
+def test_static_by_choice_is_not_degraded(rvtools_path, tmp_path, monkeypatch):
+    monkeypatch.delenv("IACTRANSLATE_PRICING", raising=False)
+    r = run_pipeline(input_path=rvtools_path, project_name="s2",
+                     out_dir=str(tmp_path / "s2"), target="azure")
+    assert not r.plan.pricing_source_degraded

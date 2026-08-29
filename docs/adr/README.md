@@ -66,5 +66,6 @@ Format: [Michael Nygard's ADR template](https://cognitect.com/blog/2011/11/15/do
 | [0056](0056-durable-project-grants.md) | Project grants persist; half-durable authorization was a bug, not a limitation | Accepted |
 | [0057](0057-workload-identity-without-permissions.md) | An identity per tier, wired to instances, with no permissions — guessing them creates the breach | Accepted |
 | [0058](0058-de-identify-inventory-before-ai.md) | Consistent per-token pseudonyms before inventory reaches a remote model — grouping signal survives, identity does not | Accepted |
+| [0059](0059-pricing-circuit-breaker.md) | Bound the cost of unreachable billing endpoints, and stop reporting a mostly-static estate as live-priced | Accepted |
 
 See also the [Architecture & Design](../architecture.md) overview.

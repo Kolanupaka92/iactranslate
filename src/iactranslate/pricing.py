@@ -14,21 +14,42 @@ Live coverage:
             is set (sums the machine family's vCPU-core + RAM-GB SKUs).
 
 Enable with ``IACTRANSLATE_PRICING=live``.
+
+A **circuit breaker** guards the live path. Falling back per call was already
+correct, but it was also per call: in a corporate network that blackholes these
+endpoints, a 1,500-workload estate with 20 distinct instance types paid the full
+socket timeout twenty times over before finishing, every run. After
+``BREAKER_THRESHOLD`` consecutive failures a cloud's fetcher is skipped outright
+until ``BREAKER_RESET_S`` has passed, so a blocked endpoint costs one timeout,
+not one per SKU.
 """
 from __future__ import annotations
 
 import json
 import os
 import tempfile
+import threading
 import time
 import urllib.parse
 import urllib.request
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
+
+from .observability import get_logger
 
 HOURS_PER_MONTH = 730
 _CACHE_TTL_S = 24 * 3600
 _HTTP_TIMEOUT = 8
+
+#: Consecutive failures before a cloud's live endpoint is considered down.
+#: Three rather than one because a single blip should not cost an estate its
+#: real prices for the next five minutes.
+BREAKER_THRESHOLD = 3
+
+#: How long an open breaker stays open before one probe is allowed through.
+BREAKER_RESET_S = 300.0
+
+_log = get_logger(__name__)
 
 # region -> AWS Price List "location" name (extend as needed).
 _AWS_LOCATION = {
@@ -232,20 +253,91 @@ def _gcp_hourly(instance_type: str, region: str) -> Optional[float]:
     return round(spec.vcpu * core + spec.memory_gib * ram, 6)
 
 
+# --------------------------------------------------------------------------- #
+# Circuit breaker
+#
+# Deliberately *not* tripped on latency. A 1.5s threshold was proposed, and it
+# would throw away correct answers: the Azure Retail Prices API legitimately
+# takes longer than that under load, and a price that arrives slowly is still a
+# real price. Errors and timeouts are what indicate an endpoint is unusable, so
+# those are what count. The existing socket timeout already bounds the wait.
+# --------------------------------------------------------------------------- #
+
+_breaker_lock = threading.Lock()
+#: cloud -> [consecutive_failures, opened_at_monotonic]
+_breakers: Dict[str, List[float]] = {}
+
+
+def reset_breakers() -> None:
+    """Forget all endpoint health. For tests and long-lived processes."""
+    with _breaker_lock:
+        _breakers.clear()
+
+
+def breaker_open(cloud: str) -> bool:
+    """True if `cloud`'s live endpoint should be skipped without trying.
+
+    Once the reset window elapses this returns False *without* clearing the
+    failure count — that lets exactly one probe through (half-open). If the
+    probe fails the window restarts; if it succeeds the count is cleared.
+    """
+    with _breaker_lock:
+        state = _breakers.get(cloud)
+        if state is None or state[0] < BREAKER_THRESHOLD:
+            return False
+        return (time.monotonic() - state[1]) < BREAKER_RESET_S
+
+
+def _record_failure(cloud: str) -> None:
+    with _breaker_lock:
+        state = _breakers.setdefault(cloud, [0.0, 0.0])
+        state[0] += 1
+        if state[0] >= BREAKER_THRESHOLD:
+            newly_open = state[1] == 0.0 or (time.monotonic() - state[1]) >= BREAKER_RESET_S
+            state[1] = time.monotonic()
+            if newly_open:
+                _log.warning(
+                    "live pricing unavailable, using catalog rates",
+                    extra={"cloud": cloud, "consecutive_failures": int(state[0]),
+                           "pricing_source_degraded": True},
+                )
+
+
+def _record_success(cloud: str) -> None:
+    with _breaker_lock:
+        if _breakers.pop(cloud, None) is not None:
+            _log.info("live pricing recovered", extra={"cloud": cloud,
+                                                       "pricing_source_degraded": False})
+
+
 _FETCHERS = {"azure": _azure_hourly, "aws": _aws_hourly, "gcp": _gcp_hourly}
 
 
 def live_hourly(cloud: str, instance_type: str, region: str) -> Optional[float]:
-    """Cached live USD/hour, or None if unavailable."""
+    """Cached live USD/hour, or None if unavailable.
+
+    The cache is consulted before the breaker: a price already on disk is just as
+    good whether or not the endpoint is currently reachable.
+    """
     key = f"{cloud}:{region}:{instance_type}"
     cache = _cache_load()
     cached = _cache_get(cache, key)
     if cached is not None:
         return cached
     fetch = _FETCHERS.get(cloud)
-    price = fetch(instance_type, region) if fetch else None
-    if price is not None:
-        _cache_put(cache, key, price)
+    if fetch is None or breaker_open(cloud):
+        return None
+    price = fetch(instance_type, region)
+    if price is None:
+        # A fetcher returns None both for "the endpoint is down" and for "this
+        # SKU is not in the catalog". Conflating them is the safe direction:
+        # an unknown SKU on a healthy endpoint costs at most BREAKER_THRESHOLD
+        # lookups before the breaker parks the rest of the run on catalog rates,
+        # which is the same answer those lookups were going to produce anyway.
+        _record_failure(cloud)
+        return None
+    _record_success(cloud)
+    _cache_put(cache, key, price)
     return price
 
 

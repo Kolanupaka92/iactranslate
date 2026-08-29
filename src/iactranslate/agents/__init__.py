@@ -41,4 +41,5 @@ def build_migration_plan(
         compute=compute,
         app_groups=app_groups,
         provider_used=provider.name,
+        live_pricing_requested=live_pricing,
     )
