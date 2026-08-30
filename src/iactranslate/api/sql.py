@@ -49,6 +49,10 @@ ENV_BACKEND = "IACTRANSLATE_STORE"
 ENV_DSN = "IACTRANSLATE_DATABASE_URL"
 
 _PLACEHOLDER = re.compile(r"\?")
+#: A table name may only ever be a plain SQL identifier. Table names cannot be
+#: bound as parameters, so the one statement that interpolates one validates it
+#: instead of trusting the caller.
+_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 class DatabaseUnavailable(RuntimeError):
@@ -107,15 +111,17 @@ class Database:
         PostgreSQL has the primitive built in, and it is strictly better — it
         skips contended rows instead of serialising every claim.
         """
+        if not _IDENTIFIER.match(table):
+            raise ValueError(f"not a valid table name: {table!r}")
+        # `table` is now known to be a bare identifier, and the only value that
+        # varies is bound as a parameter. A table name cannot be passed as a
+        # bind parameter in either engine, so validating it is the available
+        # control. (nosec: B608 flags the f-string shape, not a reachable
+        # injection.)
+        ordering = "ORDER BY created_at LIMIT 1"
         if self.is_postgres:
-            return (
-                f"SELECT id FROM {table} WHERE status = 'queued' AND visible_at <= ? "
-                "ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED"
-            )
-        return (
-            f"SELECT id FROM {table} WHERE status = 'queued' AND visible_at <= ? "
-            "ORDER BY created_at LIMIT 1"
-        )
+            ordering += " FOR UPDATE SKIP LOCKED"
+        return f"SELECT id FROM {table} WHERE status = 'queued' AND visible_at <= ? {ordering}"  # nosec B608
 
     # -- operations ------------------------------------------------------------
 

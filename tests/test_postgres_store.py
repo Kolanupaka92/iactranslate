@@ -127,3 +127,10 @@ def test_capacity_eviction_orders_without_rowid(db):
 
 def test_a_missing_project_is_none(store):
     assert store.get(uuid.uuid4().hex[:12]) is None
+
+
+def test_a_table_name_that_is_not_an_identifier_is_refused(db):
+    """A table name cannot be bound as a parameter, so the one statement that
+    interpolates one validates it rather than trusting the caller."""
+    with pytest.raises(ValueError):
+        db.claim_sql("jobs; DROP TABLE projects")
