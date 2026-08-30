@@ -22,6 +22,28 @@ from .cloudformation import build_cloudformation_files as _build_cloudformation
 from .kubernetes import build_kubernetes_files as _build_kubernetes
 from .pulumi import build_pulumi_files as _build_pulumi
 
+#: Which clouds each renderer can actually emit. `None` means every target.
+#:
+#: The renderers already enforce this themselves — each raises
+#: `RendererNotSupportedError` for a target it cannot express, because
+#: CloudFormation is an AWS service and Bicep is an Azure one. What was missing
+#: is a way to ask *before* running a pipeline, which any caller offering the
+#: choice needs: an API that only discovers the answer by raising, and a UI that
+#: offers Bicep for an AWS project, are the same defect at different layers.
+#:
+#: Declared rather than introspected, and therefore duplication — so
+#: `test_renderers.py` calls every renderer against every target and asserts
+#: this table matches what they really do. The matrix cannot drift without a
+#: test failing, which is the property that makes declaring it acceptable.
+_SUPPORTED: Dict[str, Optional[frozenset]] = {
+    "terraform": None,
+    "pulumi": frozenset({"aws", "azure", "gcp"}),
+    "cloudformation": frozenset({"aws"}),
+    "bicep": frozenset({"azure"}),
+    "cdk": frozenset({"aws"}),
+    "kubernetes": None,
+}
+
 # name -> (fn(plan, target) -> {filename: content}, human label)
 _RENDERERS: Dict[str, tuple] = {
     "terraform": (_build_terraform, "Terraform (HCL)"),
@@ -31,6 +53,23 @@ _RENDERERS: Dict[str, tuple] = {
     "cdk": (_build_cdk, "AWS CDK (Python, AWS-only)"),
     "kubernetes": (_build_kubernetes, "Kubernetes/KubeVirt (JSON, any cloud)"),
 }
+
+
+def supports(name: str, target_name: str) -> bool:
+    """Can `name` render for `target_name`?"""
+    if name not in _RENDERERS:
+        return False
+    allowed = _SUPPORTED[name]
+    return allowed is None or target_name in allowed
+
+
+def renderers_for(target_name: str) -> List[str]:
+    """The renderers valid for a cloud, in registry order.
+
+    Registry order rather than alphabetical, so `terraform` — the default and
+    the only one every target supports — is always offered first.
+    """
+    return [name for name in _RENDERERS if supports(name, target_name)]
 
 
 class UnknownRendererError(ValueError):

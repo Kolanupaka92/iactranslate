@@ -9,6 +9,7 @@ import RecommendTable from "@/components/RecommendTable";
 import RunSummary from "@/components/RunSummary";
 import SignIn from "@/components/SignIn";
 import SourcePicker from "@/components/SourcePicker";
+import RendererPicker, { RENDERER_LABELS } from "@/components/RendererPicker";
 import TargetPicker from "@/components/TargetPicker";
 import UploadDropzone from "@/components/UploadDropzone";
 import {
@@ -19,6 +20,7 @@ import {
   downloadUrl,
   fetchReportHtml,
   listProjects,
+  listTargets,
   logout,
   recommendClouds,
   runProject,
@@ -29,10 +31,29 @@ import {
   type Provider,
   type ProjectSummary,
   type Recommendation,
+  type Renderer,
   type RunResult,
   type Source,
   type Target,
+  type TargetInfo,
 } from "@/lib/api";
+
+/**
+ * Keep a chosen format only if the new cloud actually supports it.
+ *
+ * Terraform is the safe fallback because it is the one renderer valid for every
+ * target; silently keeping `bicep` while switching to AWS would send a request
+ * the API rejects.
+ */
+function rendererFor(
+  target: Target,
+  current: Renderer,
+  info: TargetInfo[] = [],
+): Renderer {
+  const allowed = info.find((t) => t.name === target)?.renderers;
+  if (!allowed || allowed.includes(current)) return current;
+  return "terraform";
+}
 
 type Busy = "create" | "upload" | "assess" | "recommend" | "switch" | "run" | "report" | null;
 type StepState = "pending" | "active" | "done";
@@ -130,6 +151,10 @@ export default function Home() {
   const [target, setTarget] = useState<Target>("aws");
   const [source, setSource] = useState<Source>("auto");
   const [provider, setProvider] = useState<Provider>("rule");
+  const [renderer, setRenderer] = useState<Renderer>("terraform");
+  // Which formats each cloud accepts, from the API. Empty until it loads, which
+  // is why RendererPicker renders nothing rather than guessing.
+  const [targetInfo, setTargetInfo] = useState<TargetInfo[]>([]);
   const [project, setProject] = useState<ProjectSummary | null>(null);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [file, setFile] = useState<File | null>(null);
@@ -148,6 +173,21 @@ export default function Home() {
 
   const refreshIdentity = useCallback(async () => {
     setIdentity(await fetchIdentity());
+  }, []);
+
+  // Loaded once. A failure leaves the list empty, which hides the format picker
+  // rather than offering choices the server might refuse — the whole flow still
+  // works and produces Terraform, which is what it did before this existed.
+  useEffect(() => {
+    let cancelled = false;
+    void listTargets()
+      .catch((): TargetInfo[] => [])
+      .then((rows) => {
+        if (!cancelled) setTargetInfo(rows);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const refreshProjects = useCallback(async () => {
@@ -190,7 +230,9 @@ export default function Home() {
     setBusy("create");
     setError(null);
     try {
-      const created = await createProject(name.trim(), target, source, undefined, provider);
+      const created = await createProject(
+        name.trim(), target, source, undefined, provider, renderer,
+      );
       setProject(created);
       void refreshProjects();
     } catch (e) {
@@ -198,7 +240,7 @@ export default function Home() {
     } finally {
       setBusy(null);
     }
-  }, [name, target, source, provider, refreshProjects]);
+  }, [name, target, source, provider, renderer, refreshProjects]);
 
   const handleFile = useCallback(
     async (f: File) => {
@@ -254,11 +296,19 @@ export default function Home() {
       setBusy("switch");
       setError(null);
       try {
-        const fresh = await createProject(project.name, t, source, undefined, provider);
+        // Re-running against a different cloud can invalidate the format —
+        // CloudFormation does not exist on Azure — so fall back to Terraform,
+        // which every target supports, rather than sending a request the API
+        // will refuse.
+        const nextRenderer = rendererFor(t, renderer, targetInfo);
+        const fresh = await createProject(
+          project.name, t, source, undefined, provider, nextRenderer,
+        );
         await uploadFile(fresh.id, file);
         void deleteProject(project.id).catch(() => {});
         setProject(fresh);
         setTarget(t);
+        setRenderer(nextRenderer);
         setResult(null);
         void refreshProjects();
       } catch (e) {
@@ -267,7 +317,7 @@ export default function Home() {
         setBusy(null);
       }
     },
-    [project, file, source, provider, refreshProjects],
+    [project, file, source, provider, renderer, targetInfo, refreshProjects],
   );
 
   const handleRun = useCallback(async () => {
@@ -397,7 +447,7 @@ export default function Home() {
           {result && project && (
             <section className="rounded-xl border border-emerald-600/40 bg-emerald-500/5 p-5">
               <h2 className="mb-4 font-semibold">
-                Your Terraform project is ready
+                Your {RENDERER_LABELS[project?.renderer ?? "terraform"].label} project is ready
               </h2>
               <RunSummary result={result} />
               <div className="mt-5 flex flex-wrap items-center gap-3">
@@ -446,7 +496,23 @@ export default function Home() {
                 maxLength={128}
                 className="w-full rounded-lg border border-neutral-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-emerald-600 dark:border-neutral-700"
               />
-              <TargetPicker value={target} onChange={setTarget} />
+              <TargetPicker
+                value={target}
+                onChange={(t) => {
+                  setTarget(t);
+                  // Switching cloud can invalidate the format, so reconcile it
+                  // here rather than letting the picker show a selection that
+                  // is no longer in its own list.
+                  setRenderer((r) => rendererFor(t, r, targetInfo));
+                }}
+              />
+              <RendererPicker
+                value={renderer}
+                available={
+                  targetInfo.find((t) => t.name === target)?.renderers ?? []
+                }
+                onChange={setRenderer}
+              />
               <SourcePicker value={source} onChange={setSource} />
               <AIToggle value={provider} onChange={setProvider} />
               <button
@@ -543,7 +609,7 @@ export default function Home() {
           {!result && (
             <Section
               step={5}
-              title={`Generate Terraform for ${project?.target.toUpperCase() ?? "your cloud"}`}
+              title={`Generate ${RENDERER_LABELS[project?.renderer ?? renderer].label} for ${project?.target.toUpperCase() ?? "your cloud"}`}
               state={stepState(false, uploaded)}
             >
               <button
@@ -552,7 +618,9 @@ export default function Home() {
                 disabled={busy === "run"}
                 className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
               >
-                {busy === "run" ? "Generating…" : "Generate Terraform project"}
+                {busy === "run"
+                  ? "Generating…"
+                  : `Generate ${RENDERER_LABELS[project?.renderer ?? renderer].label} project`}
               </button>
             </Section>
           )}

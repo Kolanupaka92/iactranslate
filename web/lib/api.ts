@@ -12,6 +12,25 @@ export const API_BASE = `${API_URL}/v1`;
 
 export type Target = "aws" | "azure" | "gcp" | "oci" | "digitalocean";
 export type Source = "auto" | "vmware" | "hyperv" | "kubernetes" | "cloud" | "generic";
+
+export type Renderer =
+  | "terraform"
+  | "pulumi"
+  | "cloudformation"
+  | "bicep"
+  | "cdk"
+  | "kubernetes";
+
+/** A target and what it can do, straight from the server. */
+export interface TargetInfo {
+  name: Target;
+  capabilities: string[];
+  /** IaC formats this cloud can be emitted as. Not a full cross product —
+   *  CloudFormation is an AWS service, Bicep an Azure one. Read from the API
+   *  rather than duplicated here, so the picker cannot disagree with the
+   *  server about what will be accepted. */
+  renderers: Renderer[];
+}
 export type Provider = "rule" | "anthropic";
 
 export interface InstanceRow {
@@ -44,6 +63,7 @@ export interface ProjectSummary {
   target: Target;
   region: string | null;
   provider?: Provider;
+  renderer?: Renderer;
   status: "created" | "uploaded" | "completed" | "failed";
   error?: string;
   result?: RunResult;
@@ -166,12 +186,25 @@ export function createProject(
   source: Source = "auto",
   region?: string,
   provider: Provider = "rule",
+  renderer: Renderer = "terraform",
 ): Promise<ProjectSummary> {
   return request("/projects", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, target, source, region: region || null, provider }),
+    body: JSON.stringify({
+      name,
+      target,
+      source,
+      region: region || null,
+      provider,
+      renderer,
+    }),
   });
+}
+
+/** Targets with their capabilities and valid IaC formats. */
+export function listTargets(): Promise<TargetInfo[]> {
+  return request("/targets");
 }
 
 export function uploadFile(

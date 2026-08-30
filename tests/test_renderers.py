@@ -10,6 +10,8 @@ from iactranslate.renderers import (
     UnknownRendererError,
     list_renderers,
     render,
+    renderers_for,
+    supports,
 )
 from iactranslate.sources import resolve_source
 from iactranslate.targets import get_target
@@ -473,3 +475,142 @@ def test_kubernetes_groups_fronted_instances_into_one_service(rvtools_path):
     per_instance_names = {c.resource_name.replace("_", "-") for c in plan.compute if c.vm_name in fronted}
     service_names = {s["metadata"]["name"] for s in services}
     assert not (per_instance_names & service_names), "fronted instances should not also get their own Service"
+
+
+# --- the capability matrix, checked against what the renderers really do ------
+
+def test_the_declared_matrix_matches_actual_renderer_behaviour():
+    """`_SUPPORTED` is a hand-written table, and a hand-written table drifts.
+
+    This is what makes declaring it acceptable instead of a liability: every
+    renderer is called against every target, and the claim is checked against
+    what actually happened. Add a cloud to a renderer without updating the
+    table — or the reverse — and this fails.
+    """
+    from iactranslate.targets import list_targets
+
+    plans = {t: _plan("tests/fixtures/rvtools_sample.xlsx", t)[0] for t in list_targets()}
+    mismatches = []
+    for name in list_renderers():
+        for target_name, plan in plans.items():
+            claimed = supports(name, target_name)
+            try:
+                render(name, plan, get_target(target_name))
+                actual = True
+            except Exception as e:  # noqa: BLE001 — any refusal means unsupported
+                if type(e).__name__ != "RendererNotSupportedError":
+                    raise
+                actual = False
+            if claimed != actual:
+                mismatches.append(
+                    f"{name}/{target_name}: table says {claimed}, renderer says {actual}"
+                )
+    assert not mismatches, "\n".join(mismatches)
+
+
+def test_terraform_is_offered_for_every_target():
+    """It is the default and the only renderer with full coverage; a target it
+    could not serve would leave that cloud with no output at all."""
+    from iactranslate.targets import list_targets
+
+    for target_name in list_targets():
+        assert renderers_for(target_name)[0] == "terraform"
+
+
+def test_an_unknown_renderer_supports_nothing():
+    assert not supports("terrafrom", "aws")
+    assert "terrafrom" not in renderers_for("aws")
+
+
+# --- reaching the choice through the API -------------------------------------
+
+def _client(tmp_path, monkeypatch):
+    """A TestClient with an isolated store, so these do not share a database."""
+    import importlib
+
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setenv("IACTRANSLATE_WORKSPACE_ROOT", str(tmp_path))
+    monkeypatch.setenv("IACTRANSLATE_DB_PATH", str(tmp_path / "t.db"))
+    from iactranslate.api import main as api_main
+    importlib.reload(api_main)
+    return TestClient(api_main.app), api_main
+
+
+def test_the_api_advertises_which_renderers_each_cloud_supports(tmp_path, monkeypatch):
+    """A client that hardcodes the matrix will eventually disagree with the
+    server about it, so the server states it."""
+    client, api_main = _client(tmp_path, monkeypatch)
+    try:
+        rows = {row["name"]: row["renderers"] for row in client.get("/v1/targets").json()}
+        assert rows["aws"] == renderers_for("aws")
+        assert "bicep" in rows["azure"] and "bicep" not in rows["aws"]
+        assert rows["oci"] == ["terraform", "kubernetes"]
+    finally:
+        monkeypatch.undo()
+        import importlib
+        importlib.reload(api_main)
+
+
+def test_a_renderer_that_cannot_target_the_cloud_is_refused_at_create(tmp_path, monkeypatch):
+    """The failure a caller would otherwise hit only after uploading an
+    inventory and running a pipeline that cannot produce output. The message
+    names the valid alternatives rather than only the refusal."""
+    client, api_main = _client(tmp_path, monkeypatch)
+    try:
+        r = client.post("/v1/projects", json={"name": "x", "target": "aws", "renderer": "bicep"})
+        assert r.status_code == 400
+        assert "bicep" in r.text and "terraform" in r.text
+    finally:
+        monkeypatch.undo()
+        import importlib
+        importlib.reload(api_main)
+
+
+def test_an_unknown_renderer_is_refused(tmp_path, monkeypatch):
+    client, api_main = _client(tmp_path, monkeypatch)
+    try:
+        r = client.post("/v1/projects", json={"name": "x", "renderer": "terrafrom"})
+        assert r.status_code == 400
+    finally:
+        monkeypatch.undo()
+        import importlib
+        importlib.reload(api_main)
+
+
+def test_projects_default_to_terraform(tmp_path, monkeypatch):
+    """Every project created before this field existed used Terraform, and
+    omitting it must keep behaving that way."""
+    client, api_main = _client(tmp_path, monkeypatch)
+    try:
+        assert client.post("/v1/projects", json={"name": "x"}).json()["renderer"] == "terraform"
+    finally:
+        monkeypatch.undo()
+        import importlib
+        importlib.reload(api_main)
+
+
+def test_a_chosen_renderer_actually_reaches_the_output(tmp_path, monkeypatch):
+    """The point of the whole change: the console could only ever emit
+    Terraform because the API never forwarded a renderer to the pipeline."""
+    client, api_main = _client(tmp_path, monkeypatch)
+    try:
+        pid = client.post(
+            "/v1/projects", json={"name": "cfn", "target": "aws", "renderer": "cloudformation"}
+        ).json()["id"]
+        with open("tests/fixtures/rvtools_sample.xlsx", "rb") as f:
+            client.post(f"/v1/projects/{pid}/upload", files={"file": ("i.xlsx", f)})
+        run = client.post(f"/v1/projects/{pid}/run")
+        assert run.status_code == 200, run.text
+
+        import zipfile
+
+        from iactranslate.api import main as m
+        project = m.store.get(pid)
+        names = zipfile.ZipFile(project.zip_path).namelist()
+        assert any(n.endswith("template.json") for n in names), names
+        assert not any(n.endswith(".tf") for n in names), "should not be Terraform"
+    finally:
+        monkeypatch.undo()
+        import importlib
+        importlib.reload(api_main)

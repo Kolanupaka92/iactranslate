@@ -54,6 +54,8 @@ from ..pdf import render as render_pdf
 from ..pipeline import run_pipeline
 from ..policy import PolicyViolationError, list_policies
 from ..recommend import recommend
+from ..renderers import list_renderers, renderers_for
+from ..renderers import supports as renderer_supports
 from ..sources import list_sources, resolve_source
 from ..targets import get_target, list_targets
 from ..validation import PlanValidationError
@@ -153,6 +155,10 @@ class CreateProject(BaseModel):
     region: Optional[str] = None
     policy: Optional[Dict[str, dict]] = None
     provider: str = "rule"
+    #: IaC output format. Validated against the target in the handler rather
+    #: than here, because whether it is valid depends on `target` — Bicep is a
+    #: fine renderer and a wrong answer for an AWS project.
+    renderer: str = "terraform"
 
     @field_validator("provider")
     @classmethod
@@ -330,6 +336,7 @@ def _summary(project: Project) -> dict:
         "source": project.source,
         "region": project.region,
         "provider": project.provider,
+        "renderer": project.renderer,
         "status": project.status,
     }
     if project.error:
@@ -680,10 +687,27 @@ def create_project(body: CreateProject, user: Optional[User] = Depends(current_u
                 400,
                 f"unknown policies {sorted(unknown)} (available: {', '.join(sorted(list_policies()))})",
             )
+    # Renderer support is per-target: CloudFormation is an AWS service, Bicep an
+    # Azure one. Rejecting here means the caller learns at create time, with the
+    # valid list in hand, instead of after uploading an inventory and running a
+    # pipeline that cannot produce output.
+    if body.renderer not in list_renderers():
+        raise HTTPException(
+            400,
+            f"renderer '{body.renderer}' not supported "
+            f"(available: {', '.join(list_renderers())})",
+        )
+    if not renderer_supports(body.renderer, body.target):
+        raise HTTPException(
+            400,
+            f"renderer '{body.renderer}' cannot target '{body.target}' "
+            f"(valid for {body.target}: {', '.join(renderers_for(body.target))})",
+        )
     project = store.create(
         name=body.name, target=body.target, source=body.source,
         column_map=body.column_map, region=body.region, policy=body.policy,
         provider=body.provider, owner_id=user.id if user else None,
+        renderer=body.renderer,
     )
     logger.info("created project %s (target=%s source=%s)", project.id, project.target, project.source)
     bus.publish(Event(EventType.PROJECT_CREATED, project_id=project.id,
@@ -712,9 +736,18 @@ def policies() -> dict:
 
 @router.get("/targets")
 def targets() -> list:
-    """Targets and their advertised capabilities — lets a UI enable features declaratively."""
+    """Targets and their advertised capabilities — lets a UI enable features declaratively.
+
+    `renderers` is part of that contract: which IaC formats a cloud can actually
+    be emitted as is a property of the target, and a client that has to hardcode
+    the answer will eventually disagree with the server about it.
+    """
     return [
-        {"name": name, "capabilities": sorted(get_target(name).capabilities)}
+        {
+            "name": name,
+            "capabilities": sorted(get_target(name).capabilities),
+            "renderers": renderers_for(name),
+        }
         for name in list_targets()
     ]
 
@@ -806,6 +839,7 @@ def _execute_run(project: Project) -> None:
                 provider=get_provider(get_target(project.target), name=project.provider),
                 make_zip=True,
                 policy_config=project.policy,
+                renderer=project.renderer,
             )
     except (PlanValidationError, PolicyViolationError, ValueError) as e:
         project.status = "failed"

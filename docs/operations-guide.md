@@ -522,7 +522,7 @@ All env vars (see `src/iactranslate/config.py`):
 | Method | Path | Body / notes |
 |---|---|---|
 | `GET` | `/health` | Liveness. `{"status":"ok"}`. |
-| `POST` | `/projects` | `{name, target, source?, column_map?, region?}` → 201 project summary. |
+| `POST` | `/projects` | `{name, target, source?, column_map?, region?, provider?, renderer?}` → 201 project summary. `renderer` defaults to `terraform`; a renderer the target cannot emit (Bicep on AWS, say) is refused with 400 and the valid list — see `GET /targets`. |
 | `POST` | `/projects/{id}/upload` | multipart `file` (.xlsx/.csv). 413 if too big, 400 if wrong type. |
 | `POST` | `/projects/{id}/run` | Runs the pipeline **synchronously**. 200 summary; 422 validation/policy; 400 bad input. |
 | `POST` | `/projects/{id}/jobs` | Runs **asynchronously**; 202 + `job_id`. Poll `/jobs/{id}`. |
@@ -533,9 +533,9 @@ All env vars (see `src/iactranslate/config.py`):
 | `POST` | `/projects/{id}/recommend` | Cloud recommendation (with decisiveness, annualized cost, notes). |
 | `POST` | `/projects/{id}/report` | Executive report HTML. `?include_recommendation=false` to skip the 3-cloud compare. |
 | `GET` | `/policies` | Available policy rules (name → description). |
-| `GET` | `/targets` | Targets and their capability flags. |
+| `GET` | `/targets` | Targets, their capability flags, and the IaC renderers each cloud supports. |
 | `GET` | `/projects/{id}` | Status + summary (includes the plan's confidence + policy warnings). |
-| `GET` | `/projects/{id}/download` | The Terraform project ZIP. 409 if not generated yet. |
+| `GET` | `/projects/{id}/download` | The generated project ZIP, in the project's chosen IaC format. 409 if not generated yet. |
 | `DELETE` | `/projects/{id}` | Deletes the project + its temp workspace. 204. |
 
 Error contract: 4xx return `{"detail": "..."}` (422 validation returns `{"detail":{"message","issues"[]}}`);

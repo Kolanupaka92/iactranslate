@@ -77,6 +77,9 @@ class Project:
     region: Optional[str] = None
     policy: Optional[dict] = None
     provider: str = "rule"
+    #: IaC output format. Defaults to terraform, the only renderer every target
+    #: supports, so a project created before this existed behaves as it did.
+    renderer: str = "terraform"
     owner_id: Optional[str] = None  # None = single-tenant mode (IACTRANSLATE_AUTH unset)
     status: str = "created"  # created -> uploaded -> completed / failed
     workspace: Path = field(default_factory=new_workspace)
@@ -103,12 +106,13 @@ class ProjectStore:
         policy: Optional[dict] = None,
         provider: str = "rule",
         owner_id: Optional[str] = None,
+        renderer: str = "terraform",
     ) -> Project:
         pid = uuid.uuid4().hex[:12]
         project = Project(
             id=pid, name=name, target=target, source=source,
             column_map=column_map, region=region, policy=policy, provider=provider,
-            owner_id=owner_id,
+            owner_id=owner_id, renderer=renderer,
         )
         with self._lock:
             self._projects[pid] = project
@@ -171,13 +175,14 @@ class SqliteProjectStore:
             error TEXT,
             summary TEXT,
             created_at REAL NOT NULL,
-            owner_id TEXT
+            owner_id TEXT,
+            renderer TEXT
         )
     """
     _COLUMNS = (
         "id", "name", "target", "source", "column_map", "region", "policy",
         "provider", "status", "workspace", "upload_path", "project_dir",
-        "zip_path", "error", "summary", "created_at", "owner_id",
+        "zip_path", "error", "summary", "created_at", "owner_id", "renderer",
     )
 
     def __init__(self, db_path: str, max_projects: int = MAX_PROJECTS) -> None:
@@ -199,9 +204,13 @@ class SqliteProjectStore:
         with `owner_id = NULL` (single-tenant, as they were).
         """
         existing = {row[1] for row in self._conn.execute("PRAGMA table_info(projects)")}
-        if "owner_id" not in existing:
-            self._conn.execute("ALTER TABLE projects ADD COLUMN owner_id TEXT")
-            self._conn.commit()
+        for column, ddl in (
+            ("owner_id", "ALTER TABLE projects ADD COLUMN owner_id TEXT"),
+            ("renderer", "ALTER TABLE projects ADD COLUMN renderer TEXT"),
+        ):
+            if column not in existing:
+                self._conn.execute(ddl)
+        self._conn.commit()
 
     def _row_to_project(self, row: tuple) -> Project:
         data = dict(zip(self._COLUMNS, row))
@@ -218,6 +227,9 @@ class SqliteProjectStore:
             error=data["error"],
             summary=json.loads(data["summary"]) if data["summary"] else None,
             owner_id=data["owner_id"],
+            # A row written before the column existed has NULL here, and the
+            # only renderer it could have used was the default.
+            renderer=data["renderer"] or "terraform",
         )
 
     def create(
@@ -230,6 +242,7 @@ class SqliteProjectStore:
         policy: Optional[dict] = None,
         provider: str = "rule",
         owner_id: Optional[str] = None,
+        renderer: str = "terraform",
     ) -> Project:
         pid = uuid.uuid4().hex[:12]
         workspace = new_workspace()
@@ -237,19 +250,19 @@ class SqliteProjectStore:
             self._conn.execute(
                 "INSERT INTO projects (id, name, target, source, column_map, region, policy, "
                 "provider, status, workspace, upload_path, project_dir, zip_path, error, summary, "
-                "created_at, owner_id) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'created', ?, NULL, NULL, NULL, NULL, NULL, ?, ?)",
+                "created_at, owner_id, renderer) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'created', ?, NULL, NULL, NULL, NULL, NULL, ?, ?, ?)",
                 (pid, name, target, source,
                  json.dumps(column_map) if column_map else None, region,
                  json.dumps(policy) if policy else None, provider, str(workspace), time.time(),
-                 owner_id),
+                 owner_id, renderer),
             )
             self._conn.commit()
             self._evict_locked()
         return Project(
             id=pid, name=name, target=target, source=source, column_map=column_map,
             region=region, policy=policy, provider=provider, workspace=workspace,
-            owner_id=owner_id,
+            owner_id=owner_id, renderer=renderer,
         )
 
     def get(self, pid: str) -> Optional[Project]:
