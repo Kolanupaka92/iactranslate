@@ -28,13 +28,12 @@ import hashlib
 import os
 import re
 import secrets
-import sqlite3
-import threading
 import time
 import uuid
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Optional
+
+from .sql import Database, create_database
 
 # OWASP's recommended floor for PBKDF2-HMAC-SHA256. Stored per-hash so the
 # count can be raised later without invalidating existing passwords.
@@ -108,22 +107,22 @@ def _hash_token(token: str) -> str:
 
 
 class AccountStore:
-    """Users and sessions in SQLite — the same file the project store uses."""
+    """Users and sessions, in whichever engine the deployment uses (ADR 0063)."""
 
     _SCHEMA_USERS = """
         CREATE TABLE IF NOT EXISTS users (
             id TEXT PRIMARY KEY,
             email TEXT NOT NULL UNIQUE,
             password_hash TEXT NOT NULL,
-            created_at REAL NOT NULL
+            created_at {REAL} NOT NULL
         )
     """
     _SCHEMA_SESSIONS = """
         CREATE TABLE IF NOT EXISTS sessions (
             token_hash TEXT PRIMARY KEY,
             user_id TEXT NOT NULL,
-            created_at REAL NOT NULL,
-            expires_at REAL NOT NULL
+            created_at {REAL} NOT NULL,
+            expires_at {REAL} NOT NULL
         )
     """
     # Reset tokens are hashed exactly like sessions: whoever can read this table
@@ -132,20 +131,17 @@ class AccountStore:
         CREATE TABLE IF NOT EXISTS password_resets (
             token_hash TEXT PRIMARY KEY,
             user_id TEXT NOT NULL,
-            created_at REAL NOT NULL,
-            expires_at REAL NOT NULL
+            created_at {REAL} NOT NULL,
+            expires_at {REAL} NOT NULL
         )
     """
 
-    def __init__(self, db_path: str) -> None:
-        self._lock = threading.Lock()
-        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(db_path, check_same_thread=False)
-        self._conn.execute(self._SCHEMA_USERS)
-        self._conn.execute(self._SCHEMA_SESSIONS)
-        self._conn.execute(self._SCHEMA_RESETS)
-        self._conn.execute("CREATE INDEX IF NOT EXISTS sessions_user ON sessions (user_id)")
-        self._conn.commit()
+    def __init__(self, db: "Database | str") -> None:
+        # A path string opens SQLite, which is how this was always constructed.
+        self._db = db if isinstance(db, Database) else Database("sqlite", db)
+        for ddl in (self._SCHEMA_USERS, self._SCHEMA_SESSIONS, self._SCHEMA_RESETS):
+            self._db.execute(self._db.schema(ddl))
+        self._db.execute("CREATE INDEX IF NOT EXISTS sessions_user ON sessions (user_id)")
 
     # -- users ---------------------------------------------------------------
 
@@ -153,15 +149,13 @@ class AccountStore:
         email = validate_email(email)
         validate_password(password)
         user = User(id=uuid.uuid4().hex[:12], email=email, created_at=time.time())
-        with self._lock:
-            try:
-                self._conn.execute(
-                    "INSERT INTO users (id, email, password_hash, created_at) VALUES (?, ?, ?, ?)",
-                    (user.id, email, hash_password(password), user.created_at),
-                )
-                self._conn.commit()
-            except sqlite3.IntegrityError as exc:
-                raise EmailTaken(email) from exc
+        try:
+            self._db.execute(
+                "INSERT INTO users (id, email, password_hash, created_at) VALUES (?, ?, ?, ?)",
+                (user.id, email, hash_password(password), user.created_at),
+            )
+        except self._db.integrity_errors as exc:
+            raise EmailTaken(email) from exc
         return user
 
     def authenticate(self, email: str, password: str) -> User:
@@ -174,10 +168,9 @@ class AccountStore:
             email = validate_email(email)
         except ValueError:
             email = ""
-        with self._lock:
-            row = self._conn.execute(
-                "SELECT id, email, password_hash, created_at FROM users WHERE email = ?", (email,)
-            ).fetchone()
+        row = self._db.query_one(
+            "SELECT id, email, password_hash, created_at FROM users WHERE email = ?", (email,)
+        )
         if row is None:
             # Burn equivalent work against a dummy hash before failing.
             verify_password(password, hash_password("no-such-user-timing-equalizer"))
@@ -187,10 +180,9 @@ class AccountStore:
         return User(id=row[0], email=row[1], created_at=row[3])
 
     def get_user(self, user_id: str) -> Optional[User]:
-        with self._lock:
-            row = self._conn.execute(
-                "SELECT id, email, created_at FROM users WHERE id = ?", (user_id,)
-            ).fetchone()
+        row = self._db.query_one(
+            "SELECT id, email, created_at FROM users WHERE id = ?", (user_id,)
+        )
         return User(id=row[0], email=row[1], created_at=row[2]) if row else None
 
     # -- sessions ------------------------------------------------------------
@@ -199,23 +191,20 @@ class AccountStore:
         """Return the plaintext session token — stored only as a hash."""
         token = secrets.token_urlsafe(32)
         now = time.time()
-        with self._lock:
-            self._conn.execute(
-                "INSERT INTO sessions (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)",
-                (_hash_token(token), user_id, now, now + ttl_seconds),
-            )
-            self._conn.commit()
+        self._db.execute(
+            "INSERT INTO sessions (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)",
+            (_hash_token(token), user_id, now, now + ttl_seconds),
+        )
         return token
 
     def user_for_session(self, token: str) -> Optional[User]:
         """Resolve a session cookie to its user, or None if invalid/expired."""
         if not token:
             return None
-        with self._lock:
-            row = self._conn.execute(
-                "SELECT user_id, expires_at FROM sessions WHERE token_hash = ?",
-                (_hash_token(token),),
-            ).fetchone()
+        row = self._db.query_one(
+            "SELECT user_id, expires_at FROM sessions WHERE token_hash = ?",
+            (_hash_token(token),),
+        )
         if row is None:
             return None
         if row[1] < time.time():
@@ -224,15 +213,10 @@ class AccountStore:
         return self.get_user(row[0])
 
     def delete_session(self, token: str) -> None:
-        with self._lock:
-            self._conn.execute("DELETE FROM sessions WHERE token_hash = ?", (_hash_token(token),))
-            self._conn.commit()
+        self._db.execute("DELETE FROM sessions WHERE token_hash = ?", (_hash_token(token),))
 
     def purge_expired_sessions(self) -> int:
-        with self._lock:
-            cursor = self._conn.execute("DELETE FROM sessions WHERE expires_at < ?", (time.time(),))
-            self._conn.commit()
-            return cursor.rowcount
+        return self._db.execute("DELETE FROM sessions WHERE expires_at < ?", (time.time(),))
 
     def delete_sessions_for_user(self, user_id: str) -> int:
         """Sign a user out everywhere.
@@ -241,10 +225,7 @@ class AccountStore:
         already holds a stolen session cookie, changing the password without
         this leaves them logged in indefinitely.
         """
-        with self._lock:
-            cursor = self._conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
-            self._conn.commit()
-            return cursor.rowcount
+        return self._db.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
 
     # -- passwords -----------------------------------------------------------
 
@@ -253,20 +234,15 @@ class AccountStore:
             email = validate_email(email)
         except ValueError:
             return None
-        with self._lock:
-            row = self._conn.execute(
-                "SELECT id, email, created_at FROM users WHERE email = ?", (email,)
-            ).fetchone()
+        row = self._db.query_one(
+            "SELECT id, email, created_at FROM users WHERE email = ?", (email,)
+        )
         return User(id=row[0], email=row[1], created_at=row[2]) if row else None
 
     def set_password(self, user_id: str, new_password: str) -> None:
         validate_password(new_password)
         encoded = hash_password(new_password)
-        with self._lock:
-            self._conn.execute(
-                "UPDATE users SET password_hash = ? WHERE id = ?", (encoded, user_id)
-            )
-            self._conn.commit()
+        self._db.execute("UPDATE users SET password_hash = ? WHERE id = ?", (encoded, user_id))
 
     def create_reset_token(self, user_id: str, ttl_seconds: int = _RESET_TTL_SECONDS) -> str:
         """Issue a single-use reset token. Returns the plaintext; only the hash
@@ -274,14 +250,15 @@ class AccountStore:
         a stale link in an old email can't be used after a newer request."""
         token = secrets.token_urlsafe(32)
         now = time.time()
-        with self._lock:
-            self._conn.execute("DELETE FROM password_resets WHERE user_id = ?", (user_id,))
-            self._conn.execute(
+        # One transaction: between the delete and the insert this user has no
+        # valid token at all, and a concurrent reset must not observe that gap.
+        with self._db.transaction() as tx:
+            tx.execute("DELETE FROM password_resets WHERE user_id = ?", (user_id,))
+            tx.execute(
                 "INSERT INTO password_resets (token_hash, user_id, created_at, expires_at) "
                 "VALUES (?, ?, ?, ?)",
                 (_hash_token(token), user_id, now, now + ttl_seconds),
             )
-            self._conn.commit()
         return token
 
     def consume_reset_token(self, token: str) -> Optional[str]:
@@ -291,16 +268,17 @@ class AccountStore:
         if not token:
             return None
         token_hash = _hash_token(token)
-        with self._lock:
-            row = self._conn.execute(
+        # Read and delete atomically. Single use is a security property, not a
+        # tidiness one: split across two statements, two concurrent redemptions
+        # of the same link could both read the row before either deleted it and
+        # both succeed — which is exactly the replay this is meant to prevent.
+        with self._db.transaction() as tx:
+            row = tx.query_one(
                 "SELECT user_id, expires_at FROM password_resets WHERE token_hash = ?",
                 (token_hash,),
-            ).fetchone()
+            )
             if row is not None:
-                self._conn.execute(
-                    "DELETE FROM password_resets WHERE token_hash = ?", (token_hash,)
-                )
-                self._conn.commit()
+                tx.execute("DELETE FROM password_resets WHERE token_hash = ?", (token_hash,))
         if row is None or row[1] < time.time():
             return None
         return row[0]
@@ -316,4 +294,4 @@ def create_account_store() -> Optional[AccountStore]:
     """Build the account store when `IACTRANSLATE_AUTH=session`, else None."""
     if not auth_enabled():
         return None
-    return AccountStore(os.getenv("IACTRANSLATE_DB_PATH", "./iactranslate.db"))
+    return AccountStore(create_database())

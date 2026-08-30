@@ -35,17 +35,15 @@ error, so a poison message is visible rather than churning in the background.
 """
 from __future__ import annotations
 
-import os
-import sqlite3
 import threading
 import time
 import uuid
-from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
 from ..observability import get_logger
 from .events import Event, EventBus, EventType
 from .jobs import Job, JobStatus
+from .sql import Database, backend, create_database
 
 logger = get_logger("iactranslate.api.jobs")
 
@@ -65,7 +63,7 @@ class DeadLettered(RuntimeError):
     pass
 
 
-class SqliteJobQueue:
+class SqlJobQueue:
     """Durable job queue. Same surface as `JobQueue`, plus retry and recovery."""
 
     _SCHEMA = """
@@ -76,19 +74,35 @@ class SqliteJobQueue:
             status TEXT NOT NULL,
             attempts INTEGER NOT NULL DEFAULT 0,
             max_attempts INTEGER NOT NULL DEFAULT 3,
-            created_at REAL NOT NULL,
-            started_at REAL,
-            finished_at REAL,
-            visible_at REAL NOT NULL DEFAULT 0,
-            lease_until REAL,
+            created_at {REAL} NOT NULL,
+            started_at {REAL},
+            finished_at {REAL},
+            visible_at {REAL} NOT NULL DEFAULT 0,
+            lease_until {REAL},
             error TEXT
         )
     """
 
+    #: Every column, in order. Replaces `sqlite3.Row`, which has no psycopg
+    #: equivalent — rows become plain dicts so `row["id"]` reads the same on
+    #: either engine, and a `SELECT *` cannot silently reorder them.
+    _COLUMNS = (
+        "id", "project_id", "kind", "status", "attempts", "max_attempts",
+        "created_at", "started_at", "finished_at", "visible_at", "lease_until", "error",
+    )
+
+    @classmethod
+    def _to_dict(cls, row) -> Optional[dict]:
+        return dict(zip(cls._COLUMNS, row)) if row is not None else None
+
+    @classmethod
+    def _select(cls) -> str:
+        return ", ".join(cls._COLUMNS)
+
     def __init__(
         self,
         bus: EventBus,
-        db_path: str,
+        db: "Database | str",
         max_workers: int = 2,
         max_attempts: int = DEFAULT_MAX_ATTEMPTS,
         poll_interval: float = 0.05,
@@ -100,11 +114,12 @@ class SqliteJobQueue:
         self._lock = threading.Lock()
         self._stop = threading.Event()
 
-        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(db_path, check_same_thread=False, isolation_level=None)
-        self._conn.execute("PRAGMA journal_mode=WAL")  # concurrent readers
-        self._conn.execute(self._SCHEMA)
-        self._conn.execute("CREATE INDEX IF NOT EXISTS jobs_claimable ON jobs (status, visible_at)")
+        # A path string opens SQLite, which is how this was always constructed.
+        self._db = db if isinstance(db, Database) else Database("sqlite", db)
+        self._db.execute(self._db.schema(self._SCHEMA))
+        self._db.execute(
+            "CREATE INDEX IF NOT EXISTS jobs_claimable ON jobs (status, visible_at)"
+        )
 
         reclaimed = self.reclaim_expired()
         if reclaimed:
@@ -156,12 +171,11 @@ class SqliteJobQueue:
         """
         job_id = uuid.uuid4().hex[:12]
         now = time.time()
-        with self._lock:
-            self._conn.execute(
-                "INSERT INTO jobs (id, project_id, kind, status, max_attempts, created_at, visible_at)"
-                " VALUES (?,?,?,?,?,?,?)",
-                (job_id, project_id, kind, JobStatus.QUEUED.value, self._max_attempts, now, now),
-            )
+        self._db.execute(
+            "INSERT INTO jobs (id, project_id, kind, status, max_attempts, created_at, visible_at)"
+            " VALUES (?,?,?,?,?,?,?)",
+            (job_id, project_id, kind, JobStatus.QUEUED.value, self._max_attempts, now, now),
+        )
         self._bus.publish(Event(EventType.JOB_QUEUED, project_id=project_id, job_id=job_id))
         return self._to_job(self._row(job_id))
 
@@ -172,21 +186,20 @@ class SqliteJobQueue:
         return self._to_job(row) if row else None
 
     def in_flight(self) -> int:
-        with self._lock:
-            (count,) = self._conn.execute(
-                "SELECT COUNT(*) FROM jobs WHERE status IN (?,?)",
-                (JobStatus.QUEUED.value, JobStatus.RUNNING.value),
-            ).fetchone()
-        return count
+        row = self._db.query_one(
+            "SELECT COUNT(*) FROM jobs WHERE status IN (?,?)",
+            (JobStatus.QUEUED.value, JobStatus.RUNNING.value),
+        )
+        return row[0] if row else 0
 
     def dead_letters(self, limit: int = 100) -> List[Job]:
         """Jobs that exhausted their attempts. Visible, not silently discarded."""
-        with self._lock:
-            rows = self._conn.execute(
-                "SELECT * FROM jobs WHERE status='dead' ORDER BY finished_at DESC LIMIT ?",
-                (limit,),
-            ).fetchall()
-        return [self._to_job(r) for r in rows]
+        rows = self._db.query(
+            f"SELECT {self._select()} FROM jobs WHERE status='dead' "  # nosec B608
+            "ORDER BY finished_at DESC LIMIT ?",
+            (limit,),
+        )
+        return [self._to_job(self._to_dict(r)) for r in rows]
 
     # -- recovery -------------------------------------------------------------
 
@@ -198,60 +211,51 @@ class SqliteJobQueue:
         it, recovery would have to assume every running job is abandoned, which
         would double-run whatever is legitimately in progress.
         """
-        with self._lock:
-            cur = self._conn.execute(
-                "UPDATE jobs SET status=?, lease_until=NULL, visible_at=?"
-                " WHERE status=? AND (lease_until IS NULL OR lease_until < ?)",
-                (JobStatus.QUEUED.value, time.time(), JobStatus.RUNNING.value, time.time()),
-            )
-            return cur.rowcount
+        return self._db.execute(
+            "UPDATE jobs SET status=?, lease_until=NULL, visible_at=?"
+            " WHERE status=? AND (lease_until IS NULL OR lease_until < ?)",
+            (JobStatus.QUEUED.value, time.time(), JobStatus.RUNNING.value, time.time()),
+        )
 
     # -- worker ---------------------------------------------------------------
 
-    def _claim(self) -> Optional[sqlite3.Row]:
+    def _claim(self) -> Optional[dict]:
         """Atomically take one due job. None when there is nothing to do.
 
-        Deliberately avoids `UPDATE ... RETURNING`, which needs SQLite 3.35+
-        (2021) — recent everywhere we test and not something to assume of every
-        machine that can run Python 3.9.
+        The one place the two engines want genuinely different SQL rather than
+        different spelling, so the statement comes from `Database.claim_sql`.
 
-        `BEGIN IMMEDIATE` takes the write lock before the `SELECT`, so the read
-        and the update are one transaction. Without it two workers — or two
-        *processes*, which the in-process lock does not cover — could select the
-        same row and both believe they claimed it. The `status='queued'` guard on
-        the `UPDATE` is the belt to that braces: if another writer got there
-        first, `rowcount` is 0 and this worker looks for different work.
+        On SQLite, `BEGIN IMMEDIATE` takes the write lock before the `SELECT`,
+        so the read and the update are one transaction. Without it two workers —
+        or two *processes*, which an in-process lock does not cover — could
+        select the same row and both believe they claimed it. It deliberately
+        avoids `UPDATE ... RETURNING`, which needs SQLite 3.35+ and is not
+        something to assume of every machine that can run Python 3.9.
+
+        On PostgreSQL, `FOR UPDATE SKIP LOCKED` does the same job better: a
+        worker skips rows another worker is already holding instead of waiting
+        behind them, so claims stop serialising as workers are added.
+
+        The `status='queued'` guard on the `UPDATE` is the belt to those braces.
+        If another writer got there first, the affected count is 0 and this
+        worker looks for different work.
         """
         now = time.time()
-        with self._lock:
-            self._conn.row_factory = sqlite3.Row
-            self._conn.execute("BEGIN IMMEDIATE")
-            try:
-                row = self._conn.execute(
-                    "SELECT * FROM jobs WHERE status=? AND visible_at<=?"
-                    " ORDER BY created_at LIMIT 1",
-                    (JobStatus.QUEUED.value, now),
-                ).fetchone()
-                if row is None:
-                    self._conn.execute("COMMIT")
-                    return None
-                cur = self._conn.execute(
-                    "UPDATE jobs SET status=?, attempts=attempts+1, started_at=?, lease_until=?"
-                    " WHERE id=? AND status=?",
-                    (JobStatus.RUNNING.value, now, now + LEASE_SECONDS,
-                     row["id"], JobStatus.QUEUED.value),
-                )
-                if cur.rowcount == 0:
-                    self._conn.execute("COMMIT")
-                    return None
-                claimed = self._conn.execute(
-                    "SELECT * FROM jobs WHERE id=?", (row["id"],)
-                ).fetchone()
-                self._conn.execute("COMMIT")
-                return claimed
-            except Exception:
-                self._conn.execute("ROLLBACK")
-                raise
+        with self._db.transaction() as tx:
+            row = tx.query_one(self._db.claim_sql("jobs"), (now,))
+            if row is None:
+                return None
+            job_id = row[0]
+            tx.execute(
+                "UPDATE jobs SET status=?, attempts=attempts+1, started_at=?, lease_until=?"
+                " WHERE id=? AND status=?",
+                (JobStatus.RUNNING.value, now, now + LEASE_SECONDS,
+                 job_id, JobStatus.QUEUED.value),
+            )
+            claimed = tx.query_one(
+                f"SELECT {self._select()} FROM jobs WHERE id=?", (job_id,)  # nosec B608
+            )
+        return self._to_dict(claimed)
 
     def _worker_loop(self) -> None:
         while not self._stop.is_set():
@@ -266,7 +270,7 @@ class SqliteJobQueue:
                 continue
             self._run(row)
 
-    def _run(self, row: sqlite3.Row) -> None:
+    def _run(self, row: dict) -> None:
         job_id, project_id, kind = row["id"], row["project_id"], row["kind"]
         self._bus.publish(Event(EventType.JOB_STARTED, project_id=project_id, job_id=job_id))
         handler = self._handlers.get(kind)
@@ -284,14 +288,13 @@ class SqliteJobQueue:
         except Exception as exc:  # noqa: BLE001 — any failure is the job's failure
             self._on_failure(row, exc)
             return
-        with self._lock:
-            self._conn.execute(
-                "UPDATE jobs SET status=?, finished_at=?, lease_until=NULL WHERE id=?",
-                (JobStatus.COMPLETED.value, time.time(), job_id),
-            )
+        self._db.execute(
+            "UPDATE jobs SET status=?, finished_at=?, lease_until=NULL WHERE id=?",
+            (JobStatus.COMPLETED.value, time.time(), job_id),
+        )
         self._bus.publish(Event(EventType.JOB_COMPLETED, project_id=project_id, job_id=job_id))
 
-    def _on_failure(self, row: sqlite3.Row, exc: Exception) -> None:
+    def _on_failure(self, row: dict, exc: Exception) -> None:
         job_id, project_id = row["id"], row["project_id"]
         attempts, max_attempts = row["attempts"], row["max_attempts"]
         if attempts >= max_attempts:
@@ -300,22 +303,20 @@ class SqliteJobQueue:
         # Exponential backoff: retrying a failure caused by an overloaded
         # dependency immediately makes the overload worse.
         delay = BACKOFF_BASE_SECONDS ** attempts
-        with self._lock:
-            self._conn.execute(
-                "UPDATE jobs SET status=?, visible_at=?, lease_until=NULL, error=? WHERE id=?",
-                (JobStatus.QUEUED.value, time.time() + delay, str(exc), job_id),
-            )
+        self._db.execute(
+            "UPDATE jobs SET status=?, visible_at=?, lease_until=NULL, error=? WHERE id=?",
+            (JobStatus.QUEUED.value, time.time() + delay, str(exc), job_id),
+        )
         logger.warning(
             "job failed, retrying", extra={"job_id": job_id, "attempt": attempts,
                                            "retry_in_s": delay, "error_type": type(exc).__name__},
         )
 
     def _finish_dead(self, job_id: str, project_id: str, error: str) -> None:
-        with self._lock:
-            self._conn.execute(
-                "UPDATE jobs SET status='dead', finished_at=?, lease_until=NULL, error=? WHERE id=?",
-                (time.time(), error, job_id),
-            )
+        self._db.execute(
+            "UPDATE jobs SET status='dead', finished_at=?, lease_until=NULL, error=? WHERE id=?",
+            (time.time(), error, job_id),
+        )
         logger.error("job dead-lettered", extra={"job_id": job_id, "error": error})
         self._bus.publish(Event(
             EventType.JOB_FAILED, project_id=project_id, job_id=job_id, detail={"error": error},
@@ -323,10 +324,12 @@ class SqliteJobQueue:
 
     # -- plumbing -------------------------------------------------------------
 
-    def _row(self, job_id: str) -> Optional[sqlite3.Row]:
-        with self._lock:
-            self._conn.row_factory = sqlite3.Row
-            return self._conn.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
+    def _row(self, job_id: str) -> Optional[dict]:
+        return self._to_dict(
+            self._db.query_one(
+                f"SELECT {self._select()} FROM jobs WHERE id=?", (job_id,)  # nosec B608
+            )
+        )
 
     @staticmethod
     def _to_job(row) -> Job:
@@ -351,8 +354,12 @@ class SqliteJobQueue:
             worker.join(timeout=timeout)
 
 
+#: The engine-specific name used before the two were unified.
+SqliteJobQueue = SqlJobQueue
+
+
 def create_job_queue(bus: EventBus, max_workers: int = 2):
-    """The configured queue. `IACTRANSLATE_STORE=sqlite` gets the durable one.
+    """The configured queue. `sqlite` or `postgres` gets the durable one.
 
     Tied to the same switch as the project store rather than a separate flag:
     persisting projects while losing their jobs on restart is a half-durable
@@ -360,9 +367,7 @@ def create_job_queue(bus: EventBus, max_workers: int = 2):
     """
     from .jobs import JobQueue
 
-    if os.getenv("IACTRANSLATE_STORE", "memory").strip().lower() == "sqlite":
+    if backend() in {"sqlite", "postgres"}:
         # Not started here — the caller registers handlers, then calls `start()`.
-        return SqliteJobQueue(
-            bus, os.getenv("IACTRANSLATE_DB_PATH", "./iactranslate.db"), max_workers=max_workers
-        )
+        return SqlJobQueue(bus, create_database(), max_workers=max_workers)
     return JobQueue(bus, max_workers=max_workers)

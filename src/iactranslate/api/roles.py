@@ -34,10 +34,11 @@ exists, so 403 tells them nothing new and 404 would be actively confusing.
 """
 from __future__ import annotations
 
-import os
 import time
 from enum import Enum
 from typing import Dict, List, Optional
+
+from .sql import Database, backend, create_database
 
 
 class Role(str, Enum):
@@ -132,7 +133,7 @@ class Membership:
         self._grants.pop(project_id, None)
 
 
-class SqliteMembership(Membership):
+class SqlMembership(Membership):
     """The same grants, persisted.
 
     Without this, a deployment with `IACTRANSLATE_STORE=sqlite` keeps its
@@ -142,7 +143,7 @@ class SqliteMembership(Membership):
     than none, because nobody notices until someone reports they lost access.
 
     Grants are small and read on every request, so they are cached in memory and
-    written through; SQLite is the record, not the hot path.
+    written through; The database is the record, not the hot path.
     """
 
     _SCHEMA = """
@@ -150,23 +151,20 @@ class SqliteMembership(Membership):
             project_id TEXT NOT NULL,
             user_id TEXT NOT NULL,
             role TEXT NOT NULL,
-            granted_at REAL NOT NULL,
+            granted_at {REAL} NOT NULL,
             PRIMARY KEY (project_id, user_id)
         )
     """
 
-    def __init__(self, db_path: str) -> None:
+    def __init__(self, db: "Database | str") -> None:
         super().__init__()
-        import sqlite3
-        from pathlib import Path as _Path
-
-        _Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(db_path, check_same_thread=False, isolation_level=None)
-        self._conn.execute(self._SCHEMA)
+        # A path string opens SQLite, which is how this was always constructed.
+        self._db = db if isinstance(db, Database) else Database("sqlite", db)
+        self._db.execute(self._db.schema(self._SCHEMA))
         self._load()
 
     def _load(self) -> None:
-        for project_id, user_id, role in self._conn.execute(
+        for project_id, user_id, role in self._db.query(
             "SELECT project_id, user_id, role FROM project_members"
         ):
             try:
@@ -179,7 +177,8 @@ class SqliteMembership(Membership):
 
     def grant(self, project_id: str, user_id: str, role: Role) -> None:
         super().grant(project_id, user_id, role)
-        self._conn.execute(
+        # Both engines implement this spelling of upsert identically.
+        self._db.execute(
             "INSERT INTO project_members (project_id, user_id, role, granted_at)"
             " VALUES (?,?,?,?)"
             " ON CONFLICT(project_id, user_id) DO UPDATE SET role=excluded.role",
@@ -189,7 +188,7 @@ class SqliteMembership(Membership):
     def revoke(self, project_id: str, user_id: str) -> bool:
         removed = super().revoke(project_id, user_id)
         if removed:
-            self._conn.execute(
+            self._db.execute(
                 "DELETE FROM project_members WHERE project_id=? AND user_id=?",
                 (project_id, user_id),
             )
@@ -197,7 +196,11 @@ class SqliteMembership(Membership):
 
     def drop_project(self, project_id: str) -> None:
         super().drop_project(project_id)
-        self._conn.execute("DELETE FROM project_members WHERE project_id=?", (project_id,))
+        self._db.execute("DELETE FROM project_members WHERE project_id=?", (project_id,))
+
+
+#: The engine-specific name used before the two were unified.
+SqliteMembership = SqlMembership
 
 
 def create_membership() -> Membership:
@@ -206,6 +209,6 @@ def create_membership() -> Membership:
     One switch, so a deployment cannot end up persisting some of its state and
     losing the rest.
     """
-    if os.getenv("IACTRANSLATE_STORE", "memory").strip().lower() == "sqlite":
-        return SqliteMembership(os.getenv("IACTRANSLATE_DB_PATH", "./iactranslate.db"))
+    if backend() in {"sqlite", "postgres"}:
+        return SqlMembership(create_database())
     return Membership()

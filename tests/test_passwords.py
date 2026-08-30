@@ -52,7 +52,7 @@ def test_reset_token_is_stored_hashed(tmp_path):
     user = store.create_user("a@example.com", PASSWORD)
     token = store.create_reset_token(user.id)
 
-    rows = store._conn.execute("SELECT token_hash FROM password_resets").fetchall()
+    rows = store._db.query("SELECT token_hash FROM password_resets")
     assert rows and token not in [r[0] for r in rows]
 
 
@@ -72,7 +72,7 @@ def test_expired_reset_token_is_refused_and_burned(tmp_path):
 
     assert store.consume_reset_token(token) is None
     # Burned even though it was expired — it can never come back.
-    assert store._conn.execute("SELECT COUNT(*) FROM password_resets").fetchone()[0] == 0
+    assert store._db.query_one("SELECT COUNT(*) FROM password_resets")[0] == 0
 
 
 def test_requesting_a_new_token_invalidates_the_previous_one(tmp_path):

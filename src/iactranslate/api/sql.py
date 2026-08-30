@@ -142,9 +142,16 @@ class Database:
             finally:
                 cur.close()
 
-    def execute(self, statement: str, params: Sequence[Any] = ()) -> None:
+    def execute(self, statement: str, params: Sequence[Any] = ()) -> int:
+        """Run a write. Returns the number of rows affected.
+
+        Callers use the count to answer "did anything actually change?" — how
+        many sessions a sign-out revoked, for instance — so it is part of the
+        interface rather than an incidental cursor attribute.
+        """
         with self._cursor(commit=True) as cur:
             cur.execute(self.sql(statement), tuple(params))
+            return cur.rowcount if cur.rowcount is not None else 0
 
     def query(self, statement: str, params: Sequence[Any] = ()) -> List[Tuple]:
         with self._cursor(commit=False) as cur:
@@ -179,6 +186,21 @@ class Database:
                 raise
             finally:
                 cur.close()
+
+    @property
+    def integrity_errors(self) -> tuple:
+        """Exceptions meaning "a constraint rejected this".
+
+        The drivers raise unrelated classes — `sqlite3.IntegrityError` versus
+        psycopg's `IntegrityError` — so a store catching only the SQLite one
+        would let a duplicate-email violation escape as a 500 instead of the
+        "that address is taken" it is.
+        """
+        if self.is_postgres:
+            import psycopg
+
+            return (psycopg.IntegrityError,)
+        return (sqlite3.IntegrityError,)
 
     def columns(self, table: str) -> set:
         """Existing column names, for the additive migrations."""

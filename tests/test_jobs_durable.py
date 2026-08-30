@@ -69,7 +69,7 @@ def test_a_running_job_from_a_dead_worker_is_reclaimed(db):
     q = _queue(db, max_workers=0)
     job = q.submit("proj-1")
     # Simulate a worker that claimed the job and then died: running, lease past.
-    q._conn.execute(
+    q._db.execute(
         "UPDATE jobs SET status='running', lease_until=? WHERE id=?",
         (time.time() - 1, job.id),
     )
@@ -84,7 +84,7 @@ def test_a_live_lease_is_not_stolen(db):
     """Reclaiming everything `running` would double-run legitimate work."""
     q = _queue(db, max_workers=0)
     job = q.submit("proj-1")
-    q._conn.execute(
+    q._db.execute(
         "UPDATE jobs SET status='running', lease_until=? WHERE id=?",
         (time.time() + 600, job.id),
     )
