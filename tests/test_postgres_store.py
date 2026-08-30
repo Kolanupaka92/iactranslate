@@ -195,10 +195,12 @@ def test_grants_upsert_and_survive_a_reload(db):
     members.grant("p1", "u1", Role.VIEWER)
     members.grant("p1", "u1", Role.ADMIN)  # upsert, not a duplicate row
 
+    # `owner_id=None` so the assertion reads the stored grant rather than the
+    # owner-is-always-admin shortcut, which would pass whatever the row said.
     reloaded = SqlMembership(db)
-    assert reloaded.role_for("p1", "u1") is Role.ADMIN
+    assert reloaded.role_for("p1", "u1", None) is Role.ADMIN
     assert members.revoke("p1", "u1") is True
-    assert SqlMembership(db).role_for("p1", "u1") is None
+    assert SqlMembership(db).role_for("p1", "u1", None) is None
     db.execute("DROP TABLE IF EXISTS project_members")
 
 
