@@ -101,6 +101,7 @@ def _cmd_translate(args: argparse.Namespace) -> int:
                 cidr=getattr(args, "vpc_cidr", None) or DEFAULT_CIDR,
                 tags=_parse_kv(getattr(args, "tags", None)),
                 name_prefix=getattr(args, "name_prefix", None),
+                kms_key_id=getattr(args, "kms_key", None),
             ),
             state_backend=resolve_backend(
                 args.target,
@@ -506,6 +507,11 @@ def build_parser() -> argparse.ArgumentParser:
                         "commonly reject resources that lack mandated tags.")
     t.add_argument("--name-prefix", default=None, metavar="PREFIX",
                    help="Prefix for generated resource names, where a naming convention is enforced.")
+    t.add_argument("--kms-key", default=None, metavar="KEY",
+                   help="Customer-managed key for volume encryption (AWS KMS ARN/alias, "
+                        "Azure disk encryption set id, or GCP KMS key name). Volumes are "
+                        "always encrypted; this selects whose key. Omit to use the "
+                        "provider's managed key.")
     t.add_argument("--instance-identity", default="basic", metavar="MODE",
                    help="Workload identity per tier: 'basic' (role/identity with no "
                         "permissions, wired to the instances), 'ssm' (basic plus AWS "

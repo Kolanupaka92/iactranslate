@@ -20,6 +20,11 @@ resource "google_compute_instance" "{{ c.resource_name }}" {
       size  = {{ c.root_volume_gib }}
       type  = "pd-balanced"
     }
+{% if kms_key_id %}
+    # Persistent disks are always encrypted at rest with a Google-managed key;
+    # this substitutes a customer-managed key from Cloud KMS.
+    kms_key_self_link = "{{ kms_key_id }}"
+{% endif %}
   }
 
   network_interface {

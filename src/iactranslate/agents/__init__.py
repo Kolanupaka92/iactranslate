@@ -42,4 +42,5 @@ def build_migration_plan(
         app_groups=app_groups,
         provider_used=provider.name,
         live_pricing_requested=live_pricing,
+        kms_key_id=zone.kms_key_id if zone else None,
     )

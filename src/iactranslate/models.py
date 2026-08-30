@@ -254,6 +254,16 @@ class MigrationPlan(BaseModel):
             "this field is the honest record of what actually ran, not what was asked for."
         ),
     )
+    kms_key_id: Optional[str] = Field(
+        default=None,
+        description=(
+            "Customer-managed key protecting volume encryption, when the estate "
+            "supplied one. Volumes are always encrypted; this records whether the "
+            "customer's own key or the provider's managed key was used — a "
+            "distinction auditors ask about and the generated code alone does "
+            "not make obvious."
+        ),
+    )
     live_pricing_requested: bool = Field(
         default=False,
         description=(

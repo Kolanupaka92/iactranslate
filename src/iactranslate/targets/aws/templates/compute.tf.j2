@@ -12,6 +12,13 @@ resource "aws_instance" "{{ c.resource_name }}" {
   root_block_device {
     volume_size = {{ c.root_volume_gib }}
     volume_type = "gp3"
+    # EBS is NOT encrypted by default unless the account enables it per-region,
+    # so this is set explicitly. CIS AWS Foundations 2.2.1 checks for it, and an
+    # unencrypted root volume is the finding that stops a security review.
+    encrypted   = true
+{% if kms_key_id %}
+    kms_key_id  = "{{ kms_key_id }}"
+{% endif %}
   }
 
   tags = {

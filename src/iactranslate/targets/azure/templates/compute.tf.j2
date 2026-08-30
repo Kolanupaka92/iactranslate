@@ -69,6 +69,11 @@ resource "azurerm_windows_virtual_machine" "{{ c.resource_name }}" {
     caching              = "ReadWrite"
     storage_account_type = "StandardSSD_LRS"
     disk_size_gb         = {{ c.root_volume_gib }}
+{% if kms_key_id %}
+    # Managed disks are always encrypted at rest with a platform-managed key;
+    # this replaces it with the customer's own, via a disk encryption set.
+    disk_encryption_set_id = "{{ kms_key_id }}"
+{% endif %}
   }
 
   source_image_reference {
@@ -103,6 +108,11 @@ resource "azurerm_linux_virtual_machine" "{{ c.resource_name }}" {
     caching              = "ReadWrite"
     storage_account_type = "StandardSSD_LRS"
     disk_size_gb         = {{ c.root_volume_gib }}
+{% if kms_key_id %}
+    # Managed disks are always encrypted at rest with a platform-managed key;
+    # this replaces it with the customer's own, via a disk encryption set.
+    disk_encryption_set_id = "{{ kms_key_id }}"
+{% endif %}
   }
 
   source_image_reference {

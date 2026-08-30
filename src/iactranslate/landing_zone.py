@@ -59,6 +59,16 @@ class LandingZone:
     cidr: str = DEFAULT_CIDR
     tags: Dict[str, str] = field(default_factory=dict)
     name_prefix: Optional[str] = None
+    #: Customer-managed key for volume encryption. Encryption itself is never
+    #: optional — see ADR 0062 — so this only selects *whose* key protects the
+    #: data. Regulated estates usually require their own; without one the cloud
+    #: provider's managed key is used, which is still encrypted at rest.
+    #:
+    #: Format is per-cloud (AWS KMS ARN or alias, an Azure disk encryption set
+    #: id, a GCP KMS key name), so it is carried as an opaque string and only
+    #: checked for being non-blank. Validating each provider's shape here would
+    #: reject valid keys the day a provider adds a format.
+    kms_key_id: Optional[str] = None
 
     def __post_init__(self) -> None:
         try:
@@ -81,6 +91,9 @@ class LandingZone:
                 )
             if len(value) > 256:
                 raise LandingZoneError(f"tag value for '{key}' exceeds 256 characters")
+        if self.kms_key_id is not None and not self.kms_key_id.strip():
+            raise LandingZoneError("kms_key_id must not be blank — omit it to use "
+                                   "the provider's managed key")
         if self.name_prefix is not None and not _PREFIX_RE.match(self.name_prefix):
             raise LandingZoneError(
                 f"name prefix '{self.name_prefix}' must start with a letter and "

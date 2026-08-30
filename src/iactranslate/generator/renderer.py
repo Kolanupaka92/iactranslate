@@ -181,6 +181,9 @@ def build_files(
         # absence of evidence, stated as nothing rather than as "no dependency".
         "hybrid": hybrid,
         "SUMMARY_PREFIX": SUMMARY_PREFIX,
+        # Volume encryption is unconditional in the templates; this only selects
+        # whose key. Empty means the provider's managed key (ADR 0062).
+        "kms_key_id": plan.kms_key_id,
         "mandated_tags": _mandated,
         "gcp_labels": gcp_labels(_mandated),
         "mandated_do_tags": (zone or LandingZone()).do_tags(),
