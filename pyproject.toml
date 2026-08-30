@@ -29,6 +29,10 @@ encryption = ["cryptography>=42.0"]
 # Shared rate-limit buckets across replicas (ADR 0046). Optional: a
 # single-node deployment needs no Redis.
 redis = ["redis>=5.0"]
+# PostgreSQL-backed durable state (ADR 0063). Optional: SQLite remains the
+# default and is correct for a single node. Needed when the API runs on more
+# than one instance, or on a platform whose filesystem has no POSIX locking.
+postgres = ["psycopg[binary,pool]>=3.1"]
 # Server-side PDF rendering (ADR 0052). Optional because WeasyPrint needs Pango
 # and Cairo, which are system libraries rather than wheels; browser Save-as-PDF
 # works with no install at all.

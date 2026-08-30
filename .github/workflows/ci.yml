@@ -171,6 +171,40 @@ jobs:
           IACTRANSLATE_TEST_REDIS_URL: redis://localhost:6379/0
         run: pytest tests/test_ratelimit_shared.py -v
 
+  postgres-integration:
+    # The stores are covered against SQLite in the main suite, which is the
+    # default engine and covers the logic. It cannot cover what actually breaks
+    # when the engine is swapped: placeholder binding, type mapping, schema
+    # introspection and the job-queue claim. Those are only meaningful against a
+    # real server, so this runs them against one.
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: iactranslate
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,postgres]"
+      - name: Durable stores against a real PostgreSQL
+        env:
+          IACTRANSLATE_TEST_POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/iactranslate
+        run: pytest tests/test_postgres_store.py -v
+
   security:
     # Supply-chain gate. Enterprise procurement asks for an SBOM and a
     # vulnerability report in the first security review; before this job there
