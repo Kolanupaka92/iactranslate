@@ -3,6 +3,7 @@ import BookACall from "@/components/landing/BookACall";
 import Difference from "@/components/landing/Difference";
 import Hero from "@/components/landing/Hero";
 import HowItWorks from "@/components/landing/HowItWorks";
+import Pricing from "@/components/landing/Pricing";
 import Problem from "@/components/landing/Problem";
 import Proof from "@/components/landing/Proof";
 import SiteFooter from "@/components/landing/SiteFooter";
@@ -24,6 +25,7 @@ export default function Landing() {
         <HowItWorks />
         <Proof />
         <Audience />
+        <Pricing />
         <BookACall />
       </main>
       <SiteFooter />

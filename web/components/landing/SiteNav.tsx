@@ -7,6 +7,7 @@ const LINKS = [
   { href: "#difference", label: "Why us" },
   { href: "#how", label: "How it works" },
   { href: "#proof", label: "Proof" },
+  { href: "#pricing", label: "Pricing" },
 ];
 
 export default function SiteNav() {

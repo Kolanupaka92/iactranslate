@@ -160,3 +160,73 @@ export const AUDIENCE = [
       "and flags the workloads that will fail on the night.",
   },
 ] as const;
+
+/**
+ * Published pricing.
+ *
+ * Only the entry tier carries a number. A published entry price qualifies
+ * buyers before they reach a call, which is what this page is for; publishing
+ * enterprise pricing only removes room to negotiate on the deals that matter
+ * most. See the pricing analysis for the anchors these were derived from — the
+ * assessment tools this competes with sit near $11/server, and the single-
+ * capability platforms between $20k and $35k a year.
+ *
+ * These are an opening hypothesis, not a validated price. They are anchored
+ * against real published competitor rates rather than invented, but nobody has
+ * yet been asked to pay them.
+ */
+export const PRICING = [
+  {
+    name: "Evaluate",
+    price: "Free",
+    unit: "up to 100 workloads",
+    points: [
+      "The full pipeline on one estate",
+      "All five clouds compared",
+      "Readiness score and cost breakdown",
+    ],
+    cta: "Open the console",
+    href: "/console",
+    lead: false,
+  },
+  {
+    name: "Project",
+    price: "$7,500",
+    unit: "per estate, up to 500 workloads",
+    points: [
+      "$20,000 up to 2,500 workloads",
+      "Unlimited runs on that estate",
+      "Client-ready reports and diagrams",
+      "All six IaC formats, policy engine, wave planning",
+    ],
+    cta: "Book a call",
+    href: null,
+    lead: true,
+  },
+  {
+    name: "Practice",
+    price: "Talk to us",
+    unit: "annual, unlimited projects",
+    points: [
+      "For teams running several migrations a year",
+      "SSO, RBAC, audit export",
+      "Reusable policy packs and branded reports",
+    ],
+    cta: "Book a call",
+    href: null,
+    lead: false,
+  },
+  {
+    name: "Enterprise",
+    price: "Talk to us",
+    unit: "annual, self-hosted",
+    points: [
+      "Air-gapped deployment — inventory never leaves your network",
+      "Customer-managed encryption keys",
+      "Support SLA and priority cloud coverage",
+    ],
+    cta: "Book a call",
+    href: null,
+    lead: false,
+  },
+] as const;
