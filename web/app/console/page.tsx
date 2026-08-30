@@ -345,10 +345,16 @@ export default function Home() {
       <header className="mb-8 flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold">IaCTranslate</h1>
+          {/* This read "Convert any infrastructure inventory ... into
+              production-ready Terraform", which is the converter framing the
+              product direction rules out, and it named Terraform four times
+              while the engine ships six IaC formats. The translation is the
+              last stage; the value is knowing which cloud and at what cost. */}
           <p className="mt-1 max-w-2xl text-sm opacity-70">
-            Convert any infrastructure inventory — VMware, Hyper-V, Kubernetes, a
-            CMDB export, or an existing cloud fleet — into production-ready
-            Terraform for AWS, Azure, GCP, OCI, or DigitalOcean, in minutes.
+            Score an estate for migration readiness, compare every cloud on real
+            cost and fit, sequence the cutover, and generate infrastructure code
+            the providers&rsquo; own tooling validates — from an inventory export
+            you already have.
           </p>
         </div>
         {identity.authenticated && (

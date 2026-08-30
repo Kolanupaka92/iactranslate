@@ -2,11 +2,18 @@
 
 import type { ProjectSummary } from "@/lib/api";
 
+/**
+ * Status chips, at 10px — the smallest text in the app and so the least
+ * forgiving. Each used the 500 weight of its hue on a 15%-alpha tint of the
+ * same hue; `completed` measured 2.06:1 against the composited background,
+ * against a 4.5 AA requirement. Darkening the text and leaving the tint alone
+ * keeps the colour coding while making the words legible.
+ */
 const STATUS_STYLE: Record<string, string> = {
-  completed: "bg-emerald-500/15 text-emerald-500",
-  failed: "bg-red-500/15 text-red-400",
-  uploaded: "bg-amber-500/15 text-amber-500",
-  created: "bg-neutral-500/15 text-neutral-400",
+  completed: "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300",
+  failed: "bg-red-500/15 text-red-800 dark:text-red-300",
+  uploaded: "bg-amber-500/15 text-amber-800 dark:text-amber-300",
+  created: "bg-neutral-500/15 text-neutral-700 dark:text-neutral-300",
 };
 
 /**

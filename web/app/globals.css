@@ -67,3 +67,18 @@ body {
     scroll-behavior: auto !important;
   }
 }
+
+/* Keyboard focus.
+ *
+ * Nothing in the console showed a focus ring — measured, 9 of 9 interactive
+ * elements — so tabbing through it gave no indication of where you were
+ * (WCAG 2.4.7). Declared with `:where()` so it carries zero specificity and any
+ * component that wants its own treatment simply overrides it.
+ *
+ * `:focus-visible` rather than `:focus`, so a mouse click on a button does not
+ * leave a ring behind it. */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}

@@ -2,11 +2,34 @@
 
 import type { RunResult } from "@/lib/api";
 
+/**
+ * Confidence is the number a reviewer acts on, and it was the hardest text on
+ * the page to read: amber-600 measured 3.04:1 against the card, below the 4.5
+ * AA threshold for 14px. Each level is now a shade that passes on both grounds.
+ */
 const CONF_STYLE: Record<string, string> = {
-  high: "text-emerald-700 dark:text-emerald-400",
-  medium: "text-amber-600 dark:text-amber-400",
-  low: "text-red-600 dark:text-red-400",
+  high: "text-emerald-800 dark:text-emerald-300",
+  medium: "text-amber-800 dark:text-amber-300",
+  low: "text-red-800 dark:text-red-300",
 };
+
+/** What actually moves the number, so "76% (medium)" is actionable. */
+const CONF_REASON =
+  "Scored per workload on how much the inventory told us: observed utilization, " +
+  "OS detail, disk and network data. Workloads flagged for review are the ones " +
+  "where the export left the most to infer.";
+
+/**
+ * Every figure the cost engine includes, and the discount it deliberately does
+ * not assume (ADR 0039). Shown next to the number rather than in a tooltip:
+ * this is the value a consultant screenshots into a client deck, and a monthly
+ * cost with no stated basis is exactly the fabricated-savings claim the product
+ * exists to replace.
+ */
+const COST_BASIS =
+  "Compute, block storage, OS licensing and load balancers, at on-demand list " +
+  "price. No committed-use discount assumed — reserved instances and savings " +
+  "plans typically cut compute 30–60%.";
 
 export default function RunSummary({ result }: { result: RunResult }) {
   const conf = result.confidence;
@@ -33,6 +56,12 @@ export default function RunSummary({ result }: { result: RunResult }) {
               maximumFractionDigits: 2,
             })}
           </div>
+          <p className="mt-2 text-xs leading-relaxed opacity-70">
+            {COST_BASIS}{" "}
+            {result.pricing_source === "live"
+              ? "Rates fetched live from the provider."
+              : "Rates from the bundled catalog."}
+          </p>
         </div>
       </div>
 
@@ -69,6 +98,7 @@ export default function RunSummary({ result }: { result: RunResult }) {
               {conf.low_confidence_count === 1 ? "" : "s"} to review
             </span>
           ) : null}
+          <p className="mt-2 text-xs leading-relaxed opacity-70">{CONF_REASON}</p>
         </div>
       ) : null}
 
