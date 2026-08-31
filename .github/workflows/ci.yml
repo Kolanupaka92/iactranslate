@@ -132,6 +132,22 @@ jobs:
           print('rendered', len(out), 'byte PDF')
           "
 
+      - name: Smoke-test encryption and the PostgreSQL driver
+        # Both are optional extras of the library and mandatory in the image: a
+        # hosted deployment sets IACTRANSLATE_ENCRYPTION_KEY, and without
+        # `cryptography` the API fails closed and refuses every upload (ADR
+        # 0043) — correct behaviour, useless deployment. That shipped once and
+        # was only caught by a smoke test against the real service.
+        run: |
+          docker run --rm -e IACTRANSLATE_ENCRYPTION_KEY=zZ8kQ2mVv1sB4nR7tY0uX3wC6eA9gJ5hK8lN1pS4dF0= \
+            iactranslate:ci python -c "
+          from iactranslate.crypto import encryption_enabled, encrypt_bytes, decrypt_bytes
+          assert encryption_enabled(), 'cryptography must be installed in the image'
+          assert decrypt_bytes(encrypt_bytes(b'estate')) == b'estate'
+          import psycopg, psycopg_pool  # noqa: F401 — the postgres backend needs both
+          print('encryption and psycopg both available')
+          "
+
       - name: Smoke-test the zero-input demo
         # The path a first-time evaluator takes: no inventory, no account,
         # no upload. If this breaks, nobody can try the product.

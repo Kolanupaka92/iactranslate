@@ -33,7 +33,20 @@ WORKDIR /app
 
 # Install only the built wheel + its runtime deps (no build toolchain).
 COPY --from=builder /wheels /wheels
+# `psycopg[binary]` ships wheels, so this still needs no compiler in the
+# runtime stage. Installed unconditionally because the image is the artifact a
+# hosted deployment runs, and that deployment is the case that needs PostgreSQL
+# (ADR 0063) — a SQLite-only image would make the store an image choice rather
+# than a configuration one.
+# `cryptography` is what makes encryption at rest actually available. It is an
+# optional extra for the library — a bare `pip install iactranslate` should not
+# need it — but this image is what a hosted deployment runs, and there
+# IACTRANSLATE_ENCRYPTION_KEY is set. Without the package the API fails closed
+# and refuses every upload (ADR 0043), which is the correct behaviour and a
+# useless deployment. Both ship wheels, so the runtime stage still needs no
+# compiler.
 RUN pip install --no-cache-dir /wheels/*.whl weasyprint \
+        "psycopg[binary,pool]>=3.1" "cryptography>=42.0" \
     && rm -rf /wheels
 
 USER appuser
