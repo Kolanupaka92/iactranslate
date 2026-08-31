@@ -1,7 +1,12 @@
 /** Typed client for the IaCTranslate FastAPI backend. */
 
+/**
+ * `||`, not `??`: an env var that is *set but empty* is the failure this hit in
+ * production. `??` only falls back on null/undefined, so an empty string became
+ * the API root and every call went to the web app instead of the API.
+ */
 export const API_URL =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 /**
  * Versioned API root. The backend also serves the unprefixed paths for

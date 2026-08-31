@@ -19,11 +19,25 @@ import type { NextConfig } from "next";
  * because uploads run to 25 MB, and it is verified against the deployed app
  * rather than taken on faith.
  */
-const API_ORIGIN = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "");
+/**
+ * The deployed API. Hardcoded as the default rather than kept only in the host's
+ * env store: a `NEXT_PUBLIC_*` value is public by construction — it ships in the
+ * browser bundle — so there is nothing to protect by hiding it, and keeping it
+ * only in the dashboard cost a deployment. The variable was set but stored
+ * empty, and `??` does not fall back on an empty string, so the client silently
+ * called `/v1` on the web app itself and every request 404'd into "not signed
+ * in". `||` and a real default remove that failure mode.
+ */
+const DEFAULT_API_ORIGIN =
+  "https://iactranslate-api-1084002294076.us-central1.run.app";
+
+const API_ORIGIN = (process.env.NEXT_PUBLIC_API_URL || DEFAULT_API_ORIGIN).replace(
+  /\/$/,
+  "",
+);
 
 const nextConfig: NextConfig = {
   async rewrites() {
-    if (!API_ORIGIN) return [];
     return [{ source: "/api/v1/:path*", destination: `${API_ORIGIN}/v1/:path*` }];
   },
 };
