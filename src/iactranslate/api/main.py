@@ -147,6 +147,46 @@ if _origins:
     )
 
 
+#: Methods that change something and therefore need CSRF protection. `GET` and
+#: `HEAD` are excluded because they must be safe — anything that mutates state
+#: behind a GET is a bug this check would only be papering over.
+_UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+
+
+@app.middleware("http")
+async def _enforce_origin(request: Request, call_next):
+    """Reject state-changing requests from origins we do not serve.
+
+    This is what stands in for `SameSite=lax` when a deployment sets
+    `IACTRANSLATE_COOKIE_SAMESITE=none` because its web app and API are on
+    different sites. With `lax` the browser refuses the cross-site POST itself;
+    with `none` it will happily send the cookie, so the server has to decide.
+
+    Checking `Origin` rather than requiring a custom header, because a custom
+    header only protects endpoints that take JSON. A cross-site HTML form can
+    POST `multipart/form-data` with no preflight at all — which is exactly the
+    shape of the upload endpoint, the one carrying customer inventory.
+
+    A missing `Origin` is allowed through: browsers always send it on the
+    cross-site requests that matter, and its absence means a non-browser client
+    (curl, CI, a bearer-token integration) which CSRF does not apply to — an
+    attacker cannot make a browser omit it.
+    """
+    if (
+        request.method in _UNSAFE_METHODS
+        and _origins
+        and cookie_samesite() == "none"
+    ):
+        origin = request.headers.get("origin")
+        if origin is not None and origin not in _origins:
+            logger.warning(
+                "rejected cross-origin write", extra={"origin": origin,
+                                                      "path": request.url.path}
+            )
+            return JSONResponse({"detail": "origin not allowed"}, status_code=403)
+    return await call_next(request)
+
+
 class CreateProject(BaseModel):
     name: str
     target: str = "aws"
@@ -463,15 +503,36 @@ def _require_accounts():
     return accounts
 
 
+def cookie_samesite() -> str:
+    """`SameSite` for the session cookie. `lax` unless a deployment asks.
+
+    `lax` is the default and the safer choice: it blocks cross-site POSTs
+    outright, so CSRF is prevented by the *browser* rather than by us.
+
+    It only works when the web app and the API are the same site. A deployment
+    that separates them — a Vercel app calling a Cloud Run API — needs `none`,
+    or the browser refuses to send the cookie and every request after sign-in
+    looks unauthenticated, which is a confusing way to discover this.
+
+    Choosing `none` gives up the browser's CSRF protection, so `_enforce_origin`
+    replaces it. Nothing downgrades silently: the default stays `lax` and the
+    deployment has to ask for anything else.
+    """
+    value = (os.getenv("IACTRANSLATE_COOKIE_SAMESITE") or "lax").strip().lower()
+    return value if value in {"lax", "strict", "none"} else "lax"
+
+
 def _set_session_cookie(response: JSONResponse, token: str) -> None:
-    """httponly blocks JS access (XSS can't steal it); samesite=lax blocks
-    cross-site POSTs (CSRF) while still allowing top-level navigations, which
-    is what makes the download/report links work."""
+    """httponly blocks JS access, so XSS cannot read the session."""
+    samesite = cookie_samesite()
     response.set_cookie(
         SESSION_COOKIE, token,
         httponly=True,
-        samesite="lax",
-        secure=os.getenv("IACTRANSLATE_COOKIE_SECURE", "1") != "0",
+        samesite=samesite,
+        # `SameSite=None` is only honoured on a Secure cookie. Without this the
+        # browser drops it entirely, and sign-in appears to succeed and then
+        # fails on the very next request.
+        secure=True if samesite == "none" else os.getenv("IACTRANSLATE_COOKIE_SECURE", "1") != "0",
         max_age=14 * 24 * 3600,
         path="/",
     )

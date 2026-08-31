@@ -7,8 +7,19 @@ export const API_URL =
  * Versioned API root. The backend also serves the unprefixed paths for
  * back-compat, but those return a `Deprecation` header — our own client should
  * not be the thing triggering it.
+ *
+ * In the browser this is the same-origin proxy (`/api/v1`, rewritten to the API
+ * in `next.config.ts`) rather than the API's own hostname. The two are deployed
+ * separately and are therefore different *sites*, and a `SameSite` cookie does
+ * not cross that boundary — sign-in succeeded and every request after it came
+ * back unauthenticated. Going through the proxy makes the request same-origin,
+ * so the cookie is sent and no CORS relaxation is needed for ordinary traffic.
+ *
+ * Server-side rendering has no origin to be relative to, so it keeps the
+ * absolute URL.
  */
-export const API_BASE = `${API_URL}/v1`;
+export const API_BASE =
+  typeof window === "undefined" ? `${API_URL}/v1` : "/api/v1";
 
 export type Target = "aws" | "azure" | "gcp" | "oci" | "digitalocean";
 export type Source = "auto" | "vmware" | "hyperv" | "kubernetes" | "cloud" | "generic";
