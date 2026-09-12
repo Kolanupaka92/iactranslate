@@ -361,6 +361,16 @@ jobs:
           DIGEST: ${{ steps.push.outputs.digest }}
 
       - name: Attest build provenance (SLSA)
+        # GitHub refuses attestations for user-owned *private* repositories, and
+        # this repository is now private. The image is still built, pushed and
+        # keyless-signed with cosign in the step above — signing proves origin,
+        # which is the property that matters most here. Provenance attestation
+        # is the stronger claim and is simply unavailable on this plan, so this
+        # is a missing feature rather than a weakened one.
+        #
+        # Remove `continue-on-error` if the repository goes public again; the
+        # attestation will start working with no other change.
+        continue-on-error: true
         uses: actions/attest-build-provenance@v4
         with:
           subject-name: ${{ env.IMAGE }}
