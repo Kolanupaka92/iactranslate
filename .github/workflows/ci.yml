@@ -229,6 +229,11 @@ jobs:
     permissions:
       contents: read
       security-events: write
+      # `upload-sarif` reads the workflow run to fingerprint results and
+      # deduplicate alerts. Without this it fails with "Resource not accessible
+      # by integration" *after* the scan has already succeeded — so the job goes
+      # red for a reporting permission rather than for anything it found.
+      actions: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
