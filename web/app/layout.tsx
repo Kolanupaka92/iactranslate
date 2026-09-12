@@ -23,7 +23,7 @@ const geistMono = Geist_Mono({
  * that assesses, recommends, prices and governs first.
  */
 export const metadata: Metadata = {
-  metadataBase: new URL("https://iactranslate.vercel.app"),
+  metadataBase: new URL("https://iactranslate.com"),
   title: {
     default: "IaCTranslate — Enterprise Cloud Migration Intelligence",
     template: "%s · IaCTranslate",
