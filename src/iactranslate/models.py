@@ -11,6 +11,8 @@ from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
+from .evidence import Decision
+
 # --------------------------------------------------------------------------- #
 # Enums
 # --------------------------------------------------------------------------- #
@@ -146,6 +148,11 @@ class ComputePlan(BaseModel):
     source_memory_gib: Optional[float] = None
     # Explainability: a human-readable "why this instance / tier" for the decision.
     reason: Optional[str] = None
+    #: The structured form of `reason` — evidence, assumptions, alternatives and
+    #: what was unknown. `reason` stays the one-line human summary; this is what a
+    #: reviewer interrogates and what the UI renders. Optional so a plan built by
+    #: an older version still loads.
+    decision: Optional[Decision] = None
     # The OS the source inventory reported, kept so downstream consumers can ask
     # "what was this before?" without re-parsing the estate.
     source_os: Optional[str] = None

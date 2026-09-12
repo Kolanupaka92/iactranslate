@@ -11,6 +11,7 @@ import math
 import re
 from typing import Dict, List, Optional, Tuple
 
+from ..evidence import sizing_decision
 from ..models import ComputePlan, Environment, NormalizedVM, Tier
 from ..pricing import monthly_cost
 from ..sizing import effective_demand
@@ -176,6 +177,21 @@ def build_compute_plans(
                 source_vcpu=vm.cpu if demand.right_sized else None,
                 source_memory_gib=vm.memory_gib if demand.right_sized else None,
                 reason=reason,
+                decision=sizing_decision(
+                    vm.vm_name, instance_type,
+                    source_vcpu=vm.cpu,
+                    source_memory_gib=vm.memory_gib,
+                    cpu_util_pct=vm.cpu_util_pct,
+                    mem_util_pct=vm.mem_util_pct,
+                    headroom=demand.headroom,
+                    target_vcpu=spec.vcpu if spec else None,
+                    target_memory_gib=spec.memory_gib if spec else None,
+                    # What the deterministic engine would have picked when the
+                    # provider overrode it — the reviewer's "what else?".
+                    alternatives=[suggestion.instance_type]
+                    if overridden and suggestion.instance_type != instance_type
+                    else [],
+                ),
                 external_id=vm.external_id,
             )
         )

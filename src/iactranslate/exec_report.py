@@ -18,6 +18,12 @@ from .confidence import score_plan
 from .costing import estimate_costs
 from .diagram import architecture_svg
 from .display import display_cloud, display_source, plural
+from .maturity import (
+    BOUNDARY_STATEMENT,
+    HIGHEST_REACHED,
+    ValidationLevel,
+    maturity_of,
+)
 from .models import MigrationPlan, NormalizedVM
 from .narrative import generate_narrative
 from .print_style import PRINT_CSS
@@ -235,6 +241,17 @@ def build_executive_report(
     rec_section = _recommendation_section(recommendation) if recommendation else ""
     arch_svg = architecture_svg(plan)
 
+    # Stated as a table because the distinction between "passes the provider's
+    # schema check" and "will run in production" is exactly what gets collapsed
+    # when it is left to prose.
+    validation_rows = "".join(
+        f"<tr><td>Level {int(level)} — {_esc(level.title)}</td>"
+        f"<td>{_esc(level.means)}</td>"
+        f"<td>{'Yes' if level <= HIGHEST_REACHED else 'No'}</td></tr>"
+        for level in ValidationLevel
+    )
+    target_maturity = _esc(maturity_of(plan.target).label)
+
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -337,6 +354,16 @@ def build_executive_report(
   <section>
     <h2>Target architecture</h2>
     <div class="scroll">{arch_svg}</div>
+  </section>
+
+  <section>
+    <h2>What has and has not been validated</h2>
+    <p class="muted">{_esc(BOUNDARY_STATEMENT)}</p>
+    <div class="scroll"><table>
+      <thead><tr><th>Level</th><th>Means</th><th>Reached</th></tr></thead>
+      <tbody>{validation_rows}</tbody>
+    </table></div>
+    <p class="muted">Target maturity — {target_maturity}: {_esc(maturity_of(plan.target).means)}</p>
   </section>
 
 {wave_section}

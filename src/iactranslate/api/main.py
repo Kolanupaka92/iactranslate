@@ -47,6 +47,7 @@ from ..crypto import (
     write_file,
 )
 from ..exec_report import build_executive_report
+from ..maturity import maturity_of
 from ..normalize import normalize
 from ..observability import configure_logging, correlation_id, get_logger, new_correlation_id
 from ..pdf import PdfUnavailable
@@ -808,6 +809,10 @@ def targets() -> list:
             "name": name,
             "capabilities": sorted(get_target(name).capabilities),
             "renderers": renderers_for(name),
+            # Support is not uniform and saying so is the point: three of these
+            # are checked against the real provider on every push, two are not.
+            "maturity": maturity_of(name).label,
+            "maturity_means": maturity_of(name).means,
         }
         for name in list_targets()
     ]
@@ -948,10 +953,30 @@ def _execute_run(project: Project) -> None:
              "stages": [{"stage": s.stage, "duration_ms": s.duration_ms} for s in result.trace.stages]}
             if result.trace else None
         ),
+        # Each row carries how its size was reached, not just what was chosen.
+        # A reviewer's first question about a recommendation is what it rested
+        # on, and a table of instance types alone cannot answer it.
         "instances": [
-            {"vm": c.vm_name, "instance_type": c.instance_type, "tier": c.tier.value}
+            {
+                "vm": c.vm_name,
+                "instance_type": c.instance_type,
+                "tier": c.tier.value,
+                "basis": c.decision.basis.value if c.decision else None,
+                "basis_label": c.decision.basis.label if c.decision else None,
+                "evidence": (
+                    [{"field": e.field, "value": e.value, "source": e.source}
+                     for e in c.decision.evidence] if c.decision else []
+                ),
+                "assumptions": c.decision.assumptions if c.decision else [],
+                "unknowns": c.decision.unknowns if c.decision else [],
+            }
             for c in result.plan.compute
         ],
+        # Estate-level honesty marker: how many sizes rest on measurement rather
+        # than on what somebody once provisioned.
+        "measured_sizing_count": sum(
+            1 for c in result.plan.compute if c.decision and c.decision.basis.is_measured
+        ),
     }
     store.save(project)
     logger.info("project %s generated %d instances", project.id, result.plan.vm_count)
