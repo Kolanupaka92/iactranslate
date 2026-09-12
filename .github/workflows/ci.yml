@@ -277,15 +277,6 @@ jobs:
           limit-severities-for-sarif: true
 
       - name: Upload scan results
-        # Reporting, not gating — the enforcement is the step below, which
-        # already fails the build on fixable CRITICAL/HIGH findings.
-        #
-        # Tolerated because it needs GitHub code scanning enabled on the
-        # repository, and it is not. That turned a switched-off reporting
-        # feature into a red security job, which is the worst way for this job
-        # to fail: it looks exactly like a vulnerability and is not one, and it
-        # teaches everyone to stop believing the job.
-        continue-on-error: true
         uses: github/codeql-action/upload-sarif@v3
         if: always()
         with:
@@ -361,16 +352,6 @@ jobs:
           DIGEST: ${{ steps.push.outputs.digest }}
 
       - name: Attest build provenance (SLSA)
-        # GitHub refuses attestations for user-owned *private* repositories, and
-        # this repository is now private. The image is still built, pushed and
-        # keyless-signed with cosign in the step above — signing proves origin,
-        # which is the property that matters most here. Provenance attestation
-        # is the stronger claim and is simply unavailable on this plan, so this
-        # is a missing feature rather than a weakened one.
-        #
-        # Remove `continue-on-error` if the repository goes public again; the
-        # attestation will start working with no other change.
-        continue-on-error: true
         uses: actions/attest-build-provenance@v4
         with:
           subject-name: ${{ env.IMAGE }}
