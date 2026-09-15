@@ -53,8 +53,15 @@ USER appuser
 EXPOSE 8000
 
 # Bounds are env-overridable (see iactranslate/config.py).
+#
+# MAX_VMS matches the code default rather than pinning an older, lower value:
+# this line silently capped the hosted API at 5,000 after the limit had been
+# raised to 20,000 on measurement (50,000 workloads = 357 MB), and the live
+# service rejected estates the docs said it accepted. Now that readers are
+# bounded at the read (sources/base.py), the cap governs plan size, not the
+# cost of a hostile upload — 20,000 is comfortably inside a 1 GiB instance.
 ENV IACTRANSLATE_MAX_UPLOAD_MB=25 \
-    IACTRANSLATE_MAX_VMS=5000 \
+    IACTRANSLATE_MAX_VMS=20000 \
     IACTRANSLATE_MAX_PROJECTS=200
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
