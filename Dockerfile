@@ -1,14 +1,14 @@
 # syntax=docker/dockerfile:1
 # Multi-stage build for the IaCTranslate API. Produces a small, non-root image.
 
-FROM python:3.12-slim AS builder
+FROM python:3.14-slim AS builder
 WORKDIR /build
 COPY pyproject.toml README.md ./
 COPY src ./src
 RUN pip install --no-cache-dir --upgrade pip build \
     && pip wheel --no-cache-dir --wheel-dir /wheels .
 
-FROM python:3.12-slim AS runtime
+FROM python:3.14-slim AS runtime
 
 # Apply outstanding OS security updates. The base image is rebuilt on its own
 # schedule and lags Debian's security archive — CI's Trivy gate caught three
