@@ -36,7 +36,36 @@ const API_ORIGIN = (process.env.NEXT_PUBLIC_API_URL || DEFAULT_API_ORIGIN).repla
   "",
 );
 
+/**
+ * Security headers for the web surface.
+ *
+ * The API already sets these on its own responses; the web app — which is what
+ * holds the session cookie and renders customer inventory — set only HSTS. A
+ * sign-in page with no frame protection is a clickjacking target, and a page
+ * rendering an estate with no referrer policy leaks project URLs to any link
+ * a user clicks.
+ *
+ * The Content-Security-Policy is deliberately partial. `frame-ancestors`,
+ * `object-src` and `base-uri` are safe to lock down on any Next.js app. A
+ * `script-src` directive is not: Next.js hydration uses inline scripts, and a
+ * strict script-src without per-request nonces breaks the page silently.
+ * That is worth doing properly, with nonces, as its own change.
+ */
+const SECURITY_HEADERS = [
+  { key: "X-Content-Type-Options", value: "nosniff" },
+  { key: "X-Frame-Options", value: "DENY" },
+  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+  { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=()" },
+  {
+    key: "Content-Security-Policy",
+    value: "frame-ancestors 'none'; object-src 'none'; base-uri 'self'",
+  },
+];
+
 const nextConfig: NextConfig = {
+  async headers() {
+    return [{ source: "/(.*)", headers: SECURITY_HEADERS }];
+  },
   async rewrites() {
     return [{ source: "/api/v1/:path*", destination: `${API_ORIGIN}/v1/:path*` }];
   },

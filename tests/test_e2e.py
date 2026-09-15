@@ -122,3 +122,66 @@ def test_generated_terraform_validates(target, rvtools_path, tmp_path):
     )
     assert val.returncode == 0, val.stdout + val.stderr
     assert "configuration is valid" in val.stdout.lower()
+
+
+# --- malformed uploads are the caller's problem, and say so ------------------
+
+def _api_client(tmp_path, monkeypatch):
+    import importlib
+
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setenv("IACTRANSLATE_WORKSPACE_ROOT", str(tmp_path))
+    from iactranslate.api import main as api_main
+    importlib.reload(api_main)
+    return TestClient(api_main.app), api_main
+
+
+def _run_bytes(client, name, payload):
+    pid = client.post("/v1/projects", json={"name": "malformed"}).json()["id"]
+    client.post(f"/v1/projects/{pid}/upload", files={"file": (name, payload)})
+    return client.post(f"/v1/projects/{pid}/run")
+
+
+def test_an_html_page_renamed_xlsx_is_a_400_not_a_500(tmp_path, monkeypatch):
+    """`zipfile.BadZipFile` is not a ValueError and used to escape the handler
+    as a generic 500. A broken upload is the caller's file, not our server,
+    and "internal server error" tells them nothing they can act on."""
+    client, api_main = _api_client(tmp_path, monkeypatch)
+    try:
+        r = _run_bytes(client, "inv.xlsx", b"<html><script>alert(1)</script></html>")
+        assert r.status_code == 400, r.text
+        assert "not a valid .xlsx" in r.text
+    finally:
+        import importlib
+        monkeypatch.undo()
+        importlib.reload(api_main)
+
+
+def test_error_messages_never_leak_the_server_path(tmp_path, monkeypatch):
+    """"No workloads found in /workspaces/iactranslate_x/.plain-abc.csv" told
+    an attacker the workspace root, the project directory and the naming scheme
+    of the decrypted temporary file. Name the problem, not the path."""
+    client, api_main = _api_client(tmp_path, monkeypatch)
+    try:
+        r = _run_bytes(client, "inv.csv", b"who,what\na,b\n")
+        assert r.status_code == 400
+        assert "/" not in r.json()["detail"], r.text
+        assert ".plain-" not in r.text
+        assert str(tmp_path) not in r.text
+    finally:
+        import importlib
+        monkeypatch.undo()
+        importlib.reload(api_main)
+
+
+def test_binary_junk_as_csv_is_a_400_with_a_usable_message(tmp_path, monkeypatch):
+    client, api_main = _api_client(tmp_path, monkeypatch)
+    try:
+        r = _run_bytes(client, "inv.csv", bytes([0, 255, 1, 254, 0x89, 0x50, 0x4E, 0x47]))
+        assert r.status_code == 400
+        assert "UTF-8" in r.text
+    finally:
+        import importlib
+        monkeypatch.undo()
+        importlib.reload(api_main)

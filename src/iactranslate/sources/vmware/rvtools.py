@@ -16,6 +16,7 @@ from typing import Dict, List
 import pandas as pd
 
 from .._columns import cell, find_column
+from ..base import read_excel_bounded
 
 RawVM = Dict[str, object]
 
@@ -44,7 +45,13 @@ def _read_sheets(path: str) -> Dict[str, pd.DataFrame]:
             # Not an RVTools workbook. The caller falls back to treating the
             # first sheet as the VM list, so that is all we need to read.
             wanted = list(xls.sheet_names)[:1]
-        frames = pd.read_excel(xls, sheet_name=wanted, engine="openpyxl")
+        # The VM sheet is capped at MAX_VMS. Disk and NIC sheets may have
+        # several rows per VM and get a proportionally larger bound — still a
+        # bound, because a hostile vDisk sheet is as good a DoS as a hostile vInfo.
+        frames = {}
+        for sheet in wanted:
+            is_vm_sheet = str(sheet).strip().lower() == "vinfo" or "vinfo" not in by_lower
+            frames[sheet] = read_excel_bounded(xls, sheet_name=sheet, aux=not is_vm_sheet)
     return {str(name).strip().lower(): df for name, df in frames.items()}
 
 

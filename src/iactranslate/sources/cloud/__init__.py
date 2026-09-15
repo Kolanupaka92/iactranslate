@@ -9,10 +9,8 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional
 
-import pandas as pd
-
 from .._columns import cell, find_column
-from ..base import RawRecord, any_header_contains, headers, is_csv, is_xlsx
+from ..base import RawRecord, any_header_contains, headers, is_csv, is_xlsx, read_csv_bounded, read_excel_bounded
 
 
 class CloudSource:
@@ -35,7 +33,7 @@ class CloudSource:
         aws = get_target("aws")
         azure = get_target("azure")
 
-        df = pd.read_csv(path) if is_csv(path) else pd.read_excel(path, engine="openpyxl")
+        df = read_csv_bounded(path) if is_csv(path) else read_excel_bounded(path)
         if df.empty:
             return []
 

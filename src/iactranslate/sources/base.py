@@ -13,6 +13,8 @@ from typing import Dict, List, Optional, Protocol, runtime_checkable
 
 import pandas as pd
 
+from ..config import MAX_VMS
+
 RawRecord = Dict[str, object]
 
 XLSX_SUFFIXES = {".xlsx", ".xls", ".xlsm"}
@@ -35,6 +37,48 @@ class Source(Protocol):
 # --------------------------------------------------------------------------- #
 # Shared detection helpers (read just enough to score confidence)
 # --------------------------------------------------------------------------- #
+
+
+class InventoryTooLarge(ValueError):
+    """More rows than MAX_VMS. Raised by the readers, before anything is built."""
+
+
+#: One more than the cap. If a bounded read returns this many rows, the file
+#: has more than MAX_VMS and is rejected without reading the rest — so a hostile
+#: upload costs O(MAX_VMS) memory whatever its size. The alternative, checking
+#: after normalisation, was measured: a 24 MB CSV of 547,000 unique rows peaked
+#: at 1,327 MB RSS before the cap fired, on a 1,024 MB instance. One request
+#: from any signed-up user would have OOM-killed the API.
+_VM_ROW_LIMIT = MAX_VMS + 1
+
+#: Auxiliary sheets (disks, NICs) legitimately outnumber VMs. 16 per VM is
+#: generous for a real estate and still bounds a hostile one.
+_AUX_ROW_LIMIT = MAX_VMS * 16
+
+
+def _check_rows(df: pd.DataFrame, limit: int, what: str) -> pd.DataFrame:
+    if len(df) >= limit:
+        raise InventoryTooLarge(
+            f"{what} has more than {limit - 1:,} rows, exceeding the supported "
+            f"limit of {MAX_VMS:,} workloads. Split the estate or raise "
+            "IACTRANSLATE_MAX_VMS on a deployment sized for it."
+        )
+    return df
+
+
+def read_csv_bounded(path: str, **kwargs) -> pd.DataFrame:
+    """`pd.read_csv` that refuses files over MAX_VMS rows without loading them."""
+    return _check_rows(pd.read_csv(path, nrows=_VM_ROW_LIMIT, **kwargs), _VM_ROW_LIMIT, "The inventory")
+
+
+def read_excel_bounded(path_or_xls, *, aux: bool = False, **kwargs):
+    """`pd.read_excel` bounded per sheet. `aux=True` for disk/NIC sheets, which
+    may have several rows per VM and get a proportionally larger limit."""
+    limit = _AUX_ROW_LIMIT if aux else _VM_ROW_LIMIT
+    result = pd.read_excel(path_or_xls, nrows=limit, engine="openpyxl", **kwargs)
+    if isinstance(result, dict):
+        return {name: _check_rows(df, limit, f"Sheet '{name}'") for name, df in result.items()}
+    return _check_rows(result, limit, "The inventory sheet")
 
 
 def suffix(path: str) -> str:

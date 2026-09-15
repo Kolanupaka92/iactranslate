@@ -29,18 +29,46 @@ logger = logging.getLogger("iactranslate.api.delivery")
 LinkDelivery = Callable[[str, str], None]
 
 
+#: Opt in to writing the reset *link* — which carries the single-use token —
+#: into the log. Off unless a deployment asks, because a reset token in a log
+#: is a credential in a log: on a hosted deployment, anyone with log-viewer
+#: access could take over any account that requested a reset. That is the
+#: class of finding an enterprise security review fails a pilot on. The
+#: single-operator convenience it buys is real, and is exactly one env var away.
+ENV_LINK_TO_LOG = "IACTRANSLATE_RESET_LINK_TO_LOG"
+
+
+def _link_to_log_allowed() -> bool:
+    return (os.getenv(ENV_LINK_TO_LOG) or "").strip().lower() in {"1", "true", "yes"}
+
+
 def _log_delivery(email: str, reset_url: str) -> None:
-    """Default backend: record the link so an operator can pass it on.
+    """Default backend: record that a reset was requested.
 
     Logged at WARNING because on a real deployment this line means "a user
     asked for a reset and nothing emailed it to them" — that should be visible,
     not buried at INFO.
+
+    The link itself is only logged when the deployment has opted in. Without
+    that, the reset flow genuinely does not work until an email backend is
+    installed with `set_link_delivery()` — and that is the honest state of a
+    deployment with no mailer, rather than one that appears to work by writing
+    account-takeover tokens somewhere an operator might not realise is shared.
     """
+    if _link_to_log_allowed():
+        logger.warning(
+            "password reset requested for %s — no email backend configured, "
+            "deliver this link manually: %s",
+            email,
+            reset_url,
+        )
+        return
     logger.warning(
-        "password reset requested for %s — no email backend configured, "
-        "deliver this link manually: %s",
+        "password reset requested for %s — no email backend is configured, so "
+        "the link was NOT delivered. Install one with set_link_delivery(), or set "
+        "%s=1 on a single-operator deployment to log the link instead.",
         email,
-        reset_url,
+        ENV_LINK_TO_LOG,
     )
 
 
