@@ -113,10 +113,18 @@ class ProviderMaturity(IntEnum):
 
 
 #: Targets whose output CI checks against the real provider. This is not a
-#: judgement about the clouds — it records which providers the
-#: `terraform-validate` job actually initialises, and `test_maturity.py` reads
-#: the workflow to confirm the two agree.
-_PROVIDER_VALIDATED = frozenset({"aws", "azure", "gcp"})
+#: judgement about the platforms — it records which providers
+#: `test_generated_terraform_validates` actually initialises, and
+#: `test_maturity.py` reads that test's parameter list to confirm the two agree.
+#:
+#: Every current target is here. The distinction is kept because it is real
+#: and a future target may land below it; the first version of this table
+#: under-claimed OCI and DigitalOcean by reading a stale CI step name instead
+#: of the test that does the validating — which is why the test now reads the
+#: test, not the workflow.
+_PROVIDER_VALIDATED = frozenset({
+    "aws", "azure", "gcp", "oci", "digitalocean", "nutanix", "proxmox",
+})
 
 
 def maturity_of(target_name: str) -> ProviderMaturity:

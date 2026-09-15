@@ -134,12 +134,16 @@ def _cmd_translate(args: argparse.Namespace) -> int:
     print(f"Migration:  {plan.source_platform} -> {plan.target} ({plan.region})")
     print(f"VMs:        {plan.vm_count}")
     costs = estimate_costs(plan)
-    print(f"Est. cost:  ${costs.total:,.2f}/month  "
-          f"(compute ${costs.compute:,.2f}"
-          + (f" + storage ${costs.storage:,.2f}" if costs.storage else "")
-          + (f" + Windows ${costs.windows_licensing:,.2f}" if costs.windows_licensing else "")
-          + (f" + LB ${costs.load_balancers:,.2f}" if costs.load_balancers else "")
-          + ")")
+    if not costs.priced:
+        # "$0.00" reads as free. It is not free; it is not computed.
+        print(f"Est. cost:  not estimated ({costs.pricing_basis})")
+    else:
+        print(f"Est. cost:  ${costs.total:,.2f}/month  "
+              f"(compute ${costs.compute:,.2f}"
+              + (f" + storage ${costs.storage:,.2f}" if costs.storage else "")
+              + (f" + Windows ${costs.windows_licensing:,.2f}" if costs.windows_licensing else "")
+              + (f" + LB ${costs.load_balancers:,.2f}" if costs.load_balancers else "")
+              + ")")
     if args.provider:
         engine = "Claude (Anthropic)" if plan.provider_used == "anthropic" else "rule engine (deterministic)"
         print(f"AI:         {engine}"

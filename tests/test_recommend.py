@@ -12,7 +12,15 @@ from iactranslate.targets import list_targets
 def test_recommend_scores_all_clouds(rvtools_path):
     vms = normalize(parse(rvtools_path))
     rec = recommend(vms)
-    assert {s.cloud for s in rec.ranked} == set(list_targets())
+    from iactranslate.targets import get_target
+    from iactranslate.targets.base import CAP_PRICED
+    priced = {n for n in list_targets() if CAP_PRICED in get_target(n).capabilities}
+    unpriced = set(list_targets()) - priced
+    assert {s.cloud for s in rec.ranked} == priced
+    # Unpriced destinations are stated, not silently dropped — their absence
+    # from the ranking must never read as "not an option".
+    assert {n.target for n in rec.not_ranked} == unpriced
+    assert all("inventory cannot supply" in n.reason for n in rec.not_ranked)
     # Ranked best-first; the winner matches `recommended`.
     assert rec.ranked[0].cloud == rec.recommended
     assert all(
@@ -70,7 +78,12 @@ def test_api_recommend_flow(rvtools_path):
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["recommended"] in list_targets()
-    assert len(body["ranked"]) == len(list_targets())
+    from iactranslate.targets import get_target
+    from iactranslate.targets.base import CAP_PRICED
+    priced = [n for n in list_targets() if CAP_PRICED in get_target(n).capabilities]
+    assert len(body["ranked"]) == len(priced)
+    # And the API carries the unranked destinations through, with their reason.
+    assert {n["target"] for n in body["not_ranked"]} == set(list_targets()) - set(priced)
 
 
 # -- the weighting must be inspectable (ADR 0037) ---------------------------

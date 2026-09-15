@@ -60,7 +60,7 @@ export default function Hero() {
         <dl className="mt-16 grid max-w-3xl grid-cols-2 gap-x-8 gap-y-6 border-t border-border-subtle pt-10 sm:grid-cols-4">
           {[
             [`${BUILD_FACTS.sources}`, "inventory sources"],
-            [`${BUILD_FACTS.clouds}`, "target clouds"],
+            [`${BUILD_FACTS.clouds + BUILD_FACTS.onprem}`, "destinations — 5 clouds, 2 on-prem"],
             [`${BUILD_FACTS.iacFormats}`, "IaC formats"],
             ["0", "agents installed"],
           ].map(([value, label]) => (

@@ -929,6 +929,10 @@ def _execute_run(project: Project) -> None:
         # README in the same bundle (ADR 0039). `compute_monthly_cost_usd` is
         # kept alongside it so a caller can still see the instance-only figure.
         "estimated_monthly_cost_usd": _costs.total,
+        # False for an on-premises target. The UI must render the absence, not
+        # the zero — "$0.00" next to five priced clouds reads as free.
+        "priced": _costs.priced,
+        "pricing_basis": _costs.pricing_basis,
         "compute_monthly_cost_usd": _costs.compute,
         "cost_breakdown": _costs.model_dump(),
         "pricing_source": result.plan.pricing_source,

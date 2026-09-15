@@ -23,12 +23,17 @@ CI proves the output is valid against the real cloud providers (`tofu validate`)
 
 ## Key features
 
-- **Any source → any cloud.** Source registry (VMware · Hyper-V · Kubernetes ·
-  generic CMDB · existing cloud fleet) and target registry (AWS · Azure · GCP · OCI · DigitalOcean),
-  both behind protocols — new ones need no pipeline changes.
-- **Unbiased cloud recommendation.** Ranks all five clouds on cost, sizing fit,
-  and OS affinity, with explicit weights and plain-English rationale. No vendor
-  gets a thumb on the scale.
+- **Any source → any destination.** Source registry (VMware · Hyper-V · Kubernetes ·
+  generic CMDB · existing cloud fleet) and target registry (AWS · Azure · GCP · OCI ·
+  DigitalOcean · **Nutanix AHV · Proxmox VE**), both behind protocols — new ones need
+  no pipeline changes. Most estates leaving VMware go to another hypervisor, not a
+  hyperscaler; this is the tool that can say so.
+- **Unbiased recommendation, on-premises included.** Ranks the five clouds on cost,
+  sizing fit and OS affinity, with explicit weights and plain-English rationale. The
+  on-premises targets are generated as destinations but **never cost-ranked**: their
+  cost is hardware, licensing and facilities, which no inventory contains, and this
+  tool will not invent it (ADR 0065). No vendor gets a thumb on the scale — including
+  the one whose answer is "stay".
 - **Right-sized from real usage.** When utilization data is present, instances
   are sized to actual demand, not to over-provisioned allocations.
 - **Load balancer topology.** Any tier with more than one instance gets fronted
@@ -183,7 +188,7 @@ scope, and assumptions — is in **[docs/architecture.md](docs/architecture.md)*
 ## Test & lint
 
 ```bash
-pytest                 # ~778 tests: parsers, sizing, validation, all 5 clouds, renderers, API
+pytest                 # ~864 tests: parsers, sizing, validation, all 7 targets, renderers, API
 ruff check src tests
 ```
 

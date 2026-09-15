@@ -23,6 +23,13 @@ CAP_PULUMI = "pulumi"
 CAP_GITOPS = "gitops"
 CAP_LIVE_PRICING = "live_pricing"
 CAP_BROWNFIELD_IMPORT = "brownfield_import"  # emit IaC `import` blocks to adopt an existing fleet
+#: The target has a published per-instance price, so its cost can be computed
+#: from an inventory alone. Public clouds have this. An on-premises hypervisor
+#: does not: its cost is hardware amortisation, licensing and facilities, none
+#: of which an inventory contains. A target without this capability is left
+#: out of cost ranking entirely rather than scored — a $0 cost would make it
+#: "cheapest" by construction and collapse every real cloud's score against it.
+CAP_PRICED = "priced"
 
 
 @dataclass(frozen=True)

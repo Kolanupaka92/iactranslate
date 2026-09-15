@@ -28,6 +28,8 @@ const CLOUD_LABEL: Record<Target, string> = {
   gcp: "GCP",
   oci: "OCI",
   digitalocean: "DigitalOcean",
+  nutanix: "Nutanix AHV",
+  proxmox: "Proxmox VE",
 };
 
 function Stat({
@@ -68,7 +70,12 @@ export default function Dashboard({
   if (projects.length === 0) return null;
 
   const workloads = completed.reduce((n, p) => n + (p.result?.vm_count ?? 0), 0);
-  const monthly = completed.reduce((n, p) => n + (p.result?.estimated_monthly_cost_usd ?? 0), 0);
+  // Sum only what was actually priced. An on-premises estate contributes 0
+  // because its cost is not computable, not because it is free — folding it
+  // in would understate the total while looking complete.
+  const pricedEstates = completed.filter((p) => p.result?.priced !== false);
+  const unpricedCount = completed.length - pricedEstates.length;
+  const monthly = pricedEstates.reduce((n, p) => n + (p.result?.estimated_monthly_cost_usd ?? 0), 0);
   const measured = completed.reduce((n, p) => n + (p.result?.measured_sizing_count ?? 0), 0);
   const measuredPct = workloads ? Math.round((measured / workloads) * 100) : 0;
 
@@ -120,8 +127,12 @@ export default function Dashboard({
         <Stat label="Workloads" value={workloads.toLocaleString()} />
         <Stat
           label="Est. monthly cost on target"
-          value={money.format(monthly)}
-          note="List price, no committed-use discount. Compute, storage, licensing, load balancers."
+          value={pricedEstates.length ? money.format(monthly) : "—"}
+          note={
+            unpricedCount
+              ? `Across ${pricedEstates.length} priced estate${pricedEstates.length === 1 ? "" : "s"}. ${unpricedCount} on-premises estate${unpricedCount === 1 ? " is" : "s are"} not priced — see below.`
+              : "List price, no committed-use discount. Compute, storage, licensing, load balancers."
+          }
         />
         <Stat
           label="Sized from measurement"

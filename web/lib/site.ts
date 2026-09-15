@@ -37,6 +37,10 @@ export const BUILD_FACTS = {
   adrs: 60,
   sources: 5,
   clouds: 5,
+  /** Nutanix AHV and Proxmox VE. Most of the VMware exodus goes to another
+   *  hypervisor, not a hyperscaler — and no cloud vendor's tool will ever
+   *  recommend staying on-premises. */
+  onprem: 2,
   iacFormats: 6,
 } as const;
 
@@ -91,8 +95,12 @@ export const COMPARISON = {
       capability: "Emits portable infrastructure code you own",
       values: ["6 formats", "No", "No", "No"],
     },
-    { capability: "Targets more than one cloud", values: ["5 clouds", "AWS only", "Azure only", "GCP only"] },
+    { capability: "Targets more than one cloud", values: ["5 clouds + 2 on-prem", "AWS only", "Azure only", "GCP only"] },
     { capability: "Will recommend a competitor when it wins", values: ["Yes", "Never", "Never", "Never"] },
+    {
+      capability: "Will recommend staying on-premises when that is right",
+      values: ["Yes", "Never", "Never", "Never"],
+    },
     { capability: "Runs without touching your environment", values: ["Yes", "No", "No", "No"] },
   ],
 } as const;
@@ -182,7 +190,7 @@ export const PRICING = [
     unit: "up to 100 workloads",
     points: [
       "The full pipeline on one estate",
-      "All five clouds compared",
+      "Every cloud compared — and on-premises as a destination",
       "Readiness score and cost breakdown",
     ],
     cta: "Open the console",

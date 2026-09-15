@@ -50,7 +50,14 @@ def test_api_source_target_matrix(source, target):
     assert body["status"] == "completed"
     assert body["source"] == source
     assert body["result"]["vm_count"] == 7
-    assert body["result"]["estimated_monthly_cost_usd"] > 0
+    from iactranslate.targets import get_target
+    from iactranslate.targets.base import CAP_PRICED
+    if CAP_PRICED in get_target(target).capabilities:
+        assert body["result"]["estimated_monthly_cost_usd"] > 0
+    else:
+        # An on-premises target has no price an inventory can produce; anything
+        # other than exactly zero here would be a fabricated number.
+        assert body["result"]["estimated_monthly_cost_usd"] == 0
 
     dl = client.get(f"/projects/{pid}/download")
     assert dl.status_code == 200
@@ -91,8 +98,13 @@ _ENABLED = os.getenv("IACTRANSLATE_E2E_TOFU") == "1" and _TOFU is not None
 _CACHE = Path(os.getenv("TF_PLUGIN_CACHE_DIR", "/tmp/iactranslate_tf_plugin_cache"))
 
 
+# Every target. This list is the source of truth for "provider-validated" —
+# maturity.py derives its claim from it and test_maturity.py checks the two agree.
+PROVIDER_VALIDATED_TARGETS = ["aws", "azure", "gcp", "oci", "digitalocean", "nutanix", "proxmox"]
+
+
 @pytest.mark.skipif(not _ENABLED, reason="set IACTRANSLATE_E2E_TOFU=1 and install tofu/terraform")
-@pytest.mark.parametrize("target", ["aws", "azure", "gcp", "oci", "digitalocean"])
+@pytest.mark.parametrize("target", PROVIDER_VALIDATED_TARGETS)
 def test_generated_terraform_validates(target, rvtools_path, tmp_path):
     out = tmp_path / target
     run_pipeline(input_path=rvtools_path, project_name="tofu", out_dir=str(out), target=target)

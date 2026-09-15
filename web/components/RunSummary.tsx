@@ -49,19 +49,36 @@ export default function RunSummary({ result }: { result: RunResult }) {
               </span>
             ) : null}
           </div>
-          <div className="mt-1 text-2xl font-semibold tabular-nums">
-            $
-            {result.estimated_monthly_cost_usd.toLocaleString(undefined, {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2,
-            })}
-          </div>
-          <p className="mt-2 text-xs leading-relaxed opacity-70">
-            {COST_BASIS}{" "}
-            {result.pricing_source === "live"
-              ? "Rates fetched live from the provider."
-              : "Rates from the bundled catalog."}
-          </p>
+          {result.priced === false ? (
+            <>
+              {/* An on-premises target. "$0.00" here would read as free; the
+                  honest rendering is the absence, and the reason for it. */}
+              <div className="mt-1 text-2xl font-semibold text-amber-800 dark:text-amber-300">
+                Not estimated
+              </div>
+              <p className="mt-2 text-xs leading-relaxed opacity-70">
+                {result.pricing_basis ??
+                  "On-premises cost is hardware, licensing and facilities, which an inventory cannot supply."}{" "}
+                Supply your current per-workload spend to compare against the cloud figures.
+              </p>
+            </>
+          ) : (
+            <>
+              <div className="mt-1 text-2xl font-semibold tabular-nums">
+                $
+                {result.estimated_monthly_cost_usd.toLocaleString(undefined, {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}
+              </div>
+              <p className="mt-2 text-xs leading-relaxed opacity-70">
+                {COST_BASIS}{" "}
+                {result.pricing_source === "live"
+                  ? "Rates fetched live from the provider."
+                  : "Rates from the bundled catalog."}
+              </p>
+            </>
+          )}
         </div>
       </div>
 

@@ -24,6 +24,7 @@ from .costing import estimate_costs
 from .models import NormalizedVM
 from .sizing import effective_demand
 from .targets import get_target, list_targets
+from .targets.base import CAP_PRICED
 
 # Scoring weights (sum to 1.0). Cost dominates but sizing fit and OS affinity
 # meaningfully shift the recommendation for Windows- or Linux-heavy estates.
@@ -62,6 +63,19 @@ class CloudScore(BaseModel):
     reasons: List[str] = Field(default_factory=list)
 
 
+class NotRanked(BaseModel):
+    """A destination the estate could move to, deliberately left out of ranking.
+
+    Distinct from `eligible=False`. An ineligible cloud *could* be priced but
+    cannot host the estate; a not-ranked target can host it but has no price an
+    inventory can produce. Conflating them would let an on-premises hypervisor
+    look like a $0 cloud, which is the most flattering possible lie.
+    """
+
+    target: str
+    reason: str
+
+
 class ScoringWeights(BaseModel):
     """The weights behind `weighted_score`, carried in the response.
 
@@ -88,6 +102,13 @@ class Recommendation(BaseModel):
     margin: float = Field(default=0.0, description="Winner's weighted-score lead over #2")
     runner_up: Optional[str] = Field(
         default=None, description="Cloud ranked #2 — what `margin` is measured against"
+    )
+    not_ranked: List[NotRanked] = Field(
+        default_factory=list,
+        description="Destinations the estate can move to that cannot be cost-ranked "
+                    "from an inventory alone — on-premises hypervisors. Stated rather "
+                    "than omitted, so their absence from the table is not read as "
+                    "\"not an option\".",
     )
     weights: ScoringWeights = Field(
         default_factory=lambda: ScoringWeights(cost=W_COST, fit=W_FIT, os=W_OS)
@@ -151,7 +172,26 @@ def _unsupported_count(target, vms: List[NormalizedVM]) -> int:
 def recommend(vms: List[NormalizedVM], targets: Optional[List[str]] = None) -> Recommendation:
     if len(vms) > MAX_VMS:
         raise ValueError(f"Inventory has {len(vms)} VMs, exceeding the limit of {MAX_VMS}")
-    names = targets or list_targets()
+    requested = targets or list_targets()
+    # Only targets with a published price can be cost-ranked from an inventory.
+    # The rest are still real destinations — a Nutanix cluster is a perfectly
+    # good place to move an estate — but their cost is hardware, licensing and
+    # facilities, which no export contains. Scoring them would either invent a
+    # number or, at $0, make them "cheapest" and crush every real cloud's cost
+    # score against a zero baseline.
+    names = [n for n in requested if CAP_PRICED in get_target(n).capabilities]
+    not_ranked = [
+        NotRanked(
+            target=n,
+            reason=(
+                f"{n} has no published per-instance price: its cost is hardware, "
+                "licensing and facilities, which an inventory cannot supply. It "
+                "can still be generated as a destination; compare cost by "
+                "providing your current on-premises spend."
+            ),
+        )
+        for n in requested if CAP_PRICED not in get_target(n).capabilities
+    ]
     total = len(vms)
     windows = sum(1 for v in vms if _is_windows(v))
     linux = total - windows
@@ -336,4 +376,5 @@ def recommend(vms: List[NormalizedVM], targets: Optional[List[str]] = None) -> R
         runner_up=contenders[1].cloud if len(contenders) > 1 else None,
         weights=ScoringWeights(cost=W_COST, fit=W_FIT, os=W_OS),
         notes=notes,
+        not_ranked=not_ranked,
     )

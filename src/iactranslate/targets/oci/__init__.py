@@ -13,6 +13,7 @@ from typing import Dict, List, Optional
 from ...models import IngressRule, SubnetTier, Tier
 from ..base import (
     CAP_GITOPS,
+    CAP_PRICED,
     CAP_TERRAFORM,
     TEMPLATE_MAP,
     InstanceSpec,
@@ -27,7 +28,7 @@ class OciTarget:
     default_region = "us-ashburn-1"
     vpc_cidr = mapping.VCN_CIDR
     template_dir = Path(__file__).parent / "templates"
-    capabilities = frozenset({CAP_TERRAFORM, CAP_GITOPS})
+    capabilities = frozenset({CAP_PRICED, CAP_TERRAFORM, CAP_GITOPS})
     # OCI resolves images with a data source in an extra images.tf, like AWS —
     # OCIDs are region-specific, so there's no static portable id to bake in.
     template_map: Dict[str, str] = {**TEMPLATE_MAP, "images.tf.j2": "images.tf"}

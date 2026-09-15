@@ -15,11 +15,13 @@ export default function Difference() {
           Why not the vendor&rsquo;s own tool
         </p>
         <h2 className="mt-4 max-w-3xl text-3xl font-semibold tracking-tight sm:text-4xl">
-          A cloud provider will never send you to a competitor.
+          A cloud provider will never send you to a competitor — or tell you to stay put.
         </h2>
         <p className="mt-6 max-w-2xl text-base leading-relaxed text-muted">
           This is not a gap in their roadmap. It is a conflict with their business
-          model, which is why it has stayed open for a decade.
+          model, which is why it has stayed open for a decade. Most estates leaving
+          VMware are moving to another hypervisor, not to a hyperscaler, and that is
+          the one answer no cloud&rsquo;s migration tool can give.
         </p>
 
         {/* Scrolls inside its own container so the page body never scrolls sideways. */}

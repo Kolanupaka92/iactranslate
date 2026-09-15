@@ -72,5 +72,6 @@ Format: [Michael Nygard's ADR template](https://cognitect.com/blog/2011/11/15/do
 | [0062](0062-encryption-at-rest-in-generated-infrastructure.md) | Generated volumes are encrypted with no off switch; what is configurable is whose key | Accepted |
 | [0063](0063-one-sql-layer-for-sqlite-and-postgresql.md) | Durable state runs on SQLite or PostgreSQL through one implementation per component, not one per engine | Accepted |
 | [0064](0064-decision-evidence-and-honest-capability-claims.md) | Every sizing decision carries its evidence and basis; validation depth and provider maturity are stated and tested, not claimed | Accepted |
+| [0065](0065-on-premises-destinations.md) | Nutanix AHV and Proxmox VE as targets; unpriced destinations are excluded from cost ranking and rendered as "not estimated", never $0 | Accepted |
 
 See also the [Architecture & Design](../architecture.md) overview.

@@ -33,6 +33,8 @@ from typing import List
 from pydantic import BaseModel, Field
 
 from .models import MigrationPlan
+from .targets import get_target
+from .targets.base import CAP_PRICED
 
 # Monthly hours used throughout (matches pricing.HOURS_PER_MONTH).
 HOURS_PER_MONTH = 730
@@ -107,6 +109,10 @@ class CostBreakdown(BaseModel):
     load_balancer_count: int = 0
     pricing_basis: str = "on-demand list price, no committed-use discount applied"
     excludes: List[str] = Field(default_factory=lambda: list(EXCLUSIONS))
+    #: False for a target with no published price — an on-premises hypervisor.
+    #: Every figure above is then zero, and zero means "not computed", never
+    #: "free". Consumers must render the absence, not the number.
+    priced: bool = True
 
     @property
     def compute_share_pct(self) -> float:
@@ -118,6 +124,27 @@ class CostBreakdown(BaseModel):
 def estimate_costs(plan: MigrationPlan) -> CostBreakdown:
     """Itemize the monthly cost of a plan. Read-only; never mutates the plan."""
     cloud = plan.target.lower()
+
+    # A target with no published price gets no number at all. The rate tables
+    # below carry defaults for unknown clouds, and those defaults would have
+    # quietly priced an AHV cluster's storage, Windows licensing and load
+    # balancers at public-cloud rates — a fabricated $1,883/month appeared
+    # for the first on-premises target the moment it rendered. Nothing on
+    # premises is billed per GB-month or per LB-hour; the customer already
+    # owns the licences and the disks.
+    if CAP_PRICED not in get_target(cloud).capabilities:
+        return CostBreakdown(
+            compute=0.0, storage=0.0, windows_licensing=0.0, load_balancers=0.0, total=0.0,
+            windows_workloads=sum(1 for c in plan.compute if c.image_key.startswith("windows")),
+            total_storage_gib=sum(c.root_volume_gib + sum(c.extra_volumes_gib) for c in plan.compute),
+            load_balancer_count=len(plan.network.load_balancers),
+            pricing_basis=(
+                "on-premises cost is hardware, licensing and facilities, "
+                "which an inventory cannot supply"
+            ),
+            priced=False,
+        )
+
     storage_rate = _STORAGE_USD_PER_GB_MONTH.get(cloud, 0.10)
     windows_rate = _WINDOWS_USD_PER_VCPU_HOUR.get(cloud, 0.046)
     lb_rate = _LOAD_BALANCER_USD_PER_MONTH.get(cloud, 18.25)

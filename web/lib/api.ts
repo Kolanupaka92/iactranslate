@@ -26,7 +26,7 @@ export const API_URL =
 export const API_BASE =
   typeof window === "undefined" ? `${API_URL}/v1` : "/api/v1";
 
-export type Target = "aws" | "azure" | "gcp" | "oci" | "digitalocean";
+export type Target = "aws" | "azure" | "gcp" | "oci" | "digitalocean" | "nutanix" | "proxmox";
 export type Source = "auto" | "vmware" | "hyperv" | "kubernetes" | "cloud" | "generic";
 
 export type Renderer =
@@ -65,6 +65,10 @@ export interface ConfidenceSummary {
 export interface RunResult {
   vm_count: number;
   estimated_monthly_cost_usd: number;
+  /** False for an on-premises target, where the figure above is 0 and means
+   *  "not computed", never "free". Render the absence, not the number. */
+  priced?: boolean;
+  pricing_basis?: string;
   pricing_source?: "static" | "live";
   right_sized_count?: number;
   /** Workloads whose size rests on measured utilization rather than on what

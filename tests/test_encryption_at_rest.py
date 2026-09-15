@@ -101,7 +101,7 @@ def test_a_blank_key_is_rejected_rather_than_silently_ignored(vms):
 
 # --- every cloud still renders ------------------------------------------------
 
-@pytest.mark.parametrize("cloud", ["aws", "azure", "gcp", "oci", "digitalocean"])
+@pytest.mark.parametrize("cloud", ["aws", "azure", "gcp", "oci", "digitalocean", "nutanix", "proxmox"])
 def test_every_target_still_renders_with_and_without_a_key(vms, cloud):
     plain, _ = _files(vms, cloud)
     assert plain["compute.tf"].strip()
@@ -109,10 +109,11 @@ def test_every_target_still_renders_with_and_without_a_key(vms, cloud):
     assert keyed["compute.tf"].strip()
 
 
-@pytest.mark.parametrize("cloud", ["oci", "digitalocean"])
+@pytest.mark.parametrize("cloud", ["oci", "digitalocean", "nutanix", "proxmox"])
 def test_clouds_that_always_encrypt_emit_no_encryption_config(vms, cloud):
-    """These encrypt at rest unconditionally and expose no toggle. Emitting one
-    would imply a control the provider does not have."""
+    """These expose no per-VM encryption toggle — OCI and DigitalOcean encrypt
+    unconditionally; on Nutanix and Proxmox it is a cluster or datastore
+    setting. Emitting one would imply a control the platform does not have."""
     files, _ = _files(vms, cloud)
     assert "encrypted   = true" not in files["compute.tf"]
 

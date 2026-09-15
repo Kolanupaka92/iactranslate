@@ -12,6 +12,7 @@ from typing import Dict, List, Optional
 from ...models import IngressRule, SubnetTier, Tier
 from ..base import (
     CAP_GITOPS,
+    CAP_PRICED,
     CAP_TERRAFORM,
     TEMPLATE_MAP,
     InstanceSpec,
@@ -26,7 +27,7 @@ class DigitalOceanTarget:
     default_region = "nyc3"
     vpc_cidr = mapping.VPC_CIDR
     template_dir = Path(__file__).parent / "templates"
-    capabilities = frozenset({CAP_TERRAFORM, CAP_GITOPS})
+    capabilities = frozenset({CAP_PRICED, CAP_TERRAFORM, CAP_GITOPS})
     template_map: Dict[str, str] = TEMPLATE_MAP
     default_ingress: Dict[str, List[IngressRule]] = mapping.DEFAULT_INGRESS
 
