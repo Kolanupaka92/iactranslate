@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { headers } from "next/headers";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -41,11 +42,18 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Reading a request header is what makes Next stamp the per-request nonce
+  // (set in proxy.ts) onto its own inline scripts — and it opts every route
+  // into dynamic rendering, which is the point: a statically prerendered page
+  // bakes its scripts without a nonce, and the strict CSP then blocks all 20
+  // of them. That is exactly what the first preview deploy did. The value is
+  // not used here; the read is the signal.
+  await headers();
   return (
     <html
       lang="en"

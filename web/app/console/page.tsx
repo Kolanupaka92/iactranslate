@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import AIToggle from "@/components/AIToggle";
 import AssessmentPanel from "@/components/AssessmentPanel";
 import Dashboard from "@/components/Dashboard";
+import DeleteAccount from "@/components/DeleteAccount";
 import ProjectList from "@/components/ProjectList";
 import RecommendTable from "@/components/RecommendTable";
 import RunSummary from "@/components/RunSummary";
@@ -421,6 +422,13 @@ export default function Home() {
             >
               Sign out
             </button>
+            <DeleteAccount
+              onDeleted={async () => {
+                // The server has already cleared the cookie; this just moves
+                // the UI back to the sign-in gate.
+                await refreshIdentity();
+              }}
+            />
           </p>
         )}
       </header>

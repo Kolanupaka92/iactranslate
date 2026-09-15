@@ -45,21 +45,18 @@ const API_ORIGIN = (process.env.NEXT_PUBLIC_API_URL || DEFAULT_API_ORIGIN).repla
  * rendering an estate with no referrer policy leaks project URLs to any link
  * a user clicks.
  *
- * The Content-Security-Policy is deliberately partial. `frame-ancestors`,
- * `object-src` and `base-uri` are safe to lock down on any Next.js app. A
- * `script-src` directive is not: Next.js hydration uses inline scripts, and a
- * strict script-src without per-request nonces breaks the page silently.
- * That is worth doing properly, with nonces, as its own change.
+ * Content-Security-Policy is set in proxy.ts, not here — it needs a nonce
+ * that differs per request, which a static header cannot carry.
  */
 const SECURITY_HEADERS = [
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "X-Frame-Options", value: "DENY" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=()" },
-  {
-    key: "Content-Security-Policy",
-    value: "frame-ancestors 'none'; object-src 'none'; base-uri 'self'",
-  },
+  // Content-Security-Policy is deliberately absent here: it lives in proxy.ts,
+  // where a per-request nonce makes a strict script-src possible. Two CSP
+  // headers on one response are intersected by the browser, so a static one
+  // here would silently tighten the nonced one into something that breaks.
 ];
 
 const nextConfig: NextConfig = {

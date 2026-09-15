@@ -596,6 +596,17 @@ class ChangePassword(BaseModel):
     new_password: str
 
 
+class RunInProgress(Exception):
+    """Another run holds this project. Mapped to 409 by the sync endpoint and
+    to a failed job by the async one — in neither case is it a server fault."""
+
+    def __init__(self, project_id: str) -> None:
+        super().__init__(
+            f"a run is already in progress for project {project_id}; "
+            "wait for it to finish before starting another"
+        )
+
+
 class DeleteAccount(BaseModel):
     """A session alone must not be enough to destroy an account. A stolen cookie
     can already read the estate; it must not also be able to make the loss
@@ -952,6 +963,20 @@ def _execute_run(project: Project) -> None:
     caller maps them to HTTP codes (sync) or to a failed job (async).
     """
     out_dir = project.workspace / "project"
+    # One run per project at a time, across every instance. Acquired here
+    # rather than in the endpoints so the sync and async paths cannot race
+    # each other either. Released in `finally` on every exit — including an
+    # exception nobody anticipated — because a project stuck on `running`
+    # until the lease expires is a worse outcome than any error.
+    if not store.try_begin_run(project.id):
+        raise RunInProgress(project.id)
+    try:
+        _execute_run_locked(project, out_dir)
+    finally:
+        store.end_run(project.id)
+
+
+def _execute_run_locked(project: Project, out_dir: Path) -> None:
     try:
         with _plaintext_upload(project) as readable:
             result = run_pipeline(
@@ -975,6 +1000,16 @@ def _execute_run(project: Project) -> None:
             project.error = "; ".join(f"[{v.policy}] {v.message}" for v in e.violations)
         else:
             project.error = str(e)
+        store.save(project)
+        raise
+    except Exception:
+        # Anything nobody anticipated. The API still answers 500 — that is
+        # correct, it *is* our fault — but the project must not be left
+        # reading "running": the caller would wait on a run that is not
+        # happening, and the next attempt would look like a takeover of a
+        # live run rather than a retry of a dead one.
+        project.status = "failed"
+        project.error = "the run stopped unexpectedly; retry, and report it if it recurs"
         store.save(project)
         raise
 
@@ -1054,6 +1089,10 @@ def run(pid: str, user: Optional[User] = Depends(current_user)) -> dict:
         raise HTTPException(400, "no file uploaded for this project")
     try:
         _execute_run(project)
+    except RunInProgress:
+        raise HTTPException(
+            409, "a run is already in progress for this project; wait for it to finish"
+        ) from None
     except PlanValidationError as e:
         raise HTTPException(422, {"message": "plan failed validation", "issues": e.issues}) from e
     except PolicyViolationError as e:
