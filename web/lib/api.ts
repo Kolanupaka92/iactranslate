@@ -67,6 +67,10 @@ export interface RunResult {
   estimated_monthly_cost_usd: number;
   pricing_source?: "static" | "live";
   right_sized_count?: number;
+  /** Workloads whose size rests on measured utilization rather than on what
+   *  was allocated. The estate-level honesty signal: when this is low, any
+   *  saving shown is unproven, and the UI says so. */
+  measured_sizing_count?: number;
   confidence?: ConfidenceSummary;
   instances: InstanceRow[];
   provider_requested?: Provider;

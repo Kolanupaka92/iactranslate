@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import AIToggle from "@/components/AIToggle";
 import AssessmentPanel from "@/components/AssessmentPanel";
+import Dashboard from "@/components/Dashboard";
 import ProjectList from "@/components/ProjectList";
 import RecommendTable from "@/components/RecommendTable";
 import RunSummary from "@/components/RunSummary";
@@ -442,6 +443,11 @@ export default function Home() {
         />
 
         <div className="space-y-4">
+          {/* The landing view: what a returning user has across every estate,
+              before they pick one. Hidden once a project is open so it does not
+              compete with that project's own result card. */}
+          {!project && <Dashboard projects={projects} onOpen={handleOpenProject} />}
+
           {/* The payoff goes first once it exists. Burying it under five
               completed steps meant scrolling past finished work to reach it. */}
           {result && project && (
