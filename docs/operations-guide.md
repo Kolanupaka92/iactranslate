@@ -392,6 +392,17 @@ Projects created before multi-tenancy was enabled have no owner and are visible
 only in single-tenant mode; the database migrates itself additively on open, so
 nothing is lost.
 
+**Deleting an account** is self-service and total — `DELETE /auth/me` with
+`{"current_password": "..."}` removes every project the user owns (workspaces
+included), every grant they hold, their sessions and reset tokens, and the user
+row, then clears the cookie. The password is required so a stolen session cannot
+make the loss permanent. The audit event carries the user id only, never the
+email. Idempotent: a retry after an interrupted run is a no-op.
+```bash
+curl -s -b jar.txt -XDELETE localhost:8000/auth/me \
+  -H 'content-type: application/json' -d '{"current_password":"a-long-passphrase"}'
+```
+
 **Monitoring** — `GET /metrics` serves Prometheus exposition format. It is
 unauthenticated by design (scrapers don't send bearer tokens; the payload is
 aggregate counts only, no project or inventory data):
