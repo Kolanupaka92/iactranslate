@@ -25,6 +25,10 @@ class EventType(str, Enum):
     PROJECT_CREATED = "project.created"
     PROJECT_UPLOADED = "project.uploaded"
     PROJECT_DELETED = "project.deleted"
+    #: Carries the user id only — never the email. An audit trail that an
+    #: account was deleted is legitimate; retaining who it belonged to after
+    #: they asked to be removed is the thing deletion exists to prevent.
+    ACCOUNT_DELETED = "account.deleted"
     JOB_QUEUED = "job.queued"
     JOB_STARTED = "job.started"
     JOB_COMPLETED = "job.completed"

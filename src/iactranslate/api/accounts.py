@@ -239,6 +239,24 @@ class AccountStore:
         )
         return User(id=row[0], email=row[1], created_at=row[2]) if row else None
 
+    def delete_user(self, user_id: str) -> bool:
+        """Remove an account and everything that authenticates as it.
+
+        One transaction, so a crash between statements cannot leave a user
+        row with no way to sign in — or, worse, sessions that still resolve
+        to an account that no longer exists. Returns False if there was no
+        such user, which the caller treats as already-done rather than as an
+        error: deleting is idempotent.
+
+        Projects and grants are the caller's job — they live in other stores
+        and their cleanup (workspaces on disk) is not a database operation.
+        """
+        with self._db.transaction() as tx:
+            tx.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+            tx.execute("DELETE FROM password_resets WHERE user_id = ?", (user_id,))
+            removed = tx.execute("DELETE FROM users WHERE id = ?", (user_id,))
+        return removed > 0
+
     def set_password(self, user_id: str, new_password: str) -> None:
         validate_password(new_password)
         encoded = hash_password(new_password)

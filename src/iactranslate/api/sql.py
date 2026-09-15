@@ -227,8 +227,13 @@ class _Tx:
         self._db = db
         self._cur = cursor
 
-    def execute(self, statement: str, params: Sequence[Any] = ()) -> None:
+    def execute(self, statement: str, params: Sequence[Any] = ()) -> int:
+        """Same contract as `Database.execute`: rows affected. A transaction
+        that could not say whether its DELETE removed anything would force
+        callers to query first, which is the read-then-write race the
+        transaction exists to remove."""
         self._cur.execute(self._db.sql(statement), tuple(params))
+        return self._cur.rowcount if self._cur.rowcount is not None else 0
 
     def query(self, statement: str, params: Sequence[Any] = ()) -> List[Tuple]:
         self._cur.execute(self._db.sql(statement), tuple(params))

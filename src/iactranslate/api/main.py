@@ -596,6 +596,14 @@ class ChangePassword(BaseModel):
     new_password: str
 
 
+class DeleteAccount(BaseModel):
+    """A session alone must not be enough to destroy an account. A stolen cookie
+    can already read the estate; it must not also be able to make the loss
+    irreversible. The password is the second factor the flow has."""
+
+    current_password: str
+
+
 @router.post("/auth/forgot-password", status_code=202)
 def forgot_password(body: ForgotPassword, request: Request) -> dict:
     """Start a reset. Always 202, whether or not the account exists.
@@ -656,6 +664,58 @@ def change_password(
     response = Response(status_code=204)
     _set_session_cookie(response, accts.create_session(user.id))
     logger.info("password changed for user %s", user.id)
+    return response
+
+
+@router.delete("/auth/me", status_code=204)
+def delete_account(
+    body: DeleteAccount, request: Request, user: Optional[User] = Depends(current_user)
+) -> Response:
+    """Delete your own account and everything it owns.
+
+    Until this existed, removing a user meant someone with production database
+    access running DELETE by hand — which is both a GDPR-shaped gap and the
+    kind of operation that gets done wrong at 2am. This is the self-service
+    path, and it is deliberately total: a "deleted" account whose projects
+    still sit in a bucket has not been deleted.
+
+    Order matters and is not a transaction, because it crosses stores:
+    projects first (their workspaces are files, and a project row without its
+    files is merely tidy while files without a row are an orphaned estate on
+    disk), then grants, then the account itself — which is atomic in its own
+    store. If this is interrupted after the projects are gone but before the
+    user is, the caller can simply call it again.
+    """
+    limit_auth(request)
+    accts = _require_accounts()
+    if user is None:
+        raise HTTPException(401, "not signed in")
+    try:
+        accts.authenticate(user.email, body.current_password)
+    except InvalidCredentials:
+        raise HTTPException(403, "current password is incorrect") from None
+
+    # Everything this account owns, including the files.
+    owned = store.list_for_owner(user.id)
+    for project in owned:
+        store.delete(project.id)
+        memberships.drop_project(project.id)
+        bus.publish(Event(EventType.PROJECT_DELETED, project_id=project.id))
+
+    # Every grant this account holds on someone else's project.
+    for pid in memberships.projects_for(user.id):
+        memberships.revoke(pid, user.id)
+
+    accts.delete_user(user.id)
+
+    # The id, never the email: the audit trail records that a deletion
+    # happened, not who it was — retaining that is what deletion prevents.
+    bus.publish(Event(EventType.ACCOUNT_DELETED, detail={"user_id": user.id,
+                                                          "projects_removed": len(owned)}))
+    logger.info("account %s deleted with %d project(s)", user.id, len(owned))
+
+    response = Response(status_code=204)
+    response.delete_cookie(SESSION_COOKIE, path="/")
     return response
 
 

@@ -227,6 +227,20 @@ export function createProject(
 }
 
 /** Targets with their capabilities and valid IaC formats. */
+/**
+ * Delete the signed-in account and everything it owns. The password is
+ * required — a stolen session can already read the estate; it must not also
+ * be able to make the loss permanent. On success the session cookie is cleared
+ * by the server, so callers should treat the user as signed out.
+ */
+export function deleteAccount(currentPassword: string): Promise<void> {
+  return request("/auth/me", {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ current_password: currentPassword }),
+  });
+}
+
 export function listTargets(): Promise<TargetInfo[]> {
   return request("/targets");
 }
