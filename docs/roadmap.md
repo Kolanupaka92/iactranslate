@@ -125,6 +125,17 @@ in CI on `main`.
 - ✅ CLI, FastAPI, Next.js web UI
 - ✅ Docker image (non-root, healthchecked)
 - ✅ CI: lint, pytest (3.9/3.11/3.12), Docker, web build, real `tofu validate`
+- ✅ **One run per project at a time, across instances** — the project row is
+  the lock, claimed in one conditional UPDATE and leased so a dead instance
+  cannot wedge a project; a second caller gets `409`, never a half-written plan
+  (see [ADR 0066](adr/0066-run-lease-for-concurrent-runs.md))
+- ✅ **A CSP that refuses inline scripts** — per-request nonce via the Next.js
+  proxy, `'strict-dynamic'`, `connect-src 'self'`; verified live with zero
+  violations. The static header it replaced allowed `'unsafe-inline'`
+  (see [ADR 0067](adr/0067-nonce-based-content-security-policy.md))
+- ✅ **The database has no public address** — Cloud SQL on a private IP,
+  reached over Direct VPC egress; the Auth Proxy sidecar removed because it
+  cannot run that way (see [ADR 0068](adr/0068-database-on-a-private-address-only.md))
 
 ## Planned
 

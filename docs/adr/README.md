@@ -73,5 +73,8 @@ Format: [Michael Nygard's ADR template](https://cognitect.com/blog/2011/11/15/do
 | [0063](0063-one-sql-layer-for-sqlite-and-postgresql.md) | Durable state runs on SQLite or PostgreSQL through one implementation per component, not one per engine | Accepted |
 | [0064](0064-decision-evidence-and-honest-capability-claims.md) | Every sizing decision carries its evidence and basis; validation depth and provider maturity are stated and tested, not claimed | Accepted |
 | [0065](0065-on-premises-destinations.md) | Nutanix AHV and Proxmox VE as targets; unpriced destinations are excluded from cost ranking and rendered as "not estimated", never $0 | Accepted |
+| [0066](0066-run-lease-for-concurrent-runs.md) | Concurrent runs of one project are serialised by a lease claimed in one conditional UPDATE — correct across instances, and self-healing after a crash | Accepted |
+| [0067](0067-nonce-based-content-security-policy.md) | The console's CSP is generated per request with a script nonce; the static header could not refuse inline scripts and so protected nothing | Accepted |
+| [0068](0068-database-on-a-private-address-only.md) | Cloud SQL has no public address; Cloud Run reaches it over Direct VPC egress, and the Auth Proxy sidecar is gone because it cannot work that way | Accepted |
 
 See also the [Architecture & Design](../architecture.md) overview.

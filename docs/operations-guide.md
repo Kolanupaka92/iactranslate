@@ -594,9 +594,15 @@ OpenTofu, validates aws/azure/gcp output against real providers).
   pipeline on a worker and returns a `job_id` to poll (`GET /jobs/{id}`); lifecycle events flow
   through an in-process bus; `GET /audit` returns the trail. These are the interfaces the
   production backends drop into — see [Deployment & Execution](deployment.md).
-- **State:** the project store, jobs, and audit are **in-memory** (single-node). Restarting the
-  API loses them; durability arrives with the Postgres + object-storage backend (the
-  [reference architecture](deployment.md#reference-architecture)).
+- **State:** `IACTRANSLATE_STORE=memory` (default, single-node, lost on restart), `sqlite`, or
+  `postgres` — one SQL layer serves both engines (ADR 0063). The hosted deployment runs
+  PostgreSQL on Cloud SQL with **no public address**: the instance sits on a private IP,
+  Cloud Run reaches it over Direct VPC egress (`private-ranges-only`), and the DSN lives in
+  Secret Manager (ADR 0068). Administrative access needs an in-VPC path (IAP-tunnelled VM, or
+  the Auth Proxy with `--private-ip` from inside the network).
+- **One run per project at a time:** `POST /run` claims the project row with a single
+  conditional UPDATE and holds a 900 s lease (`RUN_LEASE_SECONDS`); a concurrent caller gets
+  `409`, and a lease left by a crashed instance expires so the project cannot wedge (ADR 0066).
 - **Scale:** the `MAX_VMS` cap bounds request cost today; horizontal scale (stateless API pods +
   Redis/Celery workers + Postgres + object storage) is the documented v2.1 path.
 
@@ -706,6 +712,14 @@ require the minimum possible trust from the operator.
   Jinja renders data into fixed templates, it does not execute user input.
 - ✅ **No secrets in output** — generated GitOps workflows reference GitHub *secrets*; credentials
   are never embedded in generated files.
+- ✅ **Strict CSP on the console** — per-request script nonce + `'strict-dynamic'`; inline scripts
+  without the nonce do not run, `connect-src` is same-origin only, framing is refused (ADR 0067).
+- ✅ **Database unreachable from the internet** — private address only, VPC-internal egress from the
+  API, TLS required on the connection (ADR 0068).
+- ✅ **Bounded reads** — CSV/XLSX rows are counted at read time and rejected past `MAX_VMS` before
+  anything is parsed, so an oversized upload costs ~10 ms and ~90 MB, not seconds and gigabytes.
+- ✅ **Account deletion is one transaction** — `DELETE /auth/me` (password-confirmed) removes
+  projects, workspaces, grants, sessions and the user; the audit records the user id, never the email.
 
 Unhandled errors return a generic `500` and are logged server-side with context,
 never surfaced to the client.
