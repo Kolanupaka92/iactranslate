@@ -119,6 +119,11 @@ in CI on `main`.
   estate's cost. Every surface (report, README, `main.tf`, CLI, API, budget
   policy) quotes the same total, and the estimate names what it excludes
   (see [ADR 0039](adr/0039-cost-the-whole-bill-not-just-the-instances.md))
+- ✅ **The recommendation ranks on that same bill** — `recommend()` scores cost
+  on the itemized total rather than compute alone. The uplift over compute
+  ranges from +20% (DigitalOcean) to +47% (OCI), so ranking on compute weighted
+  the clouds unevenly; each score now carries both figures so the gap is checkable
+  (see [ADR 0048](adr/0048-rank-the-recommendation-on-the-full-bill.md))
 - ✅ Model schema versioning (`NormalizedVM` / `MigrationPlan`)
 
 **Surfaces & delivery**
@@ -170,10 +175,6 @@ backends and integrations that plug into them, via the
   no load to scale for; writing it speculatively would be several hundred lines
   verifiable only through CI round-trips. Build it when a deployment needs a
   second replica, not before.
-- ◻ **Rank the recommendation on the full breakdown** — `recommend()` still
-  compares clouds on compute alone, while every other surface now quotes the
-  itemized total. Windows licensing varies enough between clouds to move the
-  ranking, so this is a behaviour change worth making deliberately
 - ◻ **Live storage pricing** — compute already supports `--live-pricing`; the
   storage, licensing and load-balancer rates are hardcoded and dated Aug 2026
 - ◻ **User-adjustable scoring weights** — a cost-insensitive regulated estate
