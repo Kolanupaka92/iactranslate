@@ -21,17 +21,21 @@ plainly what it still leaves out.
 reads the immutable plan and never changes it (ADR 0007).
 
 Rates are list-price, on-demand, and current as of August 2026 — see
-`_STORAGE_USD_PER_GB_MONTH` for per-cloud sources. Committed-use discounts
+`_STORAGE_USD_PER_GB_MONTH` for per-cloud sources. When the plan was built
+with live pricing requested, each line's rate is fetched live instead (AWS,
+Azure, GCP — `pricing.live_line_rate`) and falls back to these tables one line
+at a time; `rate_sources` records which lines got which. Committed-use discounts
 (Reserved Instances, Savings Plans, CUDs) routinely cut compute 30-60% and are
 deliberately **not** applied: quoting a discount the customer has not actually
 purchased is how an estimate becomes wrong in the customer's favour.
 """
 from __future__ import annotations
 
-from typing import List
+from typing import Dict, List, Tuple
 
 from pydantic import BaseModel, Field
 
+from . import pricing
 from .models import MigrationPlan
 from .targets import get_target
 from .targets.base import CAP_PRICED
@@ -94,6 +98,54 @@ EXCLUSIONS = [
 ]
 
 
+_BASIS = "on-demand list price, no committed-use discount applied"
+
+_LINE_LABELS = {
+    pricing.RATE_STORAGE: "storage",
+    pricing.RATE_WINDOWS: "Windows licensing",
+    pricing.RATE_LB: "load balancers",
+}
+
+_STATIC_RATES = {
+    pricing.RATE_STORAGE: (_STORAGE_USD_PER_GB_MONTH, 0.10),
+    pricing.RATE_WINDOWS: (_WINDOWS_USD_PER_VCPU_HOUR, 0.046),
+    pricing.RATE_LB: (_LOAD_BALANCER_USD_PER_MONTH, 18.25),
+}
+
+
+def _line_rates(plan: MigrationPlan, cloud: str) -> Tuple[Dict[str, float], Dict[str, str]]:
+    """Rate and source for each non-compute line, live where asked and available."""
+    rates: Dict[str, float] = {}
+    sources: Dict[str, str] = {}
+    for kind, (table, default) in _STATIC_RATES.items():
+        live = (
+            pricing.live_line_rate(cloud, kind, plan.region)
+            if plan.live_pricing_requested else None
+        )
+        rates[kind] = live if live is not None else table.get(cloud, default)
+        sources[kind] = "live" if live is not None else "static"
+    return rates, sources
+
+
+def _basis(plan: MigrationPlan, sources: Dict[str, str]) -> str:
+    """`pricing_basis`, naming which lines are live when live was asked for.
+
+    The silent case is the one to avoid: a report that says "live pricing" in
+    its header while storage quietly came from a table dated months earlier.
+    """
+    if not plan.live_pricing_requested:
+        return _BASIS
+    live = [_LINE_LABELS[k] for k, s in sources.items() if s == "live"]
+    static = [_LINE_LABELS[k] for k, s in sources.items() if s != "live"]
+    if not live:
+        return (f"{_BASIS}; live rates were requested but unavailable, so "
+                f"{', '.join(static)} use catalog rates (August 2026)")
+    basis = f"{_BASIS}; live rates for {', '.join(live)}"
+    if static:
+        basis += f"; catalog rates (August 2026) for {', '.join(static)}"
+    return basis
+
+
 class CostBreakdown(BaseModel):
     """Estimated monthly cost, itemized. All figures USD, on-demand list price."""
 
@@ -107,7 +159,12 @@ class CostBreakdown(BaseModel):
     windows_workloads: int = 0
     total_storage_gib: float = 0.0
     load_balancer_count: int = 0
-    pricing_basis: str = "on-demand list price, no committed-use discount applied"
+    pricing_basis: str = _BASIS
+    #: Where each non-compute line's rate came from: 'live' or 'static'.
+    #: Compute's own source is per instance, on the plan (`pricing_source`).
+    rate_sources: Dict[str, str] = Field(
+        default_factory=lambda: {kind: "static" for kind in pricing.LINE_RATES}
+    )
     excludes: List[str] = Field(default_factory=lambda: list(EXCLUSIONS))
     #: False for a target with no published price — an on-premises hypervisor.
     #: Every figure above is then zero, and zero means "not computed", never
@@ -145,9 +202,10 @@ def estimate_costs(plan: MigrationPlan) -> CostBreakdown:
             priced=False,
         )
 
-    storage_rate = _STORAGE_USD_PER_GB_MONTH.get(cloud, 0.10)
-    windows_rate = _WINDOWS_USD_PER_VCPU_HOUR.get(cloud, 0.046)
-    lb_rate = _LOAD_BALANCER_USD_PER_MONTH.get(cloud, 18.25)
+    rates, sources = _line_rates(plan, cloud)
+    storage_rate = rates[pricing.RATE_STORAGE]
+    windows_rate = rates[pricing.RATE_WINDOWS]
+    lb_rate = rates[pricing.RATE_LB]
 
     compute = sum(c.estimated_monthly_cost_usd for c in plan.compute)
 
@@ -173,4 +231,6 @@ def estimate_costs(plan: MigrationPlan) -> CostBreakdown:
         windows_workloads=len(windows),
         total_storage_gib=round(total_gib, 1),
         load_balancer_count=lb_count,
+        pricing_basis=_basis(plan, sources),
+        rate_sources=sources,
     )

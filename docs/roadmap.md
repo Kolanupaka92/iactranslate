@@ -124,6 +124,12 @@ in CI on `main`.
   ranges from +20% (DigitalOcean) to +47% (OCI), so ranking on compute weighted
   the clouds unevenly; each score now carries both figures so the gap is checkable
   (see [ADR 0048](adr/0048-rank-the-recommendation-on-the-full-bill.md))
+- ✅ **Live rates for every line of the bill** — with live pricing on, storage,
+  Windows licensing and load balancers are fetched live too (AWS, Azure, GCP),
+  falling back to catalog one line at a time, and the estimate names which
+  lines are live. Azure Standard SSD came back at $0.075/GB-month against the
+  table's $0.113
+  (see [ADR 0069](adr/0069-live-rates-for-every-line-of-the-bill.md))
 - ✅ Model schema versioning (`NormalizedVM` / `MigrationPlan`)
 
 **Surfaces & delivery**
@@ -175,8 +181,6 @@ backends and integrations that plug into them, via the
   no load to scale for; writing it speculatively would be several hundred lines
   verifiable only through CI round-trips. Build it when a deployment needs a
   second replica, not before.
-- ◻ **Live storage pricing** — compute already supports `--live-pricing`; the
-  storage, licensing and load-balancer rates are hardcoded and dated Aug 2026
 - ◻ **User-adjustable scoring weights** — a cost-insensitive regulated estate
   weights fit/OS far higher than 0.45/0.30/0.25; exposing the weights invites it
 - ◻ **Key identity on `VM UUID`** — real RVTools rows carry a stable UUID; de-dup

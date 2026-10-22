@@ -76,5 +76,6 @@ Format: [Michael Nygard's ADR template](https://cognitect.com/blog/2011/11/15/do
 | [0066](0066-run-lease-for-concurrent-runs.md) | Concurrent runs of one project are serialised by a lease claimed in one conditional UPDATE — correct across instances, and self-healing after a crash | Accepted |
 | [0067](0067-nonce-based-content-security-policy.md) | The console's CSP is generated per request with a script nonce; the static header could not refuse inline scripts and so protected nothing | Accepted |
 | [0068](0068-database-on-a-private-address-only.md) | Cloud SQL has no public address; Cloud Run reaches it over Direct VPC egress, and the Auth Proxy sidecar is gone because it cannot work that way | Accepted |
+| [0069](0069-live-rates-for-every-line-of-the-bill.md) | Live pricing covers storage, Windows licensing and load balancers too, falling back per line, and the estimate names which lines are live | Accepted |
 
 See also the [Architecture & Design](../architecture.md) overview.

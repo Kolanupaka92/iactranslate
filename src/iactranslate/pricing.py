@@ -13,6 +13,9 @@ Live coverage:
   * GCP   — Cloud Billing Catalog API, when ``IACTRANSLATE_GCP_BILLING_API_KEY``
             is set (sums the machine family's vCPU-core + RAM-GB SKUs).
 
+The same three sources also supply the bill's non-compute line rates —
+storage, Windows licensing, load balancers — via ``live_line_rate`` (ADR 0069).
+
 Enable with ``IACTRANSLATE_PRICING=live``.
 
 A **circuit breaker** guards the live path. Falling back per call was already
@@ -107,13 +110,8 @@ def _cache_put(cache: Dict[str, list], key: str, price: float) -> None:
 # --------------------------------------------------------------------------- #
 
 
-def _azure_hourly(instance_type: str, region: str) -> Optional[float]:
-    flt = (
-        "serviceName eq 'Virtual Machines' "
-        f"and armRegionName eq '{region}' "
-        f"and armSkuName eq '{instance_type}' "
-        "and priceType eq 'Consumption'"
-    )
+def _azure_items(flt: str) -> Optional[list]:
+    """Items matching an OData filter on the Retail Prices API. None on failure."""
     url = "https://prices.azure.com/api/retail/prices?" + urllib.parse.urlencode({"$filter": flt})
     try:
         # Scheme and host are literal `https://prices.azure.com`; only query
@@ -123,11 +121,23 @@ def _azure_hourly(instance_type: str, region: str) -> Optional[float]:
             data = json.load(resp)
     except Exception:  # noqa: BLE001
         return None
+    return data.get("Items", [])
+
+
+def _azure_vm_hourly(instance_type: str, region: str, windows: bool) -> Optional[float]:
+    items = _azure_items(
+        "serviceName eq 'Virtual Machines' "
+        f"and armRegionName eq '{region}' "
+        f"and armSkuName eq '{instance_type}' "
+        "and priceType eq 'Consumption'"
+    )
+    if items is None:
+        return None
     prices = [
         item["retailPrice"]
-        for item in data.get("Items", [])
+        for item in items
         if item.get("unitOfMeasure") == "1 Hour"
-        and "Windows" not in item.get("productName", "")
+        and ("Windows" in item.get("productName", "")) == windows
         and "Spot" not in item.get("skuName", "")
         and "Low Priority" not in item.get("skuName", "")
         and item.get("retailPrice")
@@ -135,37 +145,63 @@ def _azure_hourly(instance_type: str, region: str) -> Optional[float]:
     return min(prices) if prices else None
 
 
-def _aws_hourly(instance_type: str, region: str) -> Optional[float]:
-    location = _AWS_LOCATION.get(region)
-    if not location:
-        return None
+def _azure_hourly(instance_type: str, region: str) -> Optional[float]:
+    return _azure_vm_hourly(instance_type, region, windows=False)
+
+
+def _aws_first_usd(
+    service: str, filters: Dict[str, str], unit: Optional[str] = None, max_results: int = 1
+) -> Optional[float]:
+    """First positive on-demand USD price among matching products, or None.
+
+    `unit` restricts the price dimension (an ALB product carries both an `Hrs`
+    and an `LCU-Hrs` dimension, and only the first is the per-balancer charge).
+    """
     try:
         import boto3  # optional dependency; graceful if absent
 
         client = boto3.client("pricing", region_name="us-east-1")
         resp = client.get_products(
-            ServiceCode="AmazonEC2",
-            Filters=[
-                {"Type": "TERM_MATCH", "Field": "instanceType", "Value": instance_type},
-                {"Type": "TERM_MATCH", "Field": "location", "Value": location},
-                {"Type": "TERM_MATCH", "Field": "operatingSystem", "Value": "Linux"},
-                {"Type": "TERM_MATCH", "Field": "tenancy", "Value": "Shared"},
-                {"Type": "TERM_MATCH", "Field": "preInstalledSw", "Value": "NA"},
-                {"Type": "TERM_MATCH", "Field": "capacitystatus", "Value": "Used"},
-            ],
-            MaxResults=1,
+            ServiceCode=service,
+            Filters=[{"Type": "TERM_MATCH", "Field": k, "Value": v} for k, v in filters.items()],
+            MaxResults=max_results,
         )
         for blob in resp.get("PriceList", []):
             product = json.loads(blob)
             on_demand = product["terms"]["OnDemand"]
             for term in on_demand.values():
                 for dim in term["priceDimensions"].values():
+                    if unit is not None and dim.get("unit") != unit:
+                        continue
                     usd = float(dim["pricePerUnit"]["USD"])
                     if usd > 0:
                         return usd
     except Exception:  # noqa: BLE001 — no boto3 / no creds / API error -> static
         return None
     return None
+
+
+def _aws_ec2_hourly(instance_type: str, location: str, windows: bool) -> Optional[float]:
+    filters = {
+        "instanceType": instance_type,
+        "location": location,
+        "operatingSystem": "Windows" if windows else "Linux",
+        "tenancy": "Shared",
+        "preInstalledSw": "NA",
+        "capacitystatus": "Used",
+    }
+    if windows:
+        # AWS's term for license-included Windows ("Bring your own license"
+        # is the BYOL variant, which carries no licence uplift at all).
+        filters["licenseModel"] = "No License required"
+    return _aws_first_usd("AmazonEC2", filters)
+
+
+def _aws_hourly(instance_type: str, region: str) -> Optional[float]:
+    location = _AWS_LOCATION.get(region)
+    if not location:
+        return None
+    return _aws_ec2_hourly(instance_type, location, windows=False)
 
 
 # Compute Engine service id in the Cloud Billing Catalog.
@@ -187,13 +223,20 @@ def _gcp_sku_unit_price(sku: dict) -> Optional[float]:
         return None
 
 
-def _gcp_find_price(skus: list, region: str, phrase: str) -> Optional[float]:
-    """First on-demand SKU in `region` whose description contains `phrase`."""
+def _gcp_find_price(
+    skus: list, region: str, phrase: str, resource_family: str = "Compute"
+) -> Optional[float]:
+    """First on-demand SKU in `region` whose description contains `phrase`.
+
+    A SKU served from `global` counts as served from every region — licence
+    fees are published that way, not per region.
+    """
     for sku in skus:
         cat = sku.get("category", {})
-        if cat.get("usageType") != "OnDemand" or cat.get("resourceFamily") != "Compute":
+        if cat.get("usageType") != "OnDemand" or cat.get("resourceFamily") != resource_family:
             continue
-        if region not in sku.get("serviceRegions", []):
+        regions = sku.get("serviceRegions", [])
+        if region not in regions and "global" not in regions:
             continue
         desc = sku.get("description", "")
         if phrase in desc and "Sole Tenancy" not in desc and "Custom" not in desc:
@@ -251,6 +294,107 @@ def _gcp_hourly(instance_type: str, region: str) -> Optional[float]:
     if core is None or ram is None:
         return None
     return round(spec.vcpu * core + spec.memory_gib * ram, 6)
+
+
+# --------------------------------------------------------------------------- #
+# Live line rates — the bill's non-compute lines (see costing.py)
+#
+# Each fetcher returns the rate in the unit costing multiplies by, or None:
+#   storage            USD per GB-month of block storage
+#   windows_licensing  USD per vCPU-hour, licence-included Windows over Linux
+#   load_balancers     USD per balancer-month, excluding capacity units
+#
+# Windows is published as a *VM price*, not a licence price, on AWS and Azure.
+# The uplift is derived from one reference instance — Windows rate minus Linux
+# rate, divided by its vCPUs — which is exactly how the catalog figure of
+# $0.046/vCPU-hour was arrived at, and it is linear across a family.
+# --------------------------------------------------------------------------- #
+
+RATE_STORAGE = "storage"
+RATE_WINDOWS = "windows_licensing"
+RATE_LB = "load_balancers"
+LINE_RATES = (RATE_STORAGE, RATE_WINDOWS, RATE_LB)
+
+#: Azure prices Standard SSD per disk tier, not per GB; every tier works out to
+#: the same per-GiB rate, so one tier divided by its size gives it.
+_AZURE_DISK_TIER = ("E10 LRS", 128)
+_AZURE_WINDOWS_REF = ("Standard_D2s_v5", 2)
+_AWS_WINDOWS_REF = ("m5.large", 2)
+
+
+def _uplift(windows_hr: Optional[float], linux_hr: Optional[float], vcpu: int) -> Optional[float]:
+    if windows_hr is None or linux_hr is None or windows_hr <= linux_hr:
+        return None
+    return round((windows_hr - linux_hr) / vcpu, 6)
+
+
+def _azure_line_rate(kind: str, region: str) -> Optional[float]:
+    if kind == RATE_STORAGE:
+        sku, size_gib = _AZURE_DISK_TIER
+        items = _azure_items(
+            "serviceName eq 'Storage' "
+            f"and armRegionName eq '{region}' "
+            f"and skuName eq '{sku}' and meterName eq '{sku} Disk' "
+            "and priceType eq 'Consumption'"
+        )
+        # Checked here as well as in the filter: the same SKU also carries a
+        # per-month "Disk Mount" meter, roughly a tenth of the capacity price.
+        prices = [i["retailPrice"] for i in items or []
+                  if i.get("meterName") == f"{sku} Disk"
+                  and i.get("unitOfMeasure") == "1/Month" and i.get("retailPrice")]
+        return round(min(prices) / size_gib, 6) if prices else None
+    if kind == RATE_WINDOWS:
+        ref, vcpu = _AZURE_WINDOWS_REF
+        return _uplift(_azure_vm_hourly(ref, region, windows=True),
+                       _azure_vm_hourly(ref, region, windows=False), vcpu)
+    if kind == RATE_LB:
+        # Standard Load Balancer is billed from the `Global` region, not the
+        # region the balancer lives in.
+        items = _azure_items(
+            "serviceName eq 'Load Balancer' and armRegionName eq 'Global' "
+            "and meterName eq 'Standard Included LB Rules and Outbound Rules' "
+            "and priceType eq 'Consumption'"
+        )
+        prices = [i["retailPrice"] for i in items or []
+                  if i.get("unitOfMeasure") == "1 Hour" and i.get("retailPrice")]
+        return round(min(prices) * HOURS_PER_MONTH, 2) if prices else None
+    return None
+
+
+def _aws_line_rate(kind: str, region: str) -> Optional[float]:
+    location = _AWS_LOCATION.get(region)
+    if not location:
+        return None
+    if kind == RATE_STORAGE:
+        return _aws_first_usd(
+            "AmazonEC2", {"productFamily": "Storage", "volumeApiName": "gp3", "location": location}
+        )
+    if kind == RATE_WINDOWS:
+        ref, vcpu = _AWS_WINDOWS_REF
+        return _uplift(_aws_ec2_hourly(ref, location, windows=True),
+                       _aws_ec2_hourly(ref, location, windows=False), vcpu)
+    if kind == RATE_LB:
+        hourly = _aws_first_usd(
+            "AWSELB", {"productFamily": "Load Balancer-Application", "location": location},
+            unit="Hrs", max_results=10,
+        )
+        return round(hourly * HOURS_PER_MONTH, 2) if hourly is not None else None
+    return None
+
+
+def _gcp_line_rate(kind: str, region: str) -> Optional[float]:
+    api_key = os.getenv("IACTRANSLATE_GCP_BILLING_API_KEY")
+    if not api_key or kind not in LINE_RATES:
+        return None
+    skus = _gcp_fetch_skus(api_key)
+    if not skus:
+        return None
+    if kind == RATE_STORAGE:
+        return _gcp_find_price(skus, region, "Balanced PD Capacity", "Storage")
+    if kind == RATE_WINDOWS:
+        return _gcp_find_price(skus, region, "Datacenter Edition (CPU cost)", "License")
+    hourly = _gcp_find_price(skus, region, "Forwarding Rule Minimum Service Charge", "Network")
+    return round(hourly * HOURS_PER_MONTH, 2) if hourly is not None else None
 
 
 # --------------------------------------------------------------------------- #
@@ -339,6 +483,35 @@ def live_hourly(cloud: str, instance_type: str, region: str) -> Optional[float]:
     _record_success(cloud)
     _cache_put(cache, key, price)
     return price
+
+
+_RATE_FETCHERS = {"azure": _azure_line_rate, "aws": _aws_line_rate, "gcp": _gcp_line_rate}
+
+
+def live_line_rate(cloud: str, kind: str, region: str) -> Optional[float]:
+    """Cached live rate for one non-compute line (see `LINE_RATES`), or None.
+
+    Same cache and same breaker behaviour as `live_hourly`, but a breaker of its
+    own: these lookups hit different products than the instance prices, and a
+    line rate that keeps failing must not push the next run's compute prices
+    onto catalog rates too.
+    """
+    key = f"{cloud}:{region}:rate:{kind}"
+    cache = _cache_load()
+    cached = _cache_get(cache, key)
+    if cached is not None:
+        return cached
+    fetch = _RATE_FETCHERS.get(cloud)
+    breaker = f"{cloud}:rates"
+    if fetch is None or kind not in LINE_RATES or breaker_open(breaker):
+        return None
+    rate = fetch(kind, region)
+    if rate is None:
+        _record_failure(breaker)
+        return None
+    _record_success(breaker)
+    _cache_put(cache, key, rate)
+    return rate
 
 
 def monthly_cost(
