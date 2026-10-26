@@ -11,7 +11,7 @@ values here and let normalize.py convert to GiB.
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import pandas as pd
 
@@ -55,24 +55,54 @@ def _read_sheets(path: str) -> Dict[str, pd.DataFrame]:
     return {str(name).strip().lower(): df for name, df in frames.items()}
 
 
+_UUID_COLUMNS = ["VM UUID", "UUID"]
+
+
+def _row_keys(row: pd.Series, name_col: Optional[str], uuid_col: Optional[str]) -> List[str]:
+    """Join keys for a vDisk/vNetwork row: its VM UUID and its VM name.
+
+    Both are recorded so the lookup can prefer the UUID. Joining on the name
+    alone gave two machines that share a name — common across clusters — each
+    other's disks and NICs.
+    """
+    keys = []
+    uuid = cell(row, uuid_col)
+    if uuid is not None and str(uuid).strip():
+        keys.append("uuid:" + str(uuid).strip().lower())
+    vm = cell(row, name_col)
+    if vm is not None and str(vm).strip():
+        keys.append("name:" + str(vm).strip())
+    return keys
+
+
+def _lookup(table: Dict[str, object], name: str, uuid: Optional[str]):
+    if uuid:
+        hit = table.get("uuid:" + uuid.lower())
+        if hit:
+            return hit
+    return table.get("name:" + name)
+
+
 def _disks_by_vm(sheets: Dict[str, pd.DataFrame]) -> Dict[str, List[float]]:
     df = sheets.get("vdisk")
     out: Dict[str, List[float]] = defaultdict(list)
     if df is None or df.empty:
         return out
     name_col = find_column(df, ["VM"])
+    uuid_col = find_column(df, _UUID_COLUMNS)
     cap_col = find_column(df, ["Capacity MiB", "Capacity", "Capacity MB"])
     if name_col is None or cap_col is None:
         return out
     for _, row in df.iterrows():
-        vm = cell(row, name_col)
         cap = cell(row, cap_col)
-        if vm is None or cap is None:
+        if cap is None:
             continue
         try:
-            out[str(vm).strip()].append(float(cap))
+            capacity = float(cap)
         except (TypeError, ValueError):
             continue
+        for key in _row_keys(row, name_col, uuid_col):
+            out[key].append(capacity)
     return out
 
 
@@ -82,17 +112,12 @@ def _network_by_vm(sheets: Dict[str, pd.DataFrame]) -> Dict[str, Dict[str, objec
     if df is None or df.empty:
         return out
     name_col = find_column(df, ["VM"])
+    uuid_col = find_column(df, _UUID_COLUMNS)
     net_col = find_column(df, ["Network", "Port Group", "Portgroup"])
     ip_col = find_column(df, ["IP Address", "IPv4 Address", "IP"])
     if name_col is None:
         return out
     for _, row in df.iterrows():
-        vm = cell(row, name_col)
-        if vm is None:
-            continue
-        key = str(vm).strip()
-        if key in out:
-            continue  # keep the first NIC per VM
         entry: Dict[str, object] = {}
         net = cell(row, net_col)
         ip = cell(row, ip_col)
@@ -100,7 +125,8 @@ def _network_by_vm(sheets: Dict[str, pd.DataFrame]) -> Dict[str, Dict[str, objec
             entry["network"] = str(net).strip()
         if ip is not None:
             entry["ip"] = str(ip).strip()
-        out[key] = entry
+        for key in _row_keys(row, name_col, uuid_col):
+            out.setdefault(key, entry)  # keep the first NIC per VM
     return out
 
 
@@ -125,6 +151,7 @@ def parse(path: str) -> List[RawVM]:
     cluster_col = find_column(vinfo, ["Cluster"])
     dc_col = find_column(vinfo, ["Datacenter", "Data Center"])
     provisioned_col = find_column(vinfo, ["Provisioned MiB", "Provisioned MB", "Provisioned"])
+    uuid_col = find_column(vinfo, _UUID_COLUMNS)
 
     disks = _disks_by_vm(sheets)
     networks = _network_by_vm(sheets)
@@ -137,9 +164,12 @@ def parse(path: str) -> List[RawVM]:
         key = str(name).strip()
         if not key:
             continue
+        raw_uuid = cell(row, uuid_col)
+        uuid = str(raw_uuid).strip() if raw_uuid is not None and str(raw_uuid).strip() else None
 
         rec: RawVM = {
             "name": key,
+            "uuid": uuid,
             "cpus": cell(row, cpu_col),
             "memory_mib": cell(row, mem_col),
             "os": cell(row, os_col),
@@ -151,7 +181,7 @@ def parse(path: str) -> List[RawVM]:
         }
 
         # Disks: prefer per-disk data from vDisk; else fall back to provisioned total.
-        vm_disks = disks.get(key)
+        vm_disks = _lookup(disks, key, uuid)
         if vm_disks:
             rec["disks_mib"] = vm_disks
         else:
@@ -159,7 +189,7 @@ def parse(path: str) -> List[RawVM]:
             if prov is not None:
                 rec["disks_mib"] = [prov]
 
-        net = networks.get(key)
+        net = _lookup(networks, key, uuid)
         if net:
             if "network" in net:
                 rec["network"] = net["network"]

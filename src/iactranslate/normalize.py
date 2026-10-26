@@ -1,6 +1,7 @@
 """Raw VM records -> validated `NormalizedVM` list.
 
-Handles unit coercion (MiB -> GiB), IP parsing, and de-duplication by VM name.
+Handles unit coercion (MiB -> GiB), IP parsing, and de-duplication — by the
+hypervisor's VM UUID when the source carries one, by VM name otherwise.
 Accepts the raw dicts produced by either parser (RVTools or flat VMware CSV).
 """
 from __future__ import annotations
@@ -182,6 +183,55 @@ def _safe_str(value: object) -> Optional[str]:
     return sanitize_identifier(text) if text is not None else None
 
 
+def _identity(vm: NormalizedVM) -> str:
+    """What makes two records the same machine: its UUID, or failing that its name."""
+    if vm.source_uuid:
+        return "uuid:" + vm.source_uuid.lower()
+    return "name:" + vm.vm_name
+
+
+def _disambiguate(vms: List[NormalizedVM]) -> List[NormalizedVM]:
+    """Give distinct machines that share a name distinct names.
+
+    `vm_name` is the key the rest of the pipeline joins on — tier assignment,
+    the graph, confidence, every renderer. Two machines called `app01` (one per
+    cluster is ordinary in vCenter) used to be merged into one here, silently
+    dropping a workload from the migration.
+
+    Each one now gets a suffix from its *own* UUID (`app01-00000017`), not from
+    its position in the file, so re-exporting the estate in a different order
+    names it the same way. A machine without a UUID keeps the bare name; at most
+    one can, since two without UUIDs are the same machine by `_identity`.
+    """
+    by_name: Dict[str, List[int]] = {}
+    for i, vm in enumerate(vms):
+        by_name.setdefault(vm.vm_name, []).append(i)
+    taken = {vm.vm_name for vm in vms}
+    out = list(vms)
+    for name, idxs in by_name.items():
+        if len(idxs) < 2:
+            continue
+        for i in idxs:
+            uuid = vms[i].source_uuid
+            if not uuid:
+                continue
+            digits = re.sub(r"[^0-9a-z]", "", uuid.lower()) or "x"
+            # Eight trailing characters are unique in practice; grow only if a
+            # real machine already has that exact name.
+            for width in range(min(8, len(digits)), len(digits) + 1):
+                candidate = f"{name}-{digits[-width:]}"
+                if candidate not in taken:
+                    break
+            else:
+                n = 2
+                while f"{candidate}-{n}" in taken:
+                    n += 1
+                candidate = f"{candidate}-{n}"
+            taken.add(candidate)
+            out[i] = vms[i].model_copy(update={"vm_name": candidate})
+    return out
+
+
 def normalize(records: List[Dict[str, object]]) -> List[NormalizedVM]:
     seen: Dict[str, NormalizedVM] = {}
     for rec in records:
@@ -207,10 +257,12 @@ def normalize(records: List[Dict[str, object]]) -> List[NormalizedVM]:
             cluster=_safe_str(rec.get("cluster")),
             datacenter=_safe_str(rec.get("datacenter")),
             external_id=_safe_str(rec.get("external_id")),
+            source_uuid=_safe_str(rec.get("uuid")),
         )
-        # De-dupe by name; prefer the record with more disk detail.
-        existing = seen.get(vm.vm_name)
+        # De-dupe by identity; prefer the record with more disk detail.
+        key = _identity(vm)
+        existing = seen.get(key)
         if existing is None or vm.total_disk_gib > existing.total_disk_gib:
-            seen[vm.vm_name] = vm
+            seen[key] = vm
 
-    return list(seen.values())
+    return _disambiguate(list(seen.values()))

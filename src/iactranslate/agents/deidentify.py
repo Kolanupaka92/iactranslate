@@ -129,6 +129,9 @@ class Pseudonymizer:
             "ip_addresses": [],
             "tags": {},
             "external_id": None,
+            # A hypervisor UUID is a stable, globally unique fingerprint of the
+            # customer's machine, and nothing the model decides reads it.
+            "source_uuid": None,
         })
 
     def restore(self, vm_name: str) -> Optional[str]:

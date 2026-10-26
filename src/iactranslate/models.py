@@ -87,6 +87,10 @@ class NormalizedVM(BaseModel):
     # instance id), when the source is an existing fleet. Enables generating
     # Terraform `import` blocks so the fleet is adopted, not recreated.
     external_id: Optional[str] = None
+    # The hypervisor's own identifier for the machine (RVTools `VM UUID`). A
+    # name is a label an administrator can change; this survives a rename, so
+    # it is what de-duplication and snapshot diffs match on when present.
+    source_uuid: Optional[str] = None
     tags: Dict[str, str] = Field(default_factory=dict)
 
     @field_validator("vm_name")

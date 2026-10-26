@@ -130,6 +130,11 @@ in CI on `main`.
   lines are live. Azure Standard SSD came back at $0.075/GB-month against the
   table's $0.113
   (see [ADR 0069](adr/0069-live-rates-for-every-line-of-the-bill.md))
+- ✅ **A machine is its VM UUID** — RVTools `VM UUID` drives de-duplication,
+  disk/NIC joins and snapshot diffs. Two machines sharing a name (one per
+  cluster) used to merge, silently dropping one from the migration; both are now
+  kept, with stable UUID-derived suffixes. A rename is reported as a rename
+  (see [ADR 0070](adr/0070-key-vm-identity-on-the-vm-uuid.md))
 - ✅ Model schema versioning (`NormalizedVM` / `MigrationPlan`)
 
 **Surfaces & delivery**
@@ -183,8 +188,10 @@ backends and integrations that plug into them, via the
   second replica, not before.
 - ◻ **User-adjustable scoring weights** — a cost-insensitive regulated estate
   weights fit/OS far higher than 0.45/0.30/0.25; exposing the weights invites it
-- ◻ **Key identity on `VM UUID`** — real RVTools rows carry a stable UUID; de-dup
-  and resource labels key on the VM *name*, so a renamed machine looks new
+- ◻ **`moved` blocks for renamed machines** — the diff now identifies a rename by
+  VM UUID ([ADR 0070](adr/0070-key-vm-identity-on-the-vm-uuid.md)), but the
+  Terraform label still follows the name, so a rename plans as destroy-and-recreate.
+  Emitting `moved` blocks needs the previous run's labels, which aren't kept
 - ◻ **Emit reusable modules with `for_each`** — the per-environment/tier split
   ([ADR 0032](adr/0032-split-compute-output-for-reviewability.md)) made output
   reviewable; modules would compress ~8k-line files dramatically, but change

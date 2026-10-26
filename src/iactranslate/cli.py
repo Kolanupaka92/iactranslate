@@ -460,6 +460,7 @@ def _cmd_diff(args: argparse.Namespace) -> int:
     print(f"Inventory diff: {args.before} → {args.after}\n")
     print(f"  Added:     {len(d.added)}")
     print(f"  Removed:   {len(d.removed)}")
+    print(f"  Renamed:   {len(d.renamed)}")
     print(f"  Modified:  {len(d.modified)}")
     print(f"  Unchanged: {d.unchanged}\n")
     print(f"  vCPU:    {d.before.vcpu} → {d.after.vcpu} ({d.vcpu_delta:+d})")
@@ -469,6 +470,8 @@ def _cmd_diff(args: argparse.Namespace) -> int:
         print(f"  + {name}")
     for name in d.removed:
         print(f"  - {name}")
+    for r in d.renamed:
+        print(f"  > {r.before} → {r.after}")
     for wc in d.modified:
         deltas = ", ".join(f"{c.field}: {c.before}→{c.after}" for c in wc.changes)
         print(f"  ~ {wc.vm_name} ({deltas})")
