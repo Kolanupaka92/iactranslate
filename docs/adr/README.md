@@ -78,5 +78,6 @@ Format: [Michael Nygard's ADR template](https://cognitect.com/blog/2011/11/15/do
 | [0068](0068-database-on-a-private-address-only.md) | Cloud SQL has no public address; Cloud Run reaches it over Direct VPC egress, and the Auth Proxy sidecar is gone because it cannot work that way | Accepted |
 | [0069](0069-live-rates-for-every-line-of-the-bill.md) | Live pricing covers storage, Windows licensing and load balancers too, falling back per line, and the estimate names which lines are live | Accepted |
 | [0070](0070-key-vm-identity-on-the-vm-uuid.md) | De-duplication, disk/NIC joins and snapshot diffs key on the RVTools VM UUID; same-named machines are both kept, and a rename is reported as one. Terraform labels stay name-derived | Accepted |
+| [0071](0071-user-adjustable-scoring-weights.md) | Callers can set the recommendation's cost/fit/OS weights; they are normalised, eligibility still dominates, and a custom ranking is always labelled custom | Accepted |
 
 See also the [Architecture & Design](../architecture.md) overview.

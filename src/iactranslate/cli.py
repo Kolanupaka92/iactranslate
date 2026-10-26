@@ -26,7 +26,7 @@ from .pdf import PdfUnavailable
 from .pdf import render as render_pdf
 from .pipeline import run_pipeline
 from .policy import PolicyViolationError, UnknownPolicyError, load_policy_config
-from .recommend import recommend
+from .recommend import ScoringWeights, recommend
 from .renderers import UnknownRendererError, list_renderers
 from .sources import UnknownSourceError, list_sources, resolve_source
 from .state import SUPPORTED as SUPPORTED_BACKENDS
@@ -51,6 +51,14 @@ def _parse_kv(raw):
         key, value = part.split("=", 1)
         out[key.strip()] = value.strip()
     return out
+
+
+def _weights_arg(raw: str) -> ScoringWeights:
+    """argparse type for --weights; a bad value is a usage error, not a traceback."""
+    try:
+        return ScoringWeights.parse(raw)
+    except ValueError as e:
+        raise argparse.ArgumentTypeError(str(e)) from e
 
 
 def _parse_column_map(raw: Optional[str]) -> Optional[Dict[str, str]]:
@@ -176,7 +184,7 @@ def _cmd_recommend(args: argparse.Namespace) -> int:
         print(f"error: no workloads found in {args.input}", file=sys.stderr)
         return 2
 
-    rec = recommend(vms)
+    rec = recommend(vms, weights=args.weights)
     print(f"Recommended cloud: {rec.recommended.upper()}\n")
     print(f"{'CLOUD':6}  {'SCORE':>6}  {'COST/MO':>11}  {'COST':>5}  {'FIT':>5}  {'OS':>5}")
     print("-" * 48)
@@ -275,7 +283,7 @@ def _cmd_report(args: argparse.Namespace) -> int:
         print(f"error: {e}", file=sys.stderr)
         return 2
     plan = build_migration_plan(vms, project_name=project_name, target=target, region=args.region)
-    rec = None if args.no_recommend else recommend(vms)
+    rec = None if args.no_recommend else recommend(vms, weights=args.weights)
     html = build_executive_report(plan, vms, recommendation=rec)
 
     # `--out report.pdf` means a PDF was wanted even without the flag; writing
@@ -489,6 +497,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     src_help = f"Discovery source: auto (default) or {', '.join(list_sources())}."
     map_help = 'Generic-source column map, e.g. "name=Hostname,cpu=Cores,memory_gib=RAM GB,disk_gib=Storage GB,os=OS".'
+    weights_help = ('Recommendation scoring weights, e.g. "cost=0.2,fit=0.4,os=0.4" '
+                    "(default cost=0.45,fit=0.30,os=0.25). Scaled to sum to 1; "
+                    "unnamed weights keep their default.")
 
     t = sub.add_parser("translate", help="Translate a discovery export into a Terraform project.")
     t.add_argument("input", help="Path to an inventory export (.xlsx/.csv): RVTools, Hyper-V, CMDB, cloud.")
@@ -550,6 +561,7 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("input", help="Path to an inventory export (.xlsx/.csv).")
     r.add_argument("--source", default="auto", help=src_help)
     r.add_argument("--map", default=None, help=map_help)
+    r.add_argument("--weights", type=_weights_arg, default=None, help=weights_help)
     r.set_defaults(func=_cmd_recommend)
 
     a = sub.add_parser("assess", help="Assess an estate's migration readiness (risks, cost, data gaps).")
@@ -571,6 +583,7 @@ def build_parser() -> argparse.ArgumentParser:
     rp.add_argument("--name", default=None, help="Project name (defaults to input filename).")
     rp.add_argument("--region", default=None, help="Target region/location (defaults per cloud).")
     rp.add_argument("--no-recommend", action="store_true", help="Skip the 3-cloud recommendation section.")
+    rp.add_argument("--weights", type=_weights_arg, default=None, help=weights_help)
     rp.add_argument("--out", default="executive-report.html", help="Output HTML path.")
     rp.add_argument("--pdf", action="store_true",
                     help="Render a PDF instead of HTML. Needs `pip install 'iactranslate[pdf]'`; "

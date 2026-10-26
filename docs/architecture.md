@@ -32,7 +32,9 @@ would violate one, that's a signal the change is wrong — not the principle.
    the estate came from VMware, Hyper-V, a CMDB, or a cloud.
 
 3. **Cloud neutral.** The cloud recommendation never favors a provider. Weights
-   are explicit and inspectable; no vendor gets a thumb on the scale.
+   are explicit and inspectable; no vendor gets a thumb on the scale. A caller
+   can supply its own weights, and a ranking made that way is labelled custom
+   rather than presented as the neutral one (ADR 0071).
 
 4. **Validation before generation.** An invalid plan never produces IaC. The
    validation layer is a gate, not a warning.

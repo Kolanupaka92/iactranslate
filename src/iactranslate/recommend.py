@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from .agents import build_migration_plan
 from .config import MAX_VMS
@@ -87,9 +87,49 @@ class ScoringWeights(BaseModel):
     ranking checkable by hand.
     """
 
-    cost: float = Field(description="Weight applied to cost_score")
-    fit: float = Field(description="Weight applied to fit_score")
-    os: float = Field(description="Weight applied to os_score")
+    cost: float = Field(default=W_COST, ge=0, description="Weight applied to cost_score")
+    fit: float = Field(default=W_FIT, ge=0, description="Weight applied to fit_score")
+    os: float = Field(default=W_OS, ge=0, description="Weight applied to os_score")
+
+    @model_validator(mode="after")
+    def _normalize(self) -> "ScoringWeights":
+        """Scale to sum to 1, so `weighted_score` stays on a 0-1 scale.
+
+        Normalising instead of rejecting lets someone say what they mean —
+        `cost=1, fit=2, os=2` — and the response carries the scaled values, so
+        what was actually applied is never in doubt.
+        """
+        total = self.cost + self.fit + self.os
+        if total <= 0:
+            raise ValueError("at least one scoring weight must be greater than zero")
+        self.cost, self.fit, self.os = (round(w / total, 4) for w in (self.cost, self.fit, self.os))
+        return self
+
+    @property
+    def is_default(self) -> bool:
+        return (self.cost, self.fit, self.os) == (W_COST, W_FIT, W_OS)
+
+    @classmethod
+    def parse(cls, spec: str) -> "ScoringWeights":
+        """`cost=0.2,fit=0.4,os=0.4` -> weights. Unnamed weights keep their default."""
+        values: Dict[str, float] = {}
+        for part in filter(None, (p.strip() for p in spec.split(","))):
+            key, sep, raw = part.partition("=")
+            key = key.strip().lower()
+            if not sep or key not in ("cost", "fit", "os"):
+                raise ValueError(f"expected cost=, fit= or os=, got {part!r}")
+            try:
+                values[key] = float(raw)
+            except ValueError:
+                raise ValueError(f"{key} weight must be a number, got {raw.strip()!r}") from None
+        try:
+            return cls(**values)
+        except ValidationError as e:
+            # One readable line instead of pydantic's multi-line report.
+            err = e.errors()[0]
+            where = ".".join(str(p) for p in err["loc"])
+            msg = err["msg"].removeprefix("Value error, ")
+            raise ValueError(f"{where} weight: {msg}" if where else msg) from None
 
 
 class Recommendation(BaseModel):
@@ -110,8 +150,12 @@ class Recommendation(BaseModel):
                     "than omitted, so their absence from the table is not read as "
                     "\"not an option\".",
     )
-    weights: ScoringWeights = Field(
-        default_factory=lambda: ScoringWeights(cost=W_COST, fit=W_FIT, os=W_OS)
+    weights: ScoringWeights = Field(default_factory=ScoringWeights)
+    custom_weights: bool = Field(
+        default=False,
+        description="True when the caller supplied weights. A ranking under custom "
+                    "weights answers a different question than the default one, and "
+                    "must not be presented as the tool's neutral recommendation.",
     )
     notes: List[str] = Field(default_factory=list)
 
@@ -169,7 +213,13 @@ def _unsupported_count(target, vms: List[NormalizedVM]) -> int:
     return count
 
 
-def recommend(vms: List[NormalizedVM], targets: Optional[List[str]] = None) -> Recommendation:
+def recommend(
+    vms: List[NormalizedVM],
+    targets: Optional[List[str]] = None,
+    weights: Optional[ScoringWeights] = None,
+) -> Recommendation:
+    w = weights or ScoringWeights()
+    custom = not w.is_default
     if len(vms) > MAX_VMS:
         raise ValueError(f"Inventory has {len(vms)} VMs, exceeding the limit of {MAX_VMS}")
     requested = targets or list_targets()
@@ -238,7 +288,7 @@ def recommend(vms: List[NormalizedVM], targets: Optional[List[str]] = None) -> R
         os_score = r["os"]
         unsupported = r["unsupported"]
         eligible = unsupported == 0
-        weighted = round(W_COST * cost_score + W_FIT * fit_score + W_OS * os_score, 4)
+        weighted = round(w.cost * cost_score + w.fit * fit_score + w.os * os_score, 4)
         if not eligible:
             # A disqualified cloud scores zero, not "well but excluded". Leaving
             # it a competitive number produced a table whose ranking contradicted
@@ -357,6 +407,12 @@ def recommend(vms: List[NormalizedVM], targets: Optional[List[str]] = None) -> R
             "Close call — the top two clouds are within the scoring noise; "
             "adjusting the cost/fit/OS weights could flip the recommendation."
         )
+    if custom:
+        notes.insert(0,
+            f"Ranked under custom weights (cost {w.cost}, fit {w.fit}, OS {w.os}) "
+            f"instead of the defaults (cost {W_COST}, fit {W_FIT}, OS {W_OS}). "
+            "This answers the question those weights ask, not the neutral one."
+        )
 
     os_note = (
         f"{windows}/{total} Windows"
@@ -368,13 +424,14 @@ def recommend(vms: List[NormalizedVM], targets: Optional[List[str]] = None) -> R
         f"{decisiveness} lead of {margin:.2f} over #{2 if len(scores) > 1 else 1}). "
         f"Estate is {os_note}; cheapest option is {lowest_cost_cloud.upper()} at "
         f"${cheapest_cost:.2f}/mo (${cheapest_cost * 12:,.0f}/yr). "
-        f"Weights — cost {W_COST}, fit {W_FIT}, OS {W_OS}."
+        f"{'Custom weights' if custom else 'Weights'} — cost {w.cost}, fit {w.fit}, OS {w.os}."
     )
     return Recommendation(
         recommended=winner.cloud, summary=summary, ranked=scores,
         decisiveness=decisiveness, margin=margin,
         runner_up=contenders[1].cloud if len(contenders) > 1 else None,
-        weights=ScoringWeights(cost=W_COST, fit=W_FIT, os=W_OS),
+        weights=w,
+        custom_weights=custom,
         notes=notes,
         not_ranked=not_ranked,
     )

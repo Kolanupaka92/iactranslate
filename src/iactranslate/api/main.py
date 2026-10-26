@@ -27,7 +27,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Response, UploadFile
+from fastapi import APIRouter, Body, Depends, FastAPI, HTTPException, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 from pydantic import BaseModel, field_validator
@@ -54,7 +54,7 @@ from ..pdf import PdfUnavailable
 from ..pdf import render as render_pdf
 from ..pipeline import run_pipeline
 from ..policy import PolicyViolationError, list_policies
-from ..recommend import recommend
+from ..recommend import ScoringWeights, recommend
 from ..renderers import list_renderers, renderers_for
 from ..renderers import supports as renderer_supports
 from ..sources import list_sources, resolve_source
@@ -1171,16 +1171,22 @@ def get_audit(
 
 
 @router.post("/projects/{pid}/recommend", dependencies=[Depends(require_api_key), Depends(limit_writes)])
-def recommend_cloud(pid: str, user: Optional[User] = Depends(current_user)) -> dict:
+def recommend_cloud(
+    pid: str,
+    weights: Optional[ScoringWeights] = Body(default=None),
+    user: Optional[User] = Depends(current_user),
+) -> dict:
     # A recommendation is read-only analysis, but it builds a plan per cloud —
     # five full pipelines of real CPU — so it is gated as work, not as a read.
+    # `weights` is optional: no body means the default, neutral weighting, so
+    # existing callers are unaffected. Invalid weights are a 422 from the model.
     project = _require_project(pid, user, Role.EDITOR)
     if project.upload_path is None:
         raise HTTPException(400, "no file uploaded for this project")
 
     vms = _parse_inventory(project)
     try:
-        return recommend(vms).model_dump()
+        return recommend(vms, weights=weights).model_dump()
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
 

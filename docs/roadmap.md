@@ -135,6 +135,11 @@ in CI on `main`.
   cluster) used to merge, silently dropping one from the migration; both are now
   kept, with stable UUID-derived suffixes. A rename is reported as a rename
   (see [ADR 0070](adr/0070-key-vm-identity-on-the-vm-uuid.md))
+- ✅ **User-adjustable scoring weights** — `--weights cost=…,fit=…,os=…` on the
+  CLI and a JSON body on `POST /projects/{id}/recommend`. Weights are scaled to
+  sum to 1, eligibility still dominates, and a ranking under custom weights is
+  labelled as such everywhere it appears
+  (see [ADR 0071](adr/0071-user-adjustable-scoring-weights.md))
 - ✅ Model schema versioning (`NormalizedVM` / `MigrationPlan`)
 
 **Surfaces & delivery**
@@ -186,8 +191,10 @@ backends and integrations that plug into them, via the
   no load to scale for; writing it speculatively would be several hundred lines
   verifiable only through CI round-trips. Build it when a deployment needs a
   second replica, not before.
-- ◻ **User-adjustable scoring weights** — a cost-insensitive regulated estate
-  weights fit/OS far higher than 0.45/0.30/0.25; exposing the weights invites it
+- ◻ **Weight controls in the web console** — the API and CLI accept custom
+  scoring weights ([ADR 0071](adr/0071-user-adjustable-scoring-weights.md)) and
+  the console already displays whatever weights a ranking used, but has no
+  control to set them
 - ◻ **`moved` blocks for renamed machines** — the diff now identifies a rename by
   VM UUID ([ADR 0070](adr/0070-key-vm-identity-on-the-vm-uuid.md)), but the
   Terraform label still follows the name, so a rename plans as destroy-and-recreate.

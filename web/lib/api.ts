@@ -123,6 +123,8 @@ export interface Recommendation {
   /** The cloud ranked #2 — what `margin` is measured against. */
   runner_up?: string | null;
   weights: ScoringWeights;
+  /** True when the caller supplied weights; the ranking is then not the neutral one. */
+  custom_weights?: boolean;
   notes: string[];
 }
 
