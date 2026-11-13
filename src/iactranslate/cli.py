@@ -21,6 +21,7 @@ from .exec_report import build_executive_report
 from .identity import IdentityError
 from .identity import parse_mode as parse_identity_mode
 from .landing_zone import DEFAULT_CIDR, LandingZone, LandingZoneError
+from .moves import moved_blocks
 from .normalize import normalize
 from .pdf import PdfUnavailable
 from .pdf import render as render_pdf
@@ -461,8 +462,21 @@ def _cmd_diff(args: argparse.Namespace) -> int:
         return 2
 
     d = diff_inventories(before, after)
+    moved = None
+    if args.moved_tf:
+        try:
+            get_target(args.target)
+        except UnknownTargetError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 2
+        moved = moved_blocks(before, after, target=args.target, region=args.region)
+        if moved.moves:
+            Path(args.moved_tf).write_text(moved.to_hcl())
     if args.json:
-        print(json.dumps(d.model_dump(mode="json"), indent=2))
+        out = d.model_dump(mode="json")
+        if moved is not None:
+            out["moved"] = moved.model_dump(mode="json")
+        print(json.dumps(out, indent=2))
         return 0
 
     print(f"Inventory diff: {args.before} → {args.after}\n")
@@ -485,6 +499,23 @@ def _cmd_diff(args: argparse.Namespace) -> int:
         print(f"  ~ {wc.vm_name} ({deltas})")
     if not d.has_changes:
         print("  No changes — inventories are identical.")
+    if moved is not None:
+        print()
+        if moved.moves:
+            print(f"  Wrote {len(moved.moves)} `moved` blocks for {args.target} to {args.moved_tf}.")
+            print("  Add it to the new Terraform so renamed machines are moved, not recreated.")
+        elif not moved.conflicts:
+            print(f"  No resource addresses changed for {args.target}; no `moved` blocks needed.")
+        for c in moved.conflicts:
+            print("  A rename reuses another machine's address, which `moved` blocks cannot")
+            print("  express (Terraform chains them). Run these against the old state instead:")
+            for cmd in c.state_mv:
+                print(f"    {cmd}")
+        if moved.unmatched_removed:
+            print(f"  {len(moved.unmatched_removed)} resource(s) will still be destroyed "
+                  "(no rename explains them):")
+            for a in moved.unmatched_removed:
+                print(f"    - {a}")
     return 0
 
 
@@ -634,6 +665,13 @@ def build_parser() -> argparse.ArgumentParser:
     d.add_argument("--source", default="auto", help=src_help)
     d.add_argument("--map", default=None, help=map_help)
     d.add_argument("--json", action="store_true", help="Emit the diff as JSON.")
+    d.add_argument("--moved-tf", default=None, metavar="PATH",
+                   help="Write Terraform `moved` blocks for machines renamed between the "
+                        "snapshots (matched by VM UUID), so they are moved, not recreated.")
+    d.add_argument("--target", default="aws",
+                   help=f"Target cloud the Terraform was generated for, with --moved-tf "
+                        f"({', '.join(list_targets())}).")
+    d.add_argument("--region", default=None, help="Target region used for that Terraform.")
     d.set_defaults(func=_cmd_diff)
 
     demo = sub.add_parser(

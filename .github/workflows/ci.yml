@@ -81,13 +81,13 @@ jobs:
           pip install -e ".[dev]"
       - name: Generate test fixtures
         run: python scripts/make_fixtures.py
-      - name: Validate generated Terraform against every target's real provider
+      - name: Validate generated Terraform (and moved blocks) against every target's real provider
         env:
           IACTRANSLATE_E2E_TOFU: "1"
           TF_PLUGIN_CACHE_DIR: /tmp/tf-plugin-cache
         run: |
           mkdir -p /tmp/tf-plugin-cache
-          pytest tests/test_e2e.py::test_generated_terraform_validates -q
+          pytest tests/test_e2e.py::test_generated_terraform_validates tests/test_e2e.py::test_generated_moved_blocks_validate -q
 
   web:
     runs-on: ubuntu-latest

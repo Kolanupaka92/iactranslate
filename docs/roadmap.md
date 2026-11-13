@@ -142,6 +142,12 @@ in CI on `main`.
   sliders that show the share each weight will actually get, a re-rank and a
   reset, and a "Custom weights" badge on any non-default ranking
   (see [ADR 0071](adr/0071-user-adjustable-scoring-weights.md))
+- ✅ **A renamed machine is moved, not recreated** — `iactranslate diff --moved-tf`
+  writes Terraform `moved` blocks for every resource of a machine renamed at the
+  source (matched by VM UUID), with no state kept between runs. A rename that
+  hands one machine's address to another, which Terraform cannot express as
+  blocks, comes back as an ordered `state mv` sequence instead
+  (see [ADR 0072](adr/0072-moved-blocks-for-renamed-machines.md))
 - ✅ Model schema versioning (`NormalizedVM` / `MigrationPlan`)
 
 **Surfaces & delivery**
@@ -193,10 +199,6 @@ backends and integrations that plug into them, via the
   no load to scale for; writing it speculatively would be several hundred lines
   verifiable only through CI round-trips. Build it when a deployment needs a
   second replica, not before.
-- ◻ **`moved` blocks for renamed machines** — the diff now identifies a rename by
-  VM UUID ([ADR 0070](adr/0070-key-vm-identity-on-the-vm-uuid.md)), but the
-  Terraform label still follows the name, so a rename plans as destroy-and-recreate.
-  Emitting `moved` blocks needs the previous run's labels, which aren't kept
 - ◻ **Emit reusable modules with `for_each`** — the per-environment/tier split
   ([ADR 0032](adr/0032-split-compute-output-for-reviewability.md)) made output
   reviewable; modules would compress ~8k-line files dramatically, but change

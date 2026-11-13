@@ -312,9 +312,14 @@ A `translate` run also writes the assessment into the project package
 iactranslate report rvtools.xlsx --target aws --out report.html
 iactranslate report rvtools.xlsx --no-recommend           # skip the 3-cloud compare
 
-# Drift between two inventory snapshots (added/removed/resized + aggregate deltas)
+# Drift between two inventory snapshots (added/removed/renamed/resized + aggregate deltas)
 iactranslate diff old-inventory.csv new-inventory.csv
 iactranslate diff old.csv new.csv --json
+
+# Machines renamed at the source (matched by VM UUID): write Terraform `moved`
+# blocks so the renamed resources are moved in state, not destroyed and recreated.
+# Use the target/region the Terraform was generated for (ADR 0072).
+iactranslate diff old.xlsx new.xlsx --moved-tf moved.tf --target aws
 ```
 
 ### 6.3d Policy enforcement

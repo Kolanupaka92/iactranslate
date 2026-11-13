@@ -51,8 +51,9 @@ failure this change exists to prevent, at much larger scale.
 
 What that leaves: when a machine is renamed between two runs, its label still
 changes. The diff now *says* it is a rename, which is the information needed to
-write a Terraform `moved` block. Generating those blocks needs the previous
-run's labels, which the tool does not keep, so it is a separate piece of work.
+write a Terraform `moved` block. This ADR assumed generating them would need
+the previous run's labels. It doesn't: labels are a pure function of the
+inventory, so the old snapshot reproduces them. ADR 0072 generates them.
 
 Estates without UUIDs (CMDB exports, Hyper-V, flat CSVs) behave exactly as
 before.

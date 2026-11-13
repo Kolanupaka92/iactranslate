@@ -124,6 +124,47 @@ def test_generated_terraform_validates(target, rvtools_path, tmp_path):
     assert "configuration is valid" in val.stdout.lower()
 
 
+@pytest.mark.skipif(not _ENABLED, reason="set IACTRANSLATE_E2E_TOFU=1 and install tofu/terraform")
+@pytest.mark.parametrize("target", PROVIDER_VALIDATED_TARGETS)
+def test_generated_moved_blocks_validate(target, tmp_path):
+    """`moved` blocks for a renamed machine, in the new config, pass the real
+    provider. `validate` rejects a block whose destination is undeclared or of
+    another resource type — exactly the mistakes address pairing could make."""
+    from iactranslate.agents import build_migration_plan
+    from iactranslate.generator.renderer import build_files
+    from iactranslate.moves import moved_blocks
+    from iactranslate.normalize import normalize
+    from iactranslate.parsers import parse
+    from iactranslate.targets import get_target
+
+    before = normalize(parse(str(FIXTURES / "rvtools_realistic.xlsx")))
+    after = [v.model_copy(update={"vm_name": "prod-web-renamed"}) if v.vm_name == "prod-web-01" else v
+             for v in before]
+    moved = moved_blocks(before, after, target=target)
+    assert moved.moves, f"{target}: a rename produced no moved blocks"
+
+    out = tmp_path / target
+    out.mkdir()
+    plan = build_migration_plan(after, project_name="moved", target=get_target(target))
+    for name, content in build_files(plan, get_target(target)).items():
+        (out / name).parent.mkdir(parents=True, exist_ok=True)
+        (out / name).write_text(content)
+    (out / "moved.tf").write_text(moved.to_hcl())
+
+    _CACHE.mkdir(parents=True, exist_ok=True)
+    env = {**os.environ, "TF_PLUGIN_CACHE_DIR": str(_CACHE), "TF_IN_AUTOMATION": "1"}
+    init = subprocess.run(
+        [_TOFU, "init", "-backend=false", "-no-color", "-input=false"],
+        cwd=out, env=env, capture_output=True, text=True, timeout=300,
+    )
+    assert init.returncode == 0, init.stderr
+    val = subprocess.run(
+        [_TOFU, "validate", "-no-color"],
+        cwd=out, env=env, capture_output=True, text=True, timeout=120,
+    )
+    assert val.returncode == 0, val.stdout + val.stderr
+
+
 # --- malformed uploads are the caller's problem, and say so ------------------
 
 def _api_client(tmp_path, monkeypatch):
