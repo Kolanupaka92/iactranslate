@@ -35,6 +35,7 @@ import {
   type Recommendation,
   type Renderer,
   type RunResult,
+  type ScoringWeights,
   type Source,
   type Target,
   type TargetInfo,
@@ -57,7 +58,7 @@ function rendererFor(
   return "terraform";
 }
 
-type Busy = "create" | "upload" | "assess" | "recommend" | "switch" | "run" | "report" | null;
+type Busy = "create" | "upload" | "assess" | "recommend" | "reweight" | "switch" | "run" | "report" | null;
 type StepState = "pending" | "active" | "done";
 
 /**
@@ -290,6 +291,23 @@ export default function Home() {
       setBusy(null);
     }
   }, [project]);
+
+  // null = back to the API's neutral defaults.
+  const handleReweight = useCallback(
+    async (weights: ScoringWeights | null) => {
+      if (!project) return;
+      setBusy("reweight");
+      setError(null);
+      try {
+        setRec(await recommendClouds(project.id, weights ?? undefined));
+      } catch (e) {
+        fail(e);
+      } finally {
+        setBusy(null);
+      }
+    },
+    [project],
+  );
 
   const handleUseCloud = useCallback(
     async (t: Target) => {
@@ -615,7 +633,13 @@ export default function Home() {
             )}
             {rec && (
               <div className="mt-4">
-                <RecommendTable rec={rec} onUseCloud={handleUseCloud} busy={busy === "switch"} />
+                <RecommendTable
+                  rec={rec}
+                  onUseCloud={handleUseCloud}
+                  onReweight={handleReweight}
+                  busy={busy === "switch"}
+                  reweighting={busy === "reweight"}
+                />
               </div>
             )}
           </Section>

@@ -138,7 +138,9 @@ in CI on `main`.
 - ✅ **User-adjustable scoring weights** — `--weights cost=…,fit=…,os=…` on the
   CLI and a JSON body on `POST /projects/{id}/recommend`. Weights are scaled to
   sum to 1, eligibility still dominates, and a ranking under custom weights is
-  labelled as such everywhere it appears
+  labelled as such everywhere it appears. The console's cloud comparison has
+  sliders that show the share each weight will actually get, a re-rank and a
+  reset, and a "Custom weights" badge on any non-default ranking
   (see [ADR 0071](adr/0071-user-adjustable-scoring-weights.md))
 - ✅ Model schema versioning (`NormalizedVM` / `MigrationPlan`)
 
@@ -191,10 +193,6 @@ backends and integrations that plug into them, via the
   no load to scale for; writing it speculatively would be several hundred lines
   verifiable only through CI round-trips. Build it when a deployment needs a
   second replica, not before.
-- ◻ **Weight controls in the web console** — the API and CLI accept custom
-  scoring weights ([ADR 0071](adr/0071-user-adjustable-scoring-weights.md)) and
-  the console already displays whatever weights a ranking used, but has no
-  control to set them
 - ◻ **`moved` blocks for renamed machines** — the diff now identifies a rename by
   VM UUID ([ADR 0070](adr/0070-key-vm-identity-on-the-vm-uuid.md)), but the
   Terraform label still follows the name, so a rename plans as destroy-and-recreate.

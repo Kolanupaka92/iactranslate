@@ -45,5 +45,10 @@ so a tuned ranking must never be passed off as that.
   half as much?" with the tool, instead of reweighting a spreadsheet by hand.
 - The executive report built from a custom ranking carries the custom-weights
   note, so a client reading it can see whose priorities it reflects.
-- The web console has no control for setting weights yet. That is UI work and
-  is on the roadmap. The API and CLI are enough to use the feature today.
+- The web console's cloud comparison has an "Adjust weights" panel. Its
+  sliders show the *scaled* share each weight will get, since showing raw
+  slider values would let 0.5 / 0.5 / 0.5 read as 50% each. It has a re-rank
+  button and a reset that asks the API for its defaults, rather than keeping a
+  second copy of them in the browser. Any non-default ranking carries a
+  "Custom weights" badge, so a screenshot cannot pass as the neutral
+  recommendation.

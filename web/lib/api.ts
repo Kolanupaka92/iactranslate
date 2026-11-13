@@ -263,8 +263,22 @@ export function runProject(projectId: string): Promise<ProjectSummary> {
   return request(`/projects/${projectId}/run`, { method: "POST" });
 }
 
-export function recommendClouds(projectId: string): Promise<Recommendation> {
-  return request(`/projects/${projectId}/recommend`, { method: "POST" });
+/** Rank every cloud. With no `weights` the API uses its neutral defaults; with
+ *  them, the ranking comes back flagged `custom_weights` (ADR 0071). */
+export function recommendClouds(
+  projectId: string,
+  weights?: ScoringWeights,
+): Promise<Recommendation> {
+  return request(
+    `/projects/${projectId}/recommend`,
+    weights
+      ? {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(weights),
+        }
+      : { method: "POST" },
+  );
 }
 
 export function assessEstate(projectId: string): Promise<Assessment> {
