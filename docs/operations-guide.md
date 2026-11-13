@@ -263,7 +263,7 @@ iactranslate translate my-cmdb.csv --source generic \
 # Pulumi output (AWS) instead of Terraform, with a GitOps CI/CD workflow
 iactranslate translate rvtools.xlsx --target aws --renderer pulumi --gitops --out ./out-pl
 
-# Terraform with for_each (AWS, opt-in): one resource per kind over a per-VM map,
+# Terraform with for_each (AWS/Azure/GCP, opt-in): one resource per kind over a per-VM map,
 # plus migrate-from-classic.tf so an estate already applied with the default
 # layout is moved, not recreated (ADR 0073)
 iactranslate translate rvtools.xlsx --target aws --renderer terraform-foreach --out ./out-fe

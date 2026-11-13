@@ -39,18 +39,84 @@ def _addresses(files, rtype):
             for t, label in _LABEL.findall(body) if t == rtype}
 
 
-def test_it_is_offered_for_aws_only():
-    assert "terraform-foreach" in renderers_for("aws")
+SUPPORTED = ("aws", "azure", "gcp")
+
+
+def test_it_is_offered_where_templates_exist():
     for t in list_targets():
-        if t != "aws":
-            assert "terraform-foreach" not in renderers_for(t)
+        assert ("terraform-foreach" in renderers_for(t)) == (t in SUPPORTED), t
 
 
 def test_other_clouds_refuse_rather_than_render_classic():
     vms = normalize(parse("tests/fixtures/rvtools_realistic.xlsx"))
-    gcp = build_migration_plan(vms, "x", get_target("gcp"))
+    oci = build_migration_plan(vms, "x", get_target("oci"))
     with pytest.raises(RendererNotSupportedError):
-        render("terraform-foreach", gcp, get_target("gcp"))
+        render("terraform-foreach", oci, get_target("oci"))
+
+
+# --- every supported cloud ------------------------------------------------------
+
+
+def _both(cloud):
+    vms = normalize(parse("tests/fixtures/rvtools_realistic.xlsx"))
+    plan = build_migration_plan(vms, "fe", get_target(cloud))
+    return plan, render("terraform", plan, get_target(cloud)), \
+        render("terraform-foreach", plan, get_target(cloud))
+
+
+@pytest.mark.parametrize("cloud", SUPPORTED)
+def test_every_per_machine_resource_is_migrated(cloud):
+    """Each classic per-machine or per-volume address moves to its map entry,
+    for every resource type, and nothing else moves."""
+    plan, classic, foreach = _both(cloud)
+    machines = {c.resource_name for c in plan.compute}
+    moves = dict(_MOVED.findall(foreach["migrate-from-classic.tf"]))
+    expected = {}
+    for body in classic.values():
+        for rtype, label in _LABEL.findall(body):
+            if label in machines:
+                expected[f"{rtype}.{label}"] = f'{rtype}.vm["{label}"]'
+            elif "_data_" in label and label.rsplit("_data_", 1)[0] in machines:
+                expected[f"{rtype}.{label}"] = f'{rtype}.data["{label}"]'
+    assert moves == expected
+    # And every destination is a declared map in the for_each render.
+    declared = {(t, n) for b in foreach.values() for t, n in _LABEL.findall(b)}
+    for dest in moves.values():
+        rtype, rest = dest.split(".", 1)
+        assert (rtype, rest.split("[")[0]) in declared, dest
+
+
+@pytest.mark.parametrize("cloud", SUPPORTED)
+def test_only_compute_storage_and_references_differ(cloud):
+    _, classic, foreach = _both(cloud)
+    for name, body in classic.items():
+        if name.startswith(("compute", "storage", "loadbalancer", "outputs", "imports")):
+            continue
+        assert foreach.get(name) == body, f"{cloud}/{name} differs between layouts"
+
+
+def test_azure_splits_windows_and_linux_and_filters_optional_resources():
+    plan, _, foreach = _both("azure")
+    compute = foreach["compute.tf"]
+    for resource, source in (("azurerm_windows_virtual_machine", "local.windows_vms"),
+                             ("azurerm_linux_virtual_machine", "local.linux_vms"),
+                             ("azurerm_public_ip", "local.public_vms"),
+                             ("azurerm_network_interface_backend_address_pool_association",
+                              "local.pooled_vms")):
+        assert re.search(rf'resource "{resource}" "vm" {{\n  for_each = {source}\n', compute), resource
+    # Every row carries the same attributes — a for_each map needs one type.
+    rows = re.findall(r'^    "[a-z0-9_]+" = \{\n(.*?)\n    \}', compute, re.MULTILINE | re.DOTALL)
+    shapes = {tuple(re.findall(r"^\s+(\w+)\s+=", r, re.MULTILINE)) for r in rows}
+    assert len(rows) == len(plan.compute) and len(shapes) == 1
+    # Attachments resolve through one merged lookup, never a two-branch conditional.
+    assert "virtual_machine_id = local.vm_ids[each.value.vm]" in foreach["storage.tf"]
+
+
+def test_gcp_external_ip_is_a_dynamic_block():
+    _, classic, foreach = _both("gcp")
+    public = len(re.findall(r"access_config \{", "".join(classic.values())))
+    assert public and 'dynamic "access_config"' in foreach["compute.tf"]
+    assert foreach["compute.tf"].count("external_ip  = true") == public
 
 
 def test_one_instance_resource_with_a_row_per_machine(plan, foreach):

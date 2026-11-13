@@ -26,7 +26,7 @@ Three things made it a decision rather than a refactor:
 
 ## Decision
 
-- **Opt-in, as a renderer:** `--renderer terraform-foreach`, registered AWS-only
+- **Opt-in, as a renderer:** `--renderer terraform-foreach`, registered for AWS, Azure and GCP
   in the renderer registry. Validation, `GET /targets` and the console's format
   picker pick it up from there. The default `terraform` output is
   **byte-for-byte unchanged**. Three estates (realistic, brownfield, 75-VM
@@ -66,7 +66,11 @@ Three things made it a decision rather than a refactor:
 
 - Reviewers of large estates read a table of machines and one resource
   definition, not hundreds of near-identical blocks.
-- AWS only for now. Each other target needs its own two templates and its own
-  migration map. That is on the roadmap.
+- Extended to Azure (Windows/Linux VMs split into filtered maps; disk
+  attachments resolve through one merged `vm_ids` lookup, because a two-branch
+  conditional would index a VM that does not exist) and GCP (the optional
+  external IP is a `dynamic` block). The migration file is now derived by
+  rendering the classic layout alongside, so no per-cloud list can miss a
+  resource. OCI, DigitalOcean, Nutanix and Proxmox remain on the roadmap.
 - Two Terraform layouts now exist for AWS. Both are generated from the same
   plan and validated by the same real-provider job, which keeps that affordable.

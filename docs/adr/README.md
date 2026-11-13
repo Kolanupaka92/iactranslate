@@ -80,6 +80,6 @@ Format: [Michael Nygard's ADR template](https://cognitect.com/blog/2011/11/15/do
 | [0070](0070-key-vm-identity-on-the-vm-uuid.md) | De-duplication, disk/NIC joins and snapshot diffs key on the RVTools VM UUID; same-named machines are both kept, and a rename is reported as one. Terraform labels stay name-derived | Accepted |
 | [0071](0071-user-adjustable-scoring-weights.md) | Callers can set the recommendation's cost/fit/OS weights; they are normalised, eligibility still dominates, and a custom ranking is always labelled custom | Accepted |
 | [0072](0072-moved-blocks-for-renamed-machines.md) | `diff --moved-tf` generates Terraform `moved` blocks for machines renamed at the source, from the two snapshots alone; renames that reuse an address become a `state mv` sequence, because Terraform chains blocks | Accepted |
-| [0073](0073-for-each-layout.md) | Opt-in `terraform-foreach` renderer (AWS first): one resource per kind over per-machine maps keyed by the classic labels, shipped with `moved` blocks from the classic layout; default output unchanged | Accepted |
+| [0073](0073-for-each-layout.md) | Opt-in `terraform-foreach` renderer (AWS, Azure, GCP): one resource per kind over per-machine maps keyed by the classic labels, shipped with `moved` blocks from the classic layout; default output unchanged | Accepted |
 
 See also the [Architecture & Design](../architecture.md) overview.

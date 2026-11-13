@@ -125,13 +125,14 @@ def test_generated_terraform_validates(target, rvtools_path, tmp_path):
 
 
 @pytest.mark.skipif(not _ENABLED, reason="set IACTRANSLATE_E2E_TOFU=1 and install tofu/terraform")
-def test_foreach_layout_validates(tmp_path):
-    """The opt-in for_each layout, migration file included, passes the real AWS
+@pytest.mark.parametrize("target", ["aws", "azure", "gcp"])
+def test_foreach_layout_validates(target, tmp_path):
+    """The opt-in for_each layout, migration file included, passes the real
     provider. `validate` checks every `moved` block lands on a declared
     for_each instance of the right type."""
-    out = tmp_path / "foreach"
+    out = tmp_path / target
     run_pipeline(input_path=str(FIXTURES / "rvtools_realistic.xlsx"), project_name="tofu",
-                 out_dir=str(out), target="aws", renderer="terraform-foreach")
+                 out_dir=str(out), target=target, renderer="terraform-foreach")
     assert (out / "migrate-from-classic.tf").exists()
 
     _CACHE.mkdir(parents=True, exist_ok=True)

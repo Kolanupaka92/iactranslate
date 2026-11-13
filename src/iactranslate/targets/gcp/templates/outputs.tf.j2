@@ -17,7 +17,7 @@ output "instance_self_links" {
   description = "Map of source VM name to migrated instance self_link."
   value = {
 {% for c in compute %}
-    "{{ c.vm_name }}" = google_compute_instance.{{ c.resource_name }}.self_link
+    "{{ c.vm_name }}" = google_compute_instance.{{ instance_addr[c.vm_name] }}.self_link
 {% endfor %}
   }
 }
@@ -26,7 +26,7 @@ output "instance_internal_ips" {
   description = "Map of source VM name to internal IP."
   value = {
 {% for c in compute %}
-    "{{ c.vm_name }}" = google_compute_instance.{{ c.resource_name }}.network_interface[0].network_ip
+    "{{ c.vm_name }}" = google_compute_instance.{{ instance_addr[c.vm_name] }}.network_interface[0].network_ip
 {% endfor %}
   }
 }

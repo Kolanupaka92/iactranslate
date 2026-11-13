@@ -22,7 +22,7 @@ resource "google_compute_target_pool" "{{ lb.resource_name }}" {
   instances = [
 {% for c in compute %}
 {% if c.vm_name in lb.targets %}
-    google_compute_instance.{{ c.resource_name }}.self_link,
+    google_compute_instance.{{ instance_addr[c.vm_name] }}.self_link,
 {% endif %}
 {% endfor %}
   ]
@@ -44,7 +44,7 @@ resource "google_compute_instance_group" "{{ lb.resource_name }}" {
   instances = [
 {% for c in compute %}
 {% if c.vm_name in lb.targets %}
-    google_compute_instance.{{ c.resource_name }}.self_link,
+    google_compute_instance.{{ instance_addr[c.vm_name] }}.self_link,
 {% endif %}
 {% endfor %}
   ]
