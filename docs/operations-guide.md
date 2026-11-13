@@ -427,8 +427,9 @@ IACTRANSLATE_CORS_ORIGINS=http://localhost:3000 uvicorn iactranslate.api.main:ap
 cd web && npm install && npm run dev        # http://localhost:3000
 ```
 Wizard: create project (target + source picker) → upload → optional compare → generate →
-download. A one-click sample inventory is provided. Point at another API with
-`NEXT_PUBLIC_API_URL`.
+download. A one-click sample inventory is provided. `npm run dev` talks to the
+API on `localhost:8000`; production builds default to the deployed API. Point at
+another API with `NEXT_PUBLIC_API_URL`.
 
 ### 6.6 Docker
 ```bash
@@ -524,7 +525,7 @@ All env vars (see `src/iactranslate/config.py`):
 | `IACTRANSLATE_GCP_BILLING_API_KEY` | (none) | API key for GCP live pricing (Cloud Billing Catalog). Without it, GCP live falls back to static. |
 | `IACTRANSLATE_PRICE_CACHE` | temp file | Path for the on-disk live-price cache (24h TTL). |
 | `IACTRANSLATE_CORS_ORIGINS` | (none) | Comma-separated allowed origins for the frontend. `*` = all (dev only). |
-| `NEXT_PUBLIC_API_URL` | `http://localhost:8000` | Frontend → API base URL (web/). |
+| `NEXT_PUBLIC_API_URL` | `http://localhost:8000` under `npm run dev`; the deployed Cloud Run API in production builds | Frontend → API base URL (web/). |
 | `IACTRANSLATE_E2E_TOFU` | — | Set `1` to run the real `tofu validate` E2E test. |
 | `TF_PLUGIN_CACHE_DIR` | — | Provider-plugin cache for the tofu E2E (speeds re-runs). |
 

@@ -20,7 +20,7 @@ import type { NextConfig } from "next";
  * rather than taken on faith.
  */
 /**
- * The deployed API. Hardcoded as the default rather than kept only in the host's
+ * The deployed API. Hardcoded as the production default rather than kept only in the host's
  * env store: a `NEXT_PUBLIC_*` value is public by construction — it ships in the
  * browser bundle — so there is nothing to protect by hiding it, and keeping it
  * only in the dashboard cost a deployment. The variable was set but stored
@@ -28,8 +28,21 @@ import type { NextConfig } from "next";
  * called `/v1` on the web app itself and every request 404'd into "not signed
  * in". `||` and a real default remove that failure mode.
  */
-const DEFAULT_API_ORIGIN =
+const DEPLOYED_API_ORIGIN =
   "https://iactranslate-api-1084002294076.us-central1.run.app";
+
+/**
+ * `next dev` talks to a local API unless told otherwise. With the deployed
+ * origin as the only default, following the README — start uvicorn, run
+ * `npm run dev` — silently sent the console's traffic, uploads included, to
+ * production instead of the API the developer had just started. Next sets
+ * NODE_ENV to "development" for `next dev` and "production" for build/start,
+ * so deployed builds keep the default above.
+ */
+const LOCAL_API_ORIGIN = "http://localhost:8000";
+
+const DEFAULT_API_ORIGIN =
+  process.env.NODE_ENV === "development" ? LOCAL_API_ORIGIN : DEPLOYED_API_ORIGIN;
 
 const API_ORIGIN = (process.env.NEXT_PUBLIC_API_URL || DEFAULT_API_ORIGIN).replace(
   /\/$/,
