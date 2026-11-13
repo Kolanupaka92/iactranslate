@@ -22,9 +22,9 @@ def _plan(path, target="aws"):
     return build_migration_plan(vms, "r", get_target(target)), vms
 
 
-def test_registry_lists_all_six():
+def test_registry_lists_every_renderer():
     assert set(list_renderers()) == {
-        "terraform", "pulumi", "cloudformation", "bicep", "cdk", "kubernetes",
+        "terraform", "terraform-foreach", "pulumi", "cloudformation", "bicep", "cdk", "kubernetes",
     }
 
 

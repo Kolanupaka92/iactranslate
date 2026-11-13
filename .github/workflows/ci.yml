@@ -87,7 +87,7 @@ jobs:
           TF_PLUGIN_CACHE_DIR: /tmp/tf-plugin-cache
         run: |
           mkdir -p /tmp/tf-plugin-cache
-          pytest tests/test_e2e.py::test_generated_terraform_validates tests/test_e2e.py::test_generated_moved_blocks_validate -q
+          pytest tests/test_e2e.py::test_generated_terraform_validates tests/test_e2e.py::test_generated_moved_blocks_validate tests/test_e2e.py::test_foreach_layout_validates -q
 
   web:
     runs-on: ubuntu-latest

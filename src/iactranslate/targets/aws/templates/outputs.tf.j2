@@ -17,7 +17,7 @@ output "instance_ids" {
   description = "Map of source VM name to migrated EC2 instance ID."
   value = {
 {% for c in compute %}
-    "{{ c.vm_name }}" = aws_instance.{{ c.resource_name }}.id
+    "{{ c.vm_name }}" = aws_instance.{{ instance_addr[c.vm_name] }}.id
 {% endfor %}
   }
 }
@@ -26,7 +26,7 @@ output "instance_private_ips" {
   description = "Map of source VM name to private IP."
   value = {
 {% for c in compute %}
-    "{{ c.vm_name }}" = aws_instance.{{ c.resource_name }}.private_ip
+    "{{ c.vm_name }}" = aws_instance.{{ instance_addr[c.vm_name] }}.private_ip
 {% endfor %}
   }
 }

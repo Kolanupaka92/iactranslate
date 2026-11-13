@@ -31,6 +31,7 @@ export type Source = "auto" | "vmware" | "hyperv" | "kubernetes" | "cloud" | "ge
 
 export type Renderer =
   | "terraform"
+  | "terraform-foreach"
   | "pulumi"
   | "cloudformation"
   | "bicep"

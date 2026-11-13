@@ -37,6 +37,7 @@ from .pulumi import build_pulumi_files as _build_pulumi
 #: test failing, which is the property that makes declaring it acceptable.
 _SUPPORTED: Dict[str, Optional[frozenset]] = {
     "terraform": None,
+    "terraform-foreach": frozenset({"aws"}),
     "pulumi": frozenset({"aws", "azure", "gcp"}),
     "cloudformation": frozenset({"aws"}),
     "bicep": frozenset({"azure"}),
@@ -47,6 +48,9 @@ _SUPPORTED: Dict[str, Optional[frozenset]] = {
 # name -> (fn(plan, target) -> {filename: content}, human label)
 _RENDERERS: Dict[str, tuple] = {
     "terraform": (_build_terraform, "Terraform (HCL)"),
+    # Opt-in: one resource over a per-machine map instead of a block per
+    # machine (ADR 0073). Same HCL, same state backends, different shape.
+    "terraform-foreach": (_build_terraform, "Terraform with for_each (HCL, AWS-only)"),
     "pulumi": (_build_pulumi, "Pulumi (Python)"),
     "cloudformation": (_build_cloudformation, "CloudFormation (JSON, AWS-only)"),
     "bicep": (_build_bicep, "Bicep (Azure-only)"),
@@ -105,6 +109,8 @@ def render(
         ) from e
     if name == "terraform":
         return fn(plan, target, state_backend, zone, identity, hybrid)
+    if name == "terraform-foreach":
+        return fn(plan, target, state_backend, zone, identity, hybrid, layout="for_each")
     return fn(plan, target)
 
 

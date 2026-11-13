@@ -131,7 +131,7 @@ iactranslate translate tests/fixtures/rvtools_sample.xlsx --target aws --out ./o
 
 Other clouds and formats are auto-detected: `--target azure|gcp|oci|digitalocean`,
 `--source auto|vmware|hyperv|kubernetes|generic|cloud`,
-`--renderer terraform|pulumi|cloudformation|bicep|cdk|kubernetes`, `--gitops`.
+`--renderer terraform|terraform-foreach|pulumi|cloudformation|bicep|cdk|kubernetes`, `--gitops`.
 See the [Operations Guide](docs/operations-guide.md) for the full CLI, API, and web UI.
 
 ## Example: input → output

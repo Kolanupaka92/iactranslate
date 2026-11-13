@@ -542,8 +542,8 @@ def build_parser() -> argparse.ArgumentParser:
     t.add_argument("--name", default=None, help="Project name (defaults to input filename).")
     t.add_argument("--renderer", default="terraform",
                    help=f"IaC output format ({', '.join(list_renderers())}). "
-                        "CloudFormation and CDK are AWS-only; Bicep is Azure-only; "
-                        "Kubernetes (KubeVirt) works for any target.")
+                        "CloudFormation, CDK and terraform-foreach are AWS-only; Bicep is "
+                        "Azure-only; Kubernetes (KubeVirt) works for any target.")
     t.add_argument("--gitops", action="store_true",
                    help="Include a GitOps CI/CD workflow (plan on PR, apply on merge) + .gitignore.")
     t.add_argument("--vpc-cidr", default=None, metavar="CIDR",
@@ -682,7 +682,7 @@ def build_parser() -> argparse.ArgumentParser:
                       help="Target cloud: aws|azure|gcp|oci|digitalocean (default aws).")
     demo.add_argument("--out", default="./iactranslate-demo", help="Output directory.")
     demo.add_argument("--renderer", default="terraform",
-                      help="terraform|pulumi|cloudformation|bicep|cdk|kubernetes.")
+                      help=f"IaC output format ({'|'.join(list_renderers())}).")
     demo.add_argument("--region", default=None, help="Target region (default: the cloud's).")
     demo.add_argument("--name", default=None, help="Project name.")
     demo.add_argument("--zip", action="store_true", help="Also write a .zip of the project.")

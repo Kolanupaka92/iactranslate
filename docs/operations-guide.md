@@ -263,6 +263,11 @@ iactranslate translate my-cmdb.csv --source generic \
 # Pulumi output (AWS) instead of Terraform, with a GitOps CI/CD workflow
 iactranslate translate rvtools.xlsx --target aws --renderer pulumi --gitops --out ./out-pl
 
+# Terraform with for_each (AWS, opt-in): one resource per kind over a per-VM map,
+# plus migrate-from-classic.tf so an estate already applied with the default
+# layout is moved, not recreated (ADR 0073)
+iactranslate translate rvtools.xlsx --target aws --renderer terraform-foreach --out ./out-fe
+
 # CloudFormation output (AWS-only), rendered from the Infrastructure Graph
 iactranslate translate rvtools.xlsx --target aws --renderer cloudformation --out ./out-cfn
 
@@ -280,7 +285,7 @@ kubectl get deployments,statefulsets -A -o json > k8s.json
 iactranslate translate k8s.json --source kubernetes --target aws --out ./out-from-k8s
 ```
 Flags: `--target aws|azure|gcp|oci|digitalocean`, `--source auto|vmware|hyperv|kubernetes|generic|cloud`, `--map`,
-`--region`, `--name`, `--zip`, `--renderer terraform|pulumi|cloudformation|bicep|cdk|kubernetes`
+`--region`, `--name`, `--zip`, `--renderer terraform|terraform-foreach|pulumi|cloudformation|bicep|cdk|kubernetes`
 (CloudFormation and CDK are AWS-only; Bicep is Azure-only; Kubernetes has no
 target restriction), `--gitops` (adds `.github/workflows/*` + `.gitignore`).
 

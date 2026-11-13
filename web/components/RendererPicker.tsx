@@ -16,6 +16,7 @@ import type { Renderer } from "@/lib/api";
  */
 export const RENDERER_LABELS: Record<Renderer, { label: string; blurb: string }> = {
   terraform: { label: "Terraform", blurb: "HCL · works on every cloud" },
+  "terraform-foreach": { label: "Terraform · for_each", blurb: "One resource per kind, a row per VM" },
   pulumi: { label: "Pulumi", blurb: "Python program" },
   cloudformation: { label: "CloudFormation", blurb: "JSON template" },
   bicep: { label: "Bicep", blurb: "Azure-native" },
