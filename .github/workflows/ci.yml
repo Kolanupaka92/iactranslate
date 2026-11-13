@@ -23,11 +23,23 @@ jobs:
         run: ruff check src tests
 
   test:
-    runs-on: ubuntu-latest
+    name: test (${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.9", "3.11", "3.12"]
+        include:
+          # 3.9 is pinned to 24.04: ubuntu-latest (26.04) ships no 3.9 build, so
+          # the job failed at setup without running a test. 3.9 stays supported
+          # because it is the python3 that comes with macOS's developer tools —
+          # the zero-install path for running the CLI on a stock Mac. Revisit
+          # when GitHub retires ubuntu-24.04.
+          - python-version: "3.9"
+            os: ubuntu-24.04
+          - python-version: "3.11"
+            os: ubuntu-latest
+          - python-version: "3.12"
+            os: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
