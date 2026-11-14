@@ -15,7 +15,7 @@ locals {
       image        = "{{ image_refs[c.image_key].image }}"
       root_gib     = {{ c.root_volume_gib }}
       subnet_id    = google_compute_subnetwork.{{ subnet_of[c.vm_name] }}.id
-      external_ip  = {{ "true" if (c.subnet_tier == SubnetTier.PUBLIC and c.vm_name not in fronted_vm_names) else "false" }}
+      external_ip  = {{ "true" if c.vm_name in public_vm_names else "false" }}
 {% if identity_roles %}
       sa_email     = google_service_account.{{ c.tier.value }}.email
 {% endif %}

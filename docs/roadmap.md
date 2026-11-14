@@ -202,7 +202,11 @@ backends and integrations that plug into them, via the
   fixed a subnet-collapse bug this surfaced (see [ADR 0016](adr/0016-terraform-pulumi-placement-from-graph.md))
 - ✅ Kubernetes/KubeVirt — VMs as `VirtualMachine` CRDs, SG ingress as
   `NetworkPolicy`, cloud-agnostic (see [ADR 0017](adr/0017-kubernetes-from-graph.md))
-- ◻ Migrate the rest of Terraform/Pulumi's resource generation onto the graph
+- ✅ **Shared decisions, not a shared renderer** — an audit found one decision still
+  re-derived across renderers (which machines get their own public address: six
+  templates, Pulumi, Bicep). It now lives once in the graph; all renderer output is
+  byte-identical. Moving the rest of Terraform/Pulumi onto the graph fixes nothing
+  and is not planned (see [ADR 0074](adr/0074-shared-decisions-not-a-shared-renderer.md))
 - ◻ **PostgreSQL store / job queue / grants** — deliberately *not* built yet.
   SQLite already removes the actual defect (data loss on restart) and the
   `create_store` / `create_job_queue` / `create_membership` seams make Postgres a

@@ -2,7 +2,7 @@
 # An instance fronted by a load balancer (loadbalancer.tf) gets its public
 # entry point there, not its own public IP.
 {% for c in compute %}
-{% if c.subnet_tier == SubnetTier.PUBLIC and c.vm_name not in fronted_vm_names %}
+{% if c.vm_name in public_vm_names %}
 resource "azurerm_public_ip" "{{ c.resource_name }}" {
   name                = "{{ vm_slug[c.vm_name] }}-pip"
   resource_group_name = azurerm_resource_group.main.name
@@ -25,7 +25,7 @@ resource "azurerm_network_interface" "{{ c.resource_name }}" {
     name                          = "internal"
     subnet_id                     = azurerm_subnet.{{ subnet_of[c.vm_name] }}.id
     private_ip_address_allocation = "Dynamic"
-{% if c.subnet_tier == SubnetTier.PUBLIC and c.vm_name not in fronted_vm_names %}
+{% if c.vm_name in public_vm_names %}
     public_ip_address_id          = azurerm_public_ip.{{ c.resource_name }}.id
 {% endif %}
   }

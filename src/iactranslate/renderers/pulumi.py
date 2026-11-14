@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Dict, List
 
-from ..graph import assign_subnets
+from ..graph import assign_subnets, public_instances
 from ..models import MigrationPlan, SubnetTier, terraform_safe_name
 from ..targets.base import Target
 
@@ -344,6 +344,7 @@ def _azure_main(plan: MigrationPlan, target: Target) -> str:
             for vm_name in lb.targets:
                 backend_pool_ref_by_vm_name[vm_name] = f"pool_{lb.resource_name}.id"
 
+    public_vms = public_instances(plan)
     for c in plan.compute:
         ref = target.image_reference(c.image_key)
         nic = f"nic_{c.resource_name}"
@@ -353,8 +354,7 @@ def _azure_main(plan: MigrationPlan, target: Target) -> str:
         backend_pool_ref = backend_pool_ref_by_vm_name.get(c.vm_name)
         # A fronted instance gets its public entry point via the load balancer,
         # not its own public IP - giving it one too would bypass the LB.
-        public = c.subnet_tier == SubnetTier.PUBLIC and not backend_pool_ref
-        if public:
+        if c.vm_name in public_vms:
             lines += [
                 f"pip_{c.resource_name} = azure.network.PublicIp(",
                 f"    {_py_str(c.resource_name)},",
@@ -367,7 +367,7 @@ def _azure_main(plan: MigrationPlan, target: Target) -> str:
             f'"subnet_id": subnet_{subnet_res}.id, '
             '"private_ip_address_allocation": "Dynamic"'
         )
-        if public:
+        if c.vm_name in public_vms:
             ip_cfg += f', "public_ip_address_id": pip_{c.resource_name}.id'
         lines += [
             f"{nic} = azure.network.NetworkInterface(",
@@ -468,14 +468,13 @@ def _gcp_main(plan: MigrationPlan, target: Target) -> str:
             ")",
         ]
 
-    fronted_vm_names = {vm for lb in net.load_balancers for vm in lb.targets}
+    public_vms = public_instances(plan)
     for c in plan.compute:
         ref = target.image_reference(c.image_key)
         subnet_res = subnet_of[c.vm_name]
         # A fronted instance's public entry point is the load balancer, not its
         # own ephemeral external IP.
-        public = c.subnet_tier == SubnetTier.PUBLIC and c.vm_name not in fronted_vm_names
-        access = "[{}]" if public else "[]"  # [{}] = one ephemeral external IP
+        access = "[{}]" if c.vm_name in public_vms else "[]"  # [{}] = one ephemeral external IP
         lines += [
             f"inst_{c.resource_name} = gcp.compute.Instance(",
             f"    {_py_str(c.resource_name)},",

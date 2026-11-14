@@ -81,5 +81,6 @@ Format: [Michael Nygard's ADR template](https://cognitect.com/blog/2011/11/15/do
 | [0071](0071-user-adjustable-scoring-weights.md) | Callers can set the recommendation's cost/fit/OS weights; they are normalised, eligibility still dominates, and a custom ranking is always labelled custom | Accepted |
 | [0072](0072-moved-blocks-for-renamed-machines.md) | `diff --moved-tf` generates Terraform `moved` blocks for machines renamed at the source, from the two snapshots alone; renames that reuse an address become a `state mv` sequence, because Terraform chains blocks | Accepted |
 | [0073](0073-for-each-layout.md) | Opt-in `terraform-foreach` renderer (every target): one resource per kind over per-machine maps keyed by the classic labels, shipped with `moved` blocks from the classic layout; default output unchanged | Accepted |
+| [0074](0074-shared-decisions-not-a-shared-renderer.md) | Decisions renderers would otherwise re-derive (which machines get a public address) live once in the graph; the wholesale Terraform/Pulumi graph migration is not done, since it would fix nothing | Accepted |
 
 See also the [Architecture & Design](../architecture.md) overview.

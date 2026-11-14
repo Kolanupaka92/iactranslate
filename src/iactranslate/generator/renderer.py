@@ -14,7 +14,7 @@ from typing import Dict, List, Optional, Tuple
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 from ..costing import estimate_costs
-from ..graph import NodeKind, assign_subnets, build_graph
+from ..graph import NodeKind, assign_subnets, build_graph, public_instances
 from ..hybrid import SUMMARY_PREFIX, HybridPlan
 from ..identity import (
     SSM_MANAGED_POLICY,
@@ -313,6 +313,8 @@ def build_files(
         "subnet_of": subnet_of,
         "sg_resource": sg_resource,
         "fronted_vm_names": {vm for lb in plan.network.load_balancers for vm in lb.targets},
+        # Machines with their own public address: decided once, in the graph.
+        "public_vm_names": public_instances(plan),
         "lb_resource_of": {vm: lb.resource_name for lb in plan.network.load_balancers for vm in lb.targets},
         "has_https_listener": any(
             listener.protocol == "HTTPS" for lb in plan.network.load_balancers for listener in lb.listeners
