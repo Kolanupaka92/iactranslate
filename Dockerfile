@@ -45,9 +45,17 @@ COPY --from=builder /wheels /wheels
 # and refuses every upload (ADR 0043), which is the correct behaviour and a
 # useless deployment. Both ship wheels, so the runtime stage still needs no
 # compiler.
+#
+# pip is removed once it has installed everything. The service never runs it,
+# and pip vendors its own copies of msgpack, urllib3 and setuptools, which the
+# image scan reports as this image's vulnerabilities (msgpack CVE-2026-114613,
+# setuptools CVE-2025-47273 among them) whenever pip's bundled versions lag a
+# fix. Leaving an installer nobody uses in a production image is attack surface
+# with no upside.
 RUN pip install --no-cache-dir /wheels/*.whl weasyprint \
         "psycopg[binary,pool]>=3.1" "cryptography>=42.0" \
-    && rm -rf /wheels
+    && rm -rf /wheels \
+    && python -m pip uninstall --yes pip
 
 USER appuser
 EXPOSE 8000
