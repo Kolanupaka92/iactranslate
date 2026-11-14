@@ -18,6 +18,7 @@ from .costing import estimate_costs
 from .dependencies import DependencyError, analyze_dependencies, parse_flows
 from .diff import diff_inventories
 from .exec_report import build_executive_report
+from .gitops import CI_SYSTEMS, GITOPS_RENDERERS
 from .identity import IdentityError
 from .identity import parse_mode as parse_identity_mode
 from .landing_zone import DEFAULT_CIDR, LandingZone, LandingZoneError
@@ -78,6 +79,14 @@ def _parse_column_map(raw: Optional[str]) -> Optional[Dict[str, str]]:
 def _cmd_translate(args: argparse.Namespace) -> int:
     project_name = args.name or Path(args.input).stem
 
+    # Refuse before any work: a Terraform pipeline over CloudFormation, Bicep,
+    # CDK or Kubernetes output is what --gitops used to produce, and it could
+    # never run.
+    if (args.gitops or getattr(args, "ci", None)) and args.renderer not in GITOPS_RENDERERS:
+        print(f"error: --gitops generates pipelines for {', '.join(GITOPS_RENDERERS)}; "
+              f"'{args.renderer}' output is deployed with its own tooling", file=sys.stderr)
+        return 2
+
     try:
         policy_config = load_policy_config(args.policy) if args.policy else None
     except (FileNotFoundError, ValueError) as e:
@@ -102,7 +111,8 @@ def _cmd_translate(args: argparse.Namespace) -> int:
             provider=provider,
             make_zip=args.zip,
             renderer=args.renderer,
-            gitops=args.gitops,
+            gitops=args.gitops or bool(getattr(args, "ci", None)),
+            ci=getattr(args, "ci", None) or "github",
             policy_config=policy_config,
             identity=parse_identity_mode(getattr(args, "instance_identity", None)),
             flows_path=getattr(args, "flows", None),
@@ -545,7 +555,10 @@ def build_parser() -> argparse.ArgumentParser:
                         "CloudFormation and CDK are AWS-only; Bicep is Azure-only; "
                         "terraform-foreach and Kubernetes (KubeVirt) work for any target.")
     t.add_argument("--gitops", action="store_true",
-                   help="Include a GitOps CI/CD workflow (plan on PR, apply on merge) + .gitignore.")
+                   help="Include a GitOps CI/CD pipeline (plan on PR, apply on merge) + .gitignore.")
+    t.add_argument("--ci", choices=CI_SYSTEMS, default=None,
+                   help="CI system for the pipeline (default github). Implies --gitops. "
+                        "Terraform and Pulumi output only.")
     t.add_argument("--vpc-cidr", default=None, metavar="CIDR",
                    help="Network range for the new VPC/VNet, e.g. '172.20.8.0/21'. Subnets are "
                         "carved from it. Use the range your IPAM team allocated — the default "

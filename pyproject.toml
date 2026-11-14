@@ -51,6 +51,7 @@ dev = [
     "redis>=5.0",  # tests/test_ratelimit_shared.py
     "fakeredis[lua]>=2.21",  # ... offline, without a Redis server
     "markdown>=3.5",  # scripts/build_guide_artifact.py (docs → HTML for the Artifact)
+    "pyyaml>=6.0",  # tests/test_ci_systems.py parses the generated pipelines
     "pip-audit>=2.7",  # dependency vulnerability gate (CI `security` job)
     "bandit[toml]>=1.7",  # static security analysis (CI `security` job)
 ]

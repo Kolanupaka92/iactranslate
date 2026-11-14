@@ -157,7 +157,7 @@ iactranslate/
 | **Brownfield** | Existing cloud fleet with resource ids → Terraform/Pulumi `import` blocks (adopt, don't recreate). | `sources/cloud`, `renderers/` |
 | **Re-platforming advisor** | Flags database-tier workloads as managed-DB candidates (RDS/Cloud SQL/Azure SQL) with engine detection + caveats. Advisory-only — never changes the plan. Emits `replatforming.json`. | `replatform.py` |
 | **Migration wave planner** | Sequences workloads by tier dependency (data/cache → app → web) + environment order (dev → staging → prod), with `depends_on` chains, rollback strategy, validation checks, LB-aware downtime estimates. Advisory-only. Emits `waves.json`. | `waves.py` |
-| **GitOps** | Opt-in CI/CD workflow (plan on PR, apply on merge) + .gitignore, target/renderer-aware. | `gitops.py` |
+| **GitOps** | Opt-in CI/CD pipeline (plan on PR, apply on merge) + .gitignore for GitHub Actions, GitLab CI, Azure DevOps or Jenkins; credentials for all seven targets from each system's secret store. | `gitops.py` |
 | **Validation layer** | Never trusts provider output: checks catalog membership, CIDR overlap/containment, duplicate names, referential integrity. | `validation/validators.py` |
 
 **The raw-record contract** (what a `Source.parse` returns, consumed by `normalize`):
@@ -263,6 +263,9 @@ iactranslate translate my-cmdb.csv --source generic \
 # Pulumi output (AWS) instead of Terraform, with a GitOps CI/CD workflow
 iactranslate translate rvtools.xlsx --target aws --renderer pulumi --gitops --out ./out-pl
 
+# Same, as a GitLab CI pipeline (also: --ci azure-devops, --ci jenkins)
+iactranslate translate rvtools.xlsx --target aws --ci gitlab --out ./out-gl
+
 # Terraform with for_each (any target, opt-in): one resource per kind over a per-VM map,
 # plus migrate-from-classic.tf so an estate already applied with the default
 # layout is moved, not recreated (ADR 0073)
@@ -287,7 +290,9 @@ iactranslate translate k8s.json --source kubernetes --target aws --out ./out-fro
 Flags: `--target aws|azure|gcp|oci|digitalocean`, `--source auto|vmware|hyperv|kubernetes|generic|cloud`, `--map`,
 `--region`, `--name`, `--zip`, `--renderer terraform|terraform-foreach|pulumi|cloudformation|bicep|cdk|kubernetes`
 (CloudFormation and CDK are AWS-only; Bicep is Azure-only; Kubernetes has no
-target restriction), `--gitops` (adds `.github/workflows/*` + `.gitignore`).
+target restriction), `--gitops` (adds a CI/CD pipeline + `.gitignore`), `--ci
+github|gitlab|azure-devops|jenkins` (which CI system; implies `--gitops`; Terraform and
+Pulumi output only — ADR 0075).
 
 Every generated project also ships, under `documentation/`, an executive report
 (`executive-report.html`), an architecture diagram (`architecture.svg`/`.md`), the
@@ -721,8 +726,9 @@ require the minimum possible trust from the operator.
 - ✅ **Input validation** — malformed uploads return `400`, never a `500` or a leaked traceback.
 - ✅ **No arbitrary template execution** — templates are shipped with the app, never user-supplied;
   Jinja renders data into fixed templates, it does not execute user input.
-- ✅ **No secrets in output** — generated GitOps workflows reference GitHub *secrets*; credentials
-  are never embedded in generated files.
+- ✅ **No secrets in output** — generated GitOps pipelines reference the CI system's secret store
+  (GitHub secrets, GitLab masked variables, an Azure DevOps variable group, Jenkins credentials);
+  credentials are never embedded in generated files.
 - ✅ **Strict CSP on the console** — per-request script nonce + `'strict-dynamic'`; inline scripts
   without the nonce do not run, `connect-src` is same-origin only, framing is refused (ADR 0067).
 - ✅ **Database unreachable from the internet** — private address only, VPC-internal egress from the

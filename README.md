@@ -90,7 +90,7 @@ CI proves the output is valid against the real cloud providers (`tofu validate`)
   **AWS CDK** (Python, AWS-only), and **Kubernetes/KubeVirt** (any cloud)
   renderers — the latter four walking the
   [Infrastructure Graph](docs/adr/0010-infrastructure-graph.md) — and opt-in
-  **GitOps** CI/CD.
+  **GitOps** CI/CD for GitHub Actions, GitLab CI, Azure DevOps and Jenkins.
 - **Policy engine.** Enforce org rules — no public subnets, approved instance
   families, budget caps, naming conventions — as pluggable, read-only policies
   (`deny` blocks rendering, `warn` reports) before any IaC is written.
@@ -131,7 +131,8 @@ iactranslate translate tests/fixtures/rvtools_sample.xlsx --target aws --out ./o
 
 Other clouds and formats are auto-detected: `--target azure|gcp|oci|digitalocean`,
 `--source auto|vmware|hyperv|kubernetes|generic|cloud`,
-`--renderer terraform|terraform-foreach|pulumi|cloudformation|bicep|cdk|kubernetes`, `--gitops`.
+`--renderer terraform|terraform-foreach|pulumi|cloudformation|bicep|cdk|kubernetes`, `--gitops`,
+`--ci github|gitlab|azure-devops|jenkins`.
 See the [Operations Guide](docs/operations-guide.md) for the full CLI, API, and web UI.
 
 ## Example: input → output

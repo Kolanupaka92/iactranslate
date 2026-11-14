@@ -190,7 +190,7 @@ backends and integrations that plug into them, via the
 | v2.2 | Desktop app (Tauri) over the same core engine | CLI/API (shipped) |
 | v2.3 | AuthN (OIDC/SAML) + RBAC + persistent audit — ✅ **multi-tenant accounts, session-cookie login, and per-project ownership** ([ADR 0027](adr/0027-multi-tenancy-and-session-auth.md)), ✅ a **restart-surviving audit trail** ([ADR 0026](adr/0026-persistent-audit-and-metrics.md)), and ✅ a single-token API key for machine callers ([ADR 0025](adr/0025-persistent-store-and-bearer-auth.md)). Still open: OIDC/SSO, orgs/teams, RBAC roles, email verification + a reset email backend | audit trail (shipped) |
 | v2.4 | Notifications (Slack/Teams/Email) + metrics (Prometheus/Grafana/OTel) — ✅ **Prometheus `GET /metrics`** shipped now (counters + in-flight gauge, stdlib-only); OTel distributed tracing and notifications still open (see [ADR 0026](adr/0026-persistent-audit-and-metrics.md)) | event bus + `pipeline-trace` (shipped) |
-| v2.5 | CI/CD pipeline generation (Jenkins/GitHub/GitLab/Azure DevOps) | GitOps workflow (shipped for GH Actions) |
+| v2.5 | CI/CD pipeline generation (Jenkins/GitHub/GitLab/Azure DevOps) — ✅ **shipped**: `--ci` generates all four for Terraform and Pulumi, with credentials for all seven targets; every GitHub/GitLab/Azure DevOps pipeline validates against the official schemas ([ADR 0075](adr/0075-ci-pipelines-for-four-systems.md)) | GitOps workflow (shipped for GH Actions) |
 | v2.6 | Ticketing (Jira/ServiceNow/Azure DevOps) from the assessment | assessment (shipped) |
 | v3.0 | Multi-tenant SaaS + plugin ecosystem + OPA-compatible policy | policy engine, source/target registries (shipped) |
 

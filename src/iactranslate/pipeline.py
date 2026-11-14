@@ -76,6 +76,7 @@ def run_pipeline(
     make_zip: bool = False,
     renderer: str = "terraform",
     gitops: bool = False,
+    ci: str = "github",
     policy_config: Optional[Dict] = None,
     state_backend: Optional[StateBackend] = None,
     zone: Optional[LandingZone] = None,
@@ -181,7 +182,7 @@ def run_pipeline(
 
     with stage("package"):
         project_dir = build_project(
-            plan, out_dir, tgt, vms=vms, renderer=renderer, gitops=gitops,
+            plan, out_dir, tgt, vms=vms, renderer=renderer, gitops=gitops, ci=ci,
             policy_result=policy_result, state_backend=state_backend, zone=zone,
             identity=identity, hybrid=hybrid,
         )
