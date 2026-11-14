@@ -192,7 +192,7 @@ pytest                 # ~894 tests: parsers, sizing, validation, all 7 targets,
 ruff check src tests
 ```
 
-CI runs lint, pytest on 3.9/3.11/3.12, a Docker build/health check, the web
+CI runs lint, pytest on 3.9/3.11/3.12/3.15, a Docker build/health check, the web
 build, and a real `tofu validate` of generated Terraform for AWS, Azure, and GCP.
 
 ## Security posture (at a glance)

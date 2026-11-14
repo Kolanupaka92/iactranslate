@@ -40,6 +40,10 @@ jobs:
             os: ubuntu-latest
           - python-version: "3.12"
             os: ubuntu-latest
+          # The Docker image's Python. Tested here so the version production
+          # runs is never one only the container smoke test has seen.
+          - python-version: "3.15"
+            os: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4

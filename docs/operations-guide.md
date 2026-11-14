@@ -55,7 +55,7 @@ diagrams, infrastructure diff, brownfield adoption, load balancer topology,
 managed-DB re-platforming advice, migration wave planning, a Kubernetes discovery source,
 Pulumi/CloudFormation/Bicep/CDK/Kubernetes renderers, a policy engine, an
 Infrastructure Graph IR, async jobs + audit, and opt-in GitOps.
-~778 tests, 9 green CI jobs (lint, pytest 3.9/3.11/3.12, Docker health, web build, real
+~778 tests, 9 green CI jobs (lint, pytest 3.9/3.11/3.12/3.15, Docker health, web build, real
 Terraform validate). Repo: `github.com/Kolanupaka92/iactranslate` (public).
 
 ---
@@ -218,7 +218,7 @@ database-tier workloads are detected.
 
 | Tool | Version | Required for | Install |
 |---|---|---|---|
-| **Python** | 3.9+ (CI tests 3.9 / 3.11 / 3.12) | The core service, CLI, API — **required** | python.org · `pyenv` · `brew install python@3.12` |
+| **Python** | 3.9+ (CI tests 3.9 / 3.11 / 3.12 / 3.15) | The core service, CLI, API — **required** | python.org · `pyenv` · `brew install python@3.12` |
 | **pip + venv** | bundled with Python | Installing the package | (comes with Python) |
 | **Node.js + npm** | Node **20+**, npm 10+ | The web UI (`web/`) only | nodejs.org · `nvm install 20` · `brew install node` |
 | **OpenTofu** *or* **Terraform** | 1.5+ | Validating / deploying the generated `.tf`, and the `tofu validate` E2E test | `brew install opentofu` · opentofu.org · terraform.io |
@@ -583,7 +583,7 @@ Test layout: `test_parsers/normalize/rightsizing/validation/generator` (units),
 `test_recommend`, `test_api_security`, and `test_e2e.py` (full source×target API matrix +
 real `tofu validate`).
 
-**CI** (`.github/workflows/ci.yml`, 7 jobs, all green): `lint`, `test` (3.9/3.11/3.12),
+**CI** (`.github/workflows/ci.yml`, 7 jobs, all green): `lint`, `test` (3.9/3.11/3.12/3.15),
 `web` (npm build), `docker` (build + container health), `terraform-validate` (installs
 OpenTofu, validates aws/azure/gcp output against real providers).
 
