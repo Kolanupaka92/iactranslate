@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import os
 import re
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -196,6 +196,49 @@ def _migrate_from_classic(plan: MigrationPlan, classic: Dict[str, str],
     )
 
 
+#: Host numbers a /24 VLAN offers machines: .1 is the gateway and .2-.9 are
+#: left for infrastructure.
+_FIRST_HOST, _LAST_HOST = 10, 254
+
+
+def _static_hosts(compute: List[ComputePlan], subnet_of: Dict[str, str]) -> Dict[str, int]:
+    """Host number per machine for static addressing (Proxmox).
+
+    A machine gets `.10 + its position in the estate`. That was
+    `10 + loop.index0` in the template, which restarts in every file once
+    compute is split (ADR 0032), so above 50 machines several shared an
+    address. Estate position is unique, and keeping it means no machine that
+    already has a valid address is ever re-addressed.
+
+    It is also wasteful: past 245 machines the number leaves the /24
+    (`10.0.3.262`) though every subnet still has room. Only those overflowing
+    machines take the lowest free host in their own subnet. A subnet that
+    genuinely needs more than 245 addresses is an error, not invalid output.
+    """
+    hosts: Dict[str, int] = {}
+    used: Dict[str, set] = defaultdict(set)
+    overflow: List[ComputePlan] = []
+    for i, c in enumerate(compute):
+        host = _FIRST_HOST + i
+        if host <= _LAST_HOST:
+            hosts[c.vm_name] = host
+            used[subnet_of[c.vm_name]].add(host)
+        else:
+            overflow.append(c)
+    for c in overflow:
+        subnet = subnet_of[c.vm_name]
+        host = next((h for h in range(_FIRST_HOST, _LAST_HOST + 1) if h not in used[subnet]), None)
+        if host is None:
+            raise ValueError(
+                f"subnet {subnet} needs more than {_LAST_HOST - _FIRST_HOST + 1} static "
+                "addresses, more than a /24 VLAN holds; split the estate across more "
+                "VLANs or assign addresses by DHCP"
+            )
+        hosts[c.vm_name] = host
+        used[subnet].add(host)
+    return hosts
+
+
 def build_files(
     plan: MigrationPlan,
     target: Target,
@@ -275,11 +318,10 @@ def build_files(
             listener.protocol == "HTTPS" for lb in plan.network.load_balancers for listener in lb.listeners
         ),
         "vm_slug": {c.vm_name: _rfc1035_slug(c.vm_name) for c in plan.compute},
-        # Proxmox static addresses: host .10 + the machine's position in the
-        # *estate*. This was `10 + loop.index0` in the template, which restarts
-        # in every file once compute is split per environment/tier (ADR 0032),
-        # so above 50 machines several VMs were given the same address.
-        "static_host_of": {c.vm_name: 10 + i for i, c in enumerate(plan.compute)},
+        # Proxmox is the one target that assigns static addresses.
+        "static_host_of": (
+            _static_hosts(plan.compute, subnet_of) if target.name == "proxmox" else {}
+        ),
         "volumes": _data_volumes(plan.compute),
         "SubnetTier": SubnetTier,
         # How other resources address a machine's instance: its own label in

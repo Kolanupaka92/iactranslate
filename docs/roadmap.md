@@ -152,7 +152,10 @@ in CI on `main`.
   emits one resource per kind over per-machine maps, cutting compute and storage
   HCL by 60–73%. Building it for Proxmox exposed duplicate static IPs in the
   default output above 50 VMs (the per-file loop index restarted after the
-  compute split); numbering is now estate-wide, unchanged for smaller estates. It ships `migrate-from-classic.tf`,
+  compute split); numbering is now estate-wide, unchanged for smaller estates.
+  Past 245 machines that numbering left the /24 (`10.0.3.262`, 55 of 300 invalid);
+  only those machines now take a free host in their own subnet, and a subnet that
+  truly needs more than 245 addresses is a clear error rather than invalid output. It ships `migrate-from-classic.tf`,
   so an estate already applied with the default layout is moved in state, not
   recreated. The default output is byte-for-byte unchanged
   (see [ADR 0073](adr/0073-for-each-layout.md))

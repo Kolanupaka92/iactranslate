@@ -146,3 +146,33 @@ def test_proxmox_static_addresses_are_unique_once_compute_is_split(renderer, mon
                        "".join(b for name, b in files.items() if name.startswith("compute")))
     assert len(addrs) == len(base)
     assert len(set(addrs)) == len(addrs), "two VMs share a static address"
+
+
+def _proxmox_estate(n):
+    base = normalize(parse("tests/fixtures/rvtools_realistic.xlsx"))
+    return [v.model_copy(update={"vm_name": f"{v.vm_name}-{i}", "source_uuid": None})
+            for i in range(n // len(base) + 1) for v in base][:n]
+
+
+def test_proxmox_addresses_stay_inside_the_subnet_past_245_machines():
+    """`.10 + estate position` ran past .254 (`10.0.3.262`) once an estate
+    exceeded 245 machines, though no subnet was full. Overflowing machines now
+    take free hosts in their own subnet; nothing with a valid address moves."""
+    from iactranslate.generator.renderer import _static_hosts
+
+    plan = build_migration_plan(_proxmox_estate(300), "px", get_target("proxmox"))
+    from iactranslate.generator.renderer import _assign_subnets
+    subnet_of = _assign_subnets(plan)
+    hosts = _static_hosts(plan.compute, subnet_of)
+    assert all(10 <= h <= 254 for h in hosts.values())
+    pairs = [(subnet_of[c.vm_name], hosts[c.vm_name]) for c in plan.compute]
+    assert len(set(pairs)) == len(pairs), "two machines share an address in one subnet"
+    # Every machine whose estate position was a valid host keeps it.
+    for i, c in enumerate(plan.compute[:245]):
+        assert hosts[c.vm_name] == 10 + i
+
+
+def test_proxmox_refuses_a_subnet_that_cannot_hold_its_machines():
+    plan = build_migration_plan(_proxmox_estate(700), "px", get_target("proxmox"))
+    with pytest.raises(ValueError, match="more than a /24 VLAN holds"):
+        build_files(plan, get_target("proxmox"))
