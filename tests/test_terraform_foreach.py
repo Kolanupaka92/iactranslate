@@ -39,7 +39,7 @@ def _addresses(files, rtype):
             for t, label in _LABEL.findall(body) if t == rtype}
 
 
-SUPPORTED = ("aws", "azure", "gcp")
+SUPPORTED = ("aws", "azure", "gcp", "oci", "digitalocean")
 
 
 def test_it_is_offered_where_templates_exist():
@@ -49,9 +49,9 @@ def test_it_is_offered_where_templates_exist():
 
 def test_other_clouds_refuse_rather_than_render_classic():
     vms = normalize(parse("tests/fixtures/rvtools_realistic.xlsx"))
-    oci = build_migration_plan(vms, "x", get_target("oci"))
+    ahv = build_migration_plan(vms, "x", get_target("nutanix"))
     with pytest.raises(RendererNotSupportedError):
-        render("terraform-foreach", oci, get_target("oci"))
+        render("terraform-foreach", ahv, get_target("nutanix"))
 
 
 # --- every supported cloud ------------------------------------------------------

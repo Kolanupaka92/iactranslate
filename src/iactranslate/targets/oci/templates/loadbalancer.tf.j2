@@ -35,7 +35,7 @@ resource "oci_load_balancer_backend_set" "{{ lb.resource_name }}_{{ listener.lis
 resource "oci_load_balancer_backend" "{{ lb.resource_name }}_{{ listener.listener_port }}_{{ c.resource_name }}" {
   load_balancer_id = oci_load_balancer_load_balancer.{{ lb.resource_name }}.id
   backendset_name  = oci_load_balancer_backend_set.{{ lb.resource_name }}_{{ listener.listener_port }}.name
-  ip_address       = oci_core_instance.{{ c.resource_name }}.private_ip
+  ip_address       = oci_core_instance.{{ instance_addr[c.vm_name] }}.private_ip
   port             = {{ listener.target_port }}
 }
 

@@ -26,7 +26,7 @@ Three things made it a decision rather than a refactor:
 
 ## Decision
 
-- **Opt-in, as a renderer:** `--renderer terraform-foreach`, registered for AWS, Azure and GCP
+- **Opt-in, as a renderer:** `--renderer terraform-foreach`, registered for AWS, Azure, GCP, OCI and DigitalOcean
   in the renderer registry. Validation, `GET /targets` and the console's format
   picker pick it up from there. The default `terraform` output is
   **byte-for-byte unchanged**. Three estates (realistic, brownfield, 75-VM
@@ -71,6 +71,9 @@ Three things made it a decision rather than a refactor:
   conditional would index a VM that does not exist) and GCP (the optional
   external IP is a `dynamic` block). The migration file is now derived by
   rendering the classic layout alongside, so no per-cloud list can miss a
-  resource. OCI, DigitalOcean, Nutanix and Proxmox remain on the roadmap.
+  resource. Then OCI (Linux-only SSH metadata becomes `windows ? null : {…}`) and
+  DigitalOcean (per-droplet tag lists of differing lengths, which unify into
+  one map type; both patterns proven with OpenTofu first). Nutanix and Proxmox
+  remain on the roadmap.
 - Two Terraform layouts now exist for AWS. Both are generated from the same
   plan and validated by the same real-provider job, which keeps that affordable.

@@ -543,7 +543,7 @@ def build_parser() -> argparse.ArgumentParser:
     t.add_argument("--renderer", default="terraform",
                    help=f"IaC output format ({', '.join(list_renderers())}). "
                         "CloudFormation and CDK are AWS-only; Bicep is Azure-only; "
-                        "terraform-foreach covers AWS, Azure and GCP; Kubernetes "
+                        "terraform-foreach covers the five public clouds; Kubernetes "
                         "(KubeVirt) works for any target.")
     t.add_argument("--gitops", action="store_true",
                    help="Include a GitOps CI/CD workflow (plan on PR, apply on merge) + .gitignore.")
