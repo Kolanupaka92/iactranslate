@@ -125,7 +125,7 @@ def test_generated_terraform_validates(target, rvtools_path, tmp_path):
 
 
 @pytest.mark.skipif(not _ENABLED, reason="set IACTRANSLATE_E2E_TOFU=1 and install tofu/terraform")
-@pytest.mark.parametrize("target", ["aws", "azure", "gcp", "oci", "digitalocean"])
+@pytest.mark.parametrize("target", PROVIDER_VALIDATED_TARGETS)
 def test_foreach_layout_validates(target, tmp_path):
     """The opt-in for_each layout, migration file included, passes the real
     provider. `validate` checks every `moved` block lands on a declared

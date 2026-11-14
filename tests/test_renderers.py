@@ -546,7 +546,6 @@ def test_the_api_advertises_which_renderers_each_cloud_supports(tmp_path, monkey
         assert rows["aws"] == renderers_for("aws")
         assert "bicep" in rows["azure"] and "bicep" not in rows["aws"]
         assert rows["oci"] == ["terraform", "terraform-foreach", "kubernetes"]
-        assert rows["nutanix"] == ["terraform", "kubernetes"]
     finally:
         monkeypatch.undo()
         import importlib

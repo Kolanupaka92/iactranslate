@@ -8,7 +8,7 @@ output "vm_ids" {
   description = "Map of source VM name to AHV VM UUID."
   value = {
 {% for c in compute %}
-    "{{ c.vm_name }}" = nutanix_virtual_machine.{{ c.resource_name }}.id
+    "{{ c.vm_name }}" = nutanix_virtual_machine.{{ instance_addr[c.vm_name] }}.id
 {% endfor %}
   }
 }

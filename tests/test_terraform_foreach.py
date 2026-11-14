@@ -39,7 +39,7 @@ def _addresses(files, rtype):
             for t, label in _LABEL.findall(body) if t == rtype}
 
 
-SUPPORTED = ("aws", "azure", "gcp", "oci", "digitalocean")
+SUPPORTED = tuple(list_targets())
 
 
 def test_it_is_offered_where_templates_exist():
@@ -47,11 +47,17 @@ def test_it_is_offered_where_templates_exist():
         assert ("terraform-foreach" in renderers_for(t)) == (t in SUPPORTED), t
 
 
-def test_other_clouds_refuse_rather_than_render_classic():
+def test_a_target_without_templates_refuses_rather_than_render_classic(tmp_path, monkeypatch):
+    # Every shipped target has the layout now; a future one added without its
+    # template must refuse, not silently fall back to the classic layout.
+    from iactranslate.generator.renderer import build_files
+
     vms = normalize(parse("tests/fixtures/rvtools_realistic.xlsx"))
-    ahv = build_migration_plan(vms, "x", get_target("nutanix"))
+    target = get_target("nutanix")
+    plan = build_migration_plan(vms, "x", target)
+    monkeypatch.setattr(target, "template_dir", tmp_path)
     with pytest.raises(RendererNotSupportedError):
-        render("terraform-foreach", ahv, get_target("nutanix"))
+        build_files(plan, target, layout="for_each")
 
 
 # --- every supported cloud ------------------------------------------------------

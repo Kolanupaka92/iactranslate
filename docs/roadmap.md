@@ -148,9 +148,11 @@ in CI on `main`.
   hands one machine's address to another, which Terraform cannot express as
   blocks, comes back as an ordered `state mv` sequence instead
   (see [ADR 0072](adr/0072-moved-blocks-for-renamed-machines.md))
-- ✅ **Opt-in `for_each` layout (AWS, Azure, GCP, OCI, DigitalOcean)** —
-  `--renderer terraform-foreach` emits one resource per kind over per-machine maps,
-  cutting compute and storage HCL by 60–73%. It ships `migrate-from-classic.tf`,
+- ✅ **Opt-in `for_each` layout (every target)** — `--renderer terraform-foreach`
+  emits one resource per kind over per-machine maps, cutting compute and storage
+  HCL by 60–73%. Building it for Proxmox exposed duplicate static IPs in the
+  default output above 50 VMs (the per-file loop index restarted after the
+  compute split); numbering is now estate-wide, unchanged for smaller estates. It ships `migrate-from-classic.tf`,
   so an estate already applied with the default layout is moved in state, not
   recreated. The default output is byte-for-byte unchanged
   (see [ADR 0073](adr/0073-for-each-layout.md))
@@ -205,9 +207,6 @@ backends and integrations that plug into them, via the
   no load to scale for; writing it speculatively would be several hundred lines
   verifiable only through CI round-trips. Build it when a deployment needs a
   second replica, not before.
-- ◻ **`for_each` layout for Nutanix and Proxmox** — shipped for the five public
-  clouds ([ADR 0073](adr/0073-for-each-layout.md)); the two on-premises targets
-  each need their own two templates (the migration file is derived automatically)
 
 **Considered, deliberately deferred** (tracked so the reasoning is explicit):
 

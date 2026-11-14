@@ -124,3 +124,25 @@ def test_sizes_come_from_the_standard_grid(vms, cloud):
     names = get_target(cloud).instance_names()
     for c in plan.compute:
         assert c.instance_type in names
+
+
+@pytest.mark.parametrize("renderer", ["terraform", "terraform-foreach"])
+def test_proxmox_static_addresses_are_unique_once_compute_is_split(renderer, monkeypatch):
+    """Static addresses were `.10 + loop.index0`, and the loop restarts in every
+    file once compute is split per environment/tier — so above the split
+    threshold several VMs were given the same address. Numbering is now by
+    position in the whole estate, identical in both layouts."""
+    import re
+
+    from iactranslate.renderers import render
+
+    monkeypatch.setenv("IACTRANSLATE_SPLIT_COMPUTE_ABOVE", "5")
+    base = normalize(parse("tests/fixtures/rvtools_realistic.xlsx"))
+    files = render(renderer, build_migration_plan(base, "px", get_target("proxmox")),
+                   get_target("proxmox"))
+    if renderer == "terraform":
+        assert sum(name.startswith("compute") for name in files) > 1  # really split
+    addrs = re.findall(r'address\s+=\s+"([0-9./]+)"',
+                       "".join(b for name, b in files.items() if name.startswith("compute")))
+    assert len(addrs) == len(base)
+    assert len(set(addrs)) == len(addrs), "two VMs share a static address"

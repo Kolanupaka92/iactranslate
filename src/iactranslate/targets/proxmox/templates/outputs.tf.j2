@@ -3,7 +3,7 @@ output "vm_ids" {
   description = "Map of source VM name to Proxmox VM id."
   value = {
 {% for c in compute %}
-    "{{ c.vm_name }}" = proxmox_virtual_environment_vm.{{ c.resource_name }}.vm_id
+    "{{ c.vm_name }}" = proxmox_virtual_environment_vm.{{ instance_addr[c.vm_name] }}.vm_id
 {% endfor %}
   }
 }

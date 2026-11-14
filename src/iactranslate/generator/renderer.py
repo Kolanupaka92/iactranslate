@@ -137,8 +137,10 @@ def _compute_split(
 #: one resource over a per-machine map (ADR 0073), opt-in and AWS-only so far.
 LAYOUTS = ("classic", "for_each")
 
-# Templates the `for_each` layout swaps in. A target supports the layout when
-# its template directory carries every one of them.
+# Templates the `for_each` layout swaps in, where the target has them. Compute
+# is required; storage is optional, because on targets whose data disks are
+# inline in the VM (Nutanix, Proxmox) `storage.tf` is only an explanatory stub
+# and is the same in both layouts.
 _FOR_EACH_TEMPLATES = {"compute.tf.j2": "compute.foreach.tf.j2",
                        "storage.tf.j2": "storage.foreach.tf.j2"}
 
@@ -148,7 +150,7 @@ class RendererNotSupportedError(ValueError):
 
 
 def supports_for_each(target: Target) -> bool:
-    return all((Path(target.template_dir) / t).exists() for t in _FOR_EACH_TEMPLATES.values())
+    return (Path(target.template_dir) / _FOR_EACH_TEMPLATES["compute.tf.j2"]).exists()
 
 
 _DECLARATION = re.compile(r'^resource "([A-Za-z0-9_]+)" "([A-Za-z0-9_-]+)"', re.MULTILINE)
@@ -273,6 +275,11 @@ def build_files(
             listener.protocol == "HTTPS" for lb in plan.network.load_balancers for listener in lb.listeners
         ),
         "vm_slug": {c.vm_name: _rfc1035_slug(c.vm_name) for c in plan.compute},
+        # Proxmox static addresses: host .10 + the machine's position in the
+        # *estate*. This was `10 + loop.index0` in the template, which restarts
+        # in every file once compute is split per environment/tier (ADR 0032),
+        # so above 50 machines several VMs were given the same address.
+        "static_host_of": {c.vm_name: 10 + i for i, c in enumerate(plan.compute)},
         "volumes": _data_volumes(plan.compute),
         "SubnetTier": SubnetTier,
         # How other resources address a machine's instance: its own label in
@@ -285,7 +292,9 @@ def build_files(
     out: Dict[str, str] = {}
     for template_name, filename in target.template_map.items():
         if for_each:
-            template_name = _FOR_EACH_TEMPLATES.get(template_name, template_name)
+            swap = _FOR_EACH_TEMPLATES.get(template_name)
+            if swap and (Path(target.template_dir) / swap).exists():
+                template_name = swap
         template = env.get_template(template_name)
         # One resource over a map has nothing to split per file.
         groups = None if for_each else _compute_split(filename, plan.compute)

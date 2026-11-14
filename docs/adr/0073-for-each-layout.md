@@ -26,7 +26,7 @@ Three things made it a decision rather than a refactor:
 
 ## Decision
 
-- **Opt-in, as a renderer:** `--renderer terraform-foreach`, registered for AWS, Azure, GCP, OCI and DigitalOcean
+- **Opt-in, as a renderer:** `--renderer terraform-foreach`, available for every target
   in the renderer registry. Validation, `GET /targets` and the console's format
   picker pick it up from there. The default `terraform` output is
   **byte-for-byte unchanged**. Three estates (realistic, brownfield, 75-VM
@@ -73,7 +73,15 @@ Three things made it a decision rather than a refactor:
   rendering the classic layout alongside, so no per-cloud list can miss a
   resource. Then OCI (Linux-only SSH metadata becomes `windows ? null : {…}`) and
   DigitalOcean (per-droplet tag lists of differing lengths, which unify into
-  one map type; both patterns proven with OpenTofu first). Nutanix and Proxmox
-  remain on the roadmap.
+  one map type; both patterns proven with OpenTofu first). Finally Nutanix and Proxmox,
+  whose data disks are inline in the VM: each row carries its disk sizes and a
+  `dynamic` block emits them, keeping the classic device numbering. Their
+  `storage.tf` is a stub, so the `for_each` swap is per template and optional
+  for storage.
+- Building the Proxmox layout exposed a bug in the *default* output: static
+  addresses were `.10 + loop.index0`, and that index restarts in every file
+  once compute is split (ADR 0032), so above 50 VMs several machines shared an
+  address (`10.0.3.10` went to nine of 75). Numbering is now by position in the
+  whole estate in both layouts, which leaves estates of 50 or fewer unchanged.
 - Two Terraform layouts now exist for AWS. Both are generated from the same
   plan and validated by the same real-provider job, which keeps that affordable.
