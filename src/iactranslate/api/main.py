@@ -21,14 +21,17 @@ from __future__ import annotations
 import logging
 import os
 import re
+import secrets
 import time
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from fastapi import Depends, FastAPI, HTTPException, Response, UploadFile
+from fastapi import APIRouter, Body, Depends, FastAPI, HTTPException, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 from pydantic import BaseModel, field_validator
+from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 
 from ..agents import build_migration_plan
@@ -37,15 +40,27 @@ from ..assessment import assess
 from ..confidence import score_plan
 from ..config import MAX_UPLOAD_BYTES, cors_origins
 from ..costing import estimate_costs
+from ..crypto import (
+    EncryptionUnavailable,
+    decrypt_bytes,
+    is_encrypted,
+    write_file,
+)
 from ..exec_report import build_executive_report
+from ..maturity import maturity_of
 from ..normalize import normalize
 from ..observability import configure_logging, correlation_id, get_logger, new_correlation_id
+from ..pdf import PdfUnavailable
+from ..pdf import render as render_pdf
 from ..pipeline import run_pipeline
 from ..policy import PolicyViolationError, list_policies
-from ..recommend import recommend
+from ..recommend import ScoringWeights, recommend
+from ..renderers import list_renderers, renderers_for
+from ..renderers import supports as renderer_supports
 from ..sources import list_sources, resolve_source
 from ..targets import get_target, list_targets
 from ..validation import PlanValidationError
+from . import oidc as _oidc
 from .accounts import (
     SESSION_COOKIE,
     EmailTaken,
@@ -57,9 +72,16 @@ from .audit import create_audit_log
 from .auth import require_api_key
 from .delivery import deliver_reset_link
 from .events import Event, EventBus, EventType
-from .jobs import JobQueue
+from .idempotency import (
+    BodyMismatch,
+    Conflict,
+    IdempotencyStore,
+    read_key,
+)
+from .jobs_sqlite import create_job_queue
 from .metrics import Metrics
 from .ratelimit import limit_auth, limit_reads, limit_writes
+from .roles import Role, at_least, create_membership, parse_role
 from .store import Project, create_store
 
 logger = get_logger("iactranslate.api")
@@ -70,17 +92,42 @@ logger = get_logger("iactranslate.api")
 configure_logging()
 
 app = FastAPI(title="IaCTranslate", version="0.1.0")
+
+# Routes are declared on a router and mounted twice: under `/v1`, and at the
+# legacy unprefixed paths. Adding the prefix now costs nothing; adding it after
+# clients exist means breaking every one of them, and the first breaking change
+# to an unversioned API is the expensive one. The unprefixed mount keeps the web
+# app and any existing caller working, and marks itself deprecated so a client
+# can discover the move without reading a changelog.
+#
+# `/health` and `/metrics` stay unversioned deliberately — probes and scrapers
+# point at fixed paths and are infrastructure, not API surface.
+router = APIRouter()
 store = create_store()
 accounts = create_account_store()  # None unless IACTRANSLATE_AUTH=session
 
 # Runtime orchestration layer (single-node realization; swap for Redis/Celery +
 # Postgres in production — same interfaces). The pipeline stays a pure function.
 bus = EventBus()
-jobs = JobQueue(bus)
+# Durable when IACTRANSLATE_STORE=sqlite, in-memory otherwise. Handlers are
+# registered before the workers start: a durable queue whose workers race
+# registration would dead-letter surviving jobs on every restart (ADR 0053).
+jobs = create_job_queue(bus)
 audit = create_audit_log()
 audit.attach(bus)
 metrics = Metrics()
 metrics.attach(bus)
+
+# Who may do what on which project. Separate from the project store because
+# a grant belongs to neither the project nor the user alone (see roles.py).
+memberships = create_membership()
+
+# SSO. `None` unless IACTRANSLATE_OIDC_ISSUER is set (ADR 0054).
+sso_config = _oidc.config_from_env()
+sso_logins = _oidc.LoginStore()
+
+# Replay protection for retried writes (ADR 0051).
+idempotency = IdempotencyStore()
 
 _ALLOWED_SUFFIXES = {".xlsx", ".xls", ".xlsm", ".csv"}
 _NAME_RE = re.compile(r"^[A-Za-z0-9 ._-]{1,128}$")
@@ -101,6 +148,46 @@ if _origins:
     )
 
 
+#: Methods that change something and therefore need CSRF protection. `GET` and
+#: `HEAD` are excluded because they must be safe — anything that mutates state
+#: behind a GET is a bug this check would only be papering over.
+_UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+
+
+@app.middleware("http")
+async def _enforce_origin(request: Request, call_next):
+    """Reject state-changing requests from origins we do not serve.
+
+    This is what stands in for `SameSite=lax` when a deployment sets
+    `IACTRANSLATE_COOKIE_SAMESITE=none` because its web app and API are on
+    different sites. With `lax` the browser refuses the cross-site POST itself;
+    with `none` it will happily send the cookie, so the server has to decide.
+
+    Checking `Origin` rather than requiring a custom header, because a custom
+    header only protects endpoints that take JSON. A cross-site HTML form can
+    POST `multipart/form-data` with no preflight at all — which is exactly the
+    shape of the upload endpoint, the one carrying customer inventory.
+
+    A missing `Origin` is allowed through: browsers always send it on the
+    cross-site requests that matter, and its absence means a non-browser client
+    (curl, CI, a bearer-token integration) which CSRF does not apply to — an
+    attacker cannot make a browser omit it.
+    """
+    if (
+        request.method in _UNSAFE_METHODS
+        and _origins
+        and cookie_samesite() == "none"
+    ):
+        origin = request.headers.get("origin")
+        if origin is not None and origin not in _origins:
+            logger.warning(
+                "rejected cross-origin write", extra={"origin": origin,
+                                                      "path": request.url.path}
+            )
+            return JSONResponse({"detail": "origin not allowed"}, status_code=403)
+    return await call_next(request)
+
+
 class CreateProject(BaseModel):
     name: str
     target: str = "aws"
@@ -109,6 +196,10 @@ class CreateProject(BaseModel):
     region: Optional[str] = None
     policy: Optional[Dict[str, dict]] = None
     provider: str = "rule"
+    #: IaC output format. Validated against the target in the handler rather
+    #: than here, because whether it is valid depends on `target` — Bicep is a
+    #: fine renderer and a wrong answer for an AWS project.
+    renderer: str = "terraform"
 
     @field_validator("provider")
     @classmethod
@@ -124,6 +215,72 @@ class CreateProject(BaseModel):
         if not _NAME_RE.match(v):
             raise ValueError("name must be 1-128 chars of letters, digits, space, '.', '_', '-'")
         return v
+
+
+@app.middleware("http")
+async def _idempotency(request: Request, call_next):
+    """Replay a completed response when a write is retried with the same key.
+
+    Applies only to POST: GET and DELETE are already idempotent by definition,
+    and wrapping them would add a cache with no benefit. Only 2xx responses are
+    remembered — a caller retrying after a 500 wants another attempt, not the
+    500 played back for a day.
+    """
+    if request.method != "POST":
+        return await call_next(request)
+
+    try:
+        key = read_key(request.headers)
+    except ValueError as e:
+        return JSONResponse(status_code=400, content={"detail": str(e)})
+    if key is None:
+        return await call_next(request)
+
+    body = await request.body()
+    user_id = request.cookies.get(SESSION_COOKIE) or None
+    cache_key = IdempotencyStore.cache_key(user_id, request.method, request.url.path, key)
+
+    try:
+        existing = idempotency.begin(cache_key, IdempotencyStore.fingerprint(body))
+    except Conflict as e:
+        return JSONResponse(
+            status_code=409,
+            content={"detail": str(e)},
+            headers={"Retry-After": str(e.retry_after)},
+        )
+    except BodyMismatch as e:
+        return JSONResponse(status_code=422, content={"detail": str(e)})
+
+    if existing is not None:
+        logger.info("replayed idempotent request", extra={"http.route": request.url.path})
+        return Response(
+            content=existing.body,
+            status_code=existing.status or 200,
+            media_type=existing.media_type,
+            headers={"Idempotency-Replayed": "true"},
+        )
+
+    try:
+        response = await call_next(request)
+    except Exception:
+        idempotency.abandon(cache_key)
+        raise
+
+    chunks = [chunk async for chunk in response.body_iterator]
+    payload = b"".join(chunks)
+    if 200 <= response.status_code < 300:
+        idempotency.complete(
+            cache_key, response.status_code, payload,
+            response.media_type or "application/json",
+        )
+    else:
+        idempotency.abandon(cache_key)
+    return Response(
+        content=payload,
+        status_code=response.status_code,
+        headers=dict(response.headers),
+        media_type=response.media_type,
+    )
 
 
 @app.middleware("http")
@@ -205,6 +362,13 @@ async def _unhandled(request: Request, exc: Exception) -> JSONResponse:
     return JSONResponse(status_code=500, content={"detail": "internal server error"})
 
 
+def _safe_filename(name: str) -> str:
+    """A project name is user-supplied and lands in a Content-Disposition header,
+    where a quote or newline is a header-injection primitive."""
+    cleaned = "".join(c if (c.isalnum() or c in " ._-") else "-" for c in name).strip()
+    return (cleaned or "report")[:64]
+
+
 def _summary(project: Project) -> dict:
     data = {
         "id": project.id,
@@ -213,6 +377,7 @@ def _summary(project: Project) -> dict:
         "source": project.source,
         "region": project.region,
         "provider": project.provider,
+        "renderer": project.renderer,
         "status": project.status,
     }
     if project.error:
@@ -237,28 +402,82 @@ def current_user(request: Request) -> Optional[User]:
     return user
 
 
-def _require_project(pid: str, user: Optional[User]) -> Project:
-    """Fetch a project the caller is allowed to see.
+def _require_project(pid: str, user: Optional[User], role: Role = Role.VIEWER) -> Project:
+    """Fetch a project the caller may access at `role` or above.
 
-    A project owned by someone else returns **404, not 403** — a 403 would
-    confirm that the id exists, letting an attacker enumerate other tenants'
-    projects. The caller cannot distinguish "no such project" from "not yours",
-    which is the point.
+    **No access is 404, never 403.** A 403 confirms the id exists, letting an
+    attacker enumerate other tenants' projects (ADR 0027). **Insufficient
+    access is 403**, because a caller who already holds *some* role knows the
+    project exists — 404 would tell them nothing they do not know and would
+    make a permissions problem look like a missing resource.
+
+    In single-tenant mode (`IACTRANSLATE_AUTH` unset) every project has
+    `owner_id = None` and the one operator is implicitly an admin, which keeps
+    the historical behaviour exactly.
     """
     project = store.get(pid)
     if project is None:
         raise HTTPException(404, "project not found")
-    expected_owner = user.id if user else None
-    if project.owner_id != expected_owner:
+    if user is None:
+        # Single-tenant: the sole operator administers everything. A project
+        # that *does* have an owner must not be reachable without a session.
+        if project.owner_id is not None:
+            raise HTTPException(404, "project not found")
+        return project
+
+    held = memberships.role_for(pid, user.id, project.owner_id)
+    if held is None:
         raise HTTPException(404, "project not found")
+    if not at_least(held, role):
+        raise HTTPException(
+            403,
+            f"this action requires the '{role.value}' role; you have '{held.value}'",
+        )
     return project
+
+
+@contextmanager
+def _plaintext_upload(project: Project):
+    """Yield a filesystem path the parsers can read.
+
+    The `Source` protocol is path-based — `detect(path)` sniffs headers and
+    `parse(path)` hands the path to pandas — so an encrypted upload has to touch
+    the filesystem in the clear to be read at all. This is the single place that
+    happens, so the exposure is one auditable window rather than scattered.
+
+    The plaintext copy is created 0600 inside the project's own workspace (same
+    volume, so no spill onto a shared `/tmp` with different permissions or a
+    different retention policy) and is removed in a `finally`. When encryption
+    is off there is no copy — the original path is yielded unchanged.
+
+    Eliminating this window entirely means teaching every source to parse from a
+    buffer; that is tracked, not done here.
+    """
+    path = Path(str(project.upload_path))
+    blob = path.read_bytes()
+    if not is_encrypted(blob):
+        yield str(path)
+        return
+    plaintext = decrypt_bytes(blob)
+    tmp = path.with_name(f".plain-{secrets.token_hex(8)}{path.suffix}")
+    fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        os.write(fd, plaintext)
+        os.close(fd)
+        fd = None
+        yield str(tmp)
+    finally:
+        if fd is not None:
+            os.close(fd)
+        tmp.unlink(missing_ok=True)
 
 
 def _parse_inventory(project: Project) -> List:
     """Parse + normalize the project's upload, mapping any parser failure to 400."""
     try:
-        src = resolve_source(str(project.upload_path), project.source)
-        vms = normalize(src.parse(str(project.upload_path), column_map=project.column_map))
+        with _plaintext_upload(project) as readable:
+            src = resolve_source(readable, project.source)
+            vms = normalize(src.parse(readable, column_map=project.column_map))
     except HTTPException:
         raise
     except Exception:  # noqa: BLE001 — malformed upload must not 500/leak a traceback
@@ -285,21 +504,42 @@ def _require_accounts():
     return accounts
 
 
+def cookie_samesite() -> str:
+    """`SameSite` for the session cookie. `lax` unless a deployment asks.
+
+    `lax` is the default and the safer choice: it blocks cross-site POSTs
+    outright, so CSRF is prevented by the *browser* rather than by us.
+
+    It only works when the web app and the API are the same site. A deployment
+    that separates them — a Vercel app calling a Cloud Run API — needs `none`,
+    or the browser refuses to send the cookie and every request after sign-in
+    looks unauthenticated, which is a confusing way to discover this.
+
+    Choosing `none` gives up the browser's CSRF protection, so `_enforce_origin`
+    replaces it. Nothing downgrades silently: the default stays `lax` and the
+    deployment has to ask for anything else.
+    """
+    value = (os.getenv("IACTRANSLATE_COOKIE_SAMESITE") or "lax").strip().lower()
+    return value if value in {"lax", "strict", "none"} else "lax"
+
+
 def _set_session_cookie(response: JSONResponse, token: str) -> None:
-    """httponly blocks JS access (XSS can't steal it); samesite=lax blocks
-    cross-site POSTs (CSRF) while still allowing top-level navigations, which
-    is what makes the download/report links work."""
+    """httponly blocks JS access, so XSS cannot read the session."""
+    samesite = cookie_samesite()
     response.set_cookie(
         SESSION_COOKIE, token,
         httponly=True,
-        samesite="lax",
-        secure=os.getenv("IACTRANSLATE_COOKIE_SECURE", "1") != "0",
+        samesite=samesite,
+        # `SameSite=None` is only honoured on a Secure cookie. Without this the
+        # browser drops it entirely, and sign-in appears to succeed and then
+        # fails on the very next request.
+        secure=True if samesite == "none" else os.getenv("IACTRANSLATE_COOKIE_SECURE", "1") != "0",
         max_age=14 * 24 * 3600,
         path="/",
     )
 
 
-@app.post("/auth/register", status_code=201)
+@router.post("/auth/register", status_code=201)
 def register(body: Credentials, request: Request) -> JSONResponse:
     # Throttled by IP and by target email — see ratelimit.limit_auth.
     limit_auth(request, body.email)
@@ -317,7 +557,7 @@ def register(body: Credentials, request: Request) -> JSONResponse:
     return response
 
 
-@app.post("/auth/login")
+@router.post("/auth/login")
 def login(body: Credentials, request: Request) -> JSONResponse:
     # The most attackable endpoint in the product: it accepts a password and
     # reports whether it was right. Per-email throttling matters as much as
@@ -333,7 +573,7 @@ def login(body: Credentials, request: Request) -> JSONResponse:
     return response
 
 
-@app.post("/auth/logout", status_code=204)
+@router.post("/auth/logout", status_code=204)
 def logout(request: Request) -> Response:
     if accounts is not None:
         accounts.delete_session(request.cookies.get(SESSION_COOKIE, ""))
@@ -356,7 +596,26 @@ class ChangePassword(BaseModel):
     new_password: str
 
 
-@app.post("/auth/forgot-password", status_code=202)
+class RunInProgress(Exception):
+    """Another run holds this project. Mapped to 409 by the sync endpoint and
+    to a failed job by the async one — in neither case is it a server fault."""
+
+    def __init__(self, project_id: str) -> None:
+        super().__init__(
+            f"a run is already in progress for project {project_id}; "
+            "wait for it to finish before starting another"
+        )
+
+
+class DeleteAccount(BaseModel):
+    """A session alone must not be enough to destroy an account. A stolen cookie
+    can already read the estate; it must not also be able to make the loss
+    irreversible. The password is the second factor the flow has."""
+
+    current_password: str
+
+
+@router.post("/auth/forgot-password", status_code=202)
 def forgot_password(body: ForgotPassword, request: Request) -> dict:
     """Start a reset. Always 202, whether or not the account exists.
 
@@ -371,7 +630,7 @@ def forgot_password(body: ForgotPassword, request: Request) -> dict:
     return {"status": "if that account exists, a reset link has been sent"}
 
 
-@app.post("/auth/reset-password", status_code=204)
+@router.post("/auth/reset-password", status_code=204)
 def reset_password(body: ResetPassword, request: Request) -> Response:
     limit_auth(request)
     accts = _require_accounts()
@@ -391,7 +650,7 @@ def reset_password(body: ResetPassword, request: Request) -> Response:
     return response
 
 
-@app.post("/auth/change-password", status_code=204)
+@router.post("/auth/change-password", status_code=204)
 def change_password(
     body: ChangePassword, request: Request, user: Optional[User] = Depends(current_user)
 ) -> Response:
@@ -419,20 +678,136 @@ def change_password(
     return response
 
 
-@app.get("/auth/me")
+@router.delete("/auth/me", status_code=204)
+def delete_account(
+    body: DeleteAccount, request: Request, user: Optional[User] = Depends(current_user)
+) -> Response:
+    """Delete your own account and everything it owns.
+
+    Until this existed, removing a user meant someone with production database
+    access running DELETE by hand — which is both a GDPR-shaped gap and the
+    kind of operation that gets done wrong at 2am. This is the self-service
+    path, and it is deliberately total: a "deleted" account whose projects
+    still sit in a bucket has not been deleted.
+
+    Order matters and is not a transaction, because it crosses stores:
+    projects first (their workspaces are files, and a project row without its
+    files is merely tidy while files without a row are an orphaned estate on
+    disk), then grants, then the account itself — which is atomic in its own
+    store. If this is interrupted after the projects are gone but before the
+    user is, the caller can simply call it again.
+    """
+    limit_auth(request)
+    accts = _require_accounts()
+    if user is None:
+        raise HTTPException(401, "not signed in")
+    try:
+        accts.authenticate(user.email, body.current_password)
+    except InvalidCredentials:
+        raise HTTPException(403, "current password is incorrect") from None
+
+    # Everything this account owns, including the files.
+    owned = store.list_for_owner(user.id)
+    for project in owned:
+        store.delete(project.id)
+        memberships.drop_project(project.id)
+        bus.publish(Event(EventType.PROJECT_DELETED, project_id=project.id))
+
+    # Every grant this account holds on someone else's project.
+    for pid in memberships.projects_for(user.id):
+        memberships.revoke(pid, user.id)
+
+    accts.delete_user(user.id)
+
+    # The id, never the email: the audit trail records that a deletion
+    # happened, not who it was — retaining that is what deletion prevents.
+    bus.publish(Event(EventType.ACCOUNT_DELETED, detail={"user_id": user.id,
+                                                          "projects_removed": len(owned)}))
+    logger.info("account %s deleted with %d project(s)", user.id, len(owned))
+
+    response = Response(status_code=204)
+    response.delete_cookie(SESSION_COOKIE, path="/")
+    return response
+
+
+@router.get("/auth/me")
 def whoami(user: Optional[User] = Depends(current_user)) -> dict:
     if user is None:
         return {"authenticated": False, "multi_tenant": False}
     return {"authenticated": True, "multi_tenant": True, "id": user.id, "email": user.email}
 
 
-@app.get("/projects", dependencies=[Depends(limit_reads)])
-def list_projects(user: Optional[User] = Depends(current_user)) -> list:
-    """Every project the caller owns — the tenant's own view, nobody else's."""
-    return [_summary(p) for p in store.list_for_owner(user.id if user else None)]
+#: Page size when the caller asks for one. The default is `MAX_PROJECTS` — the
+#: existing cap — so an existing client that sends no paging parameters gets
+#: exactly what it got before.
+MAX_PAGE = 200
 
 
-@app.post("/projects", status_code=201, dependencies=[Depends(require_api_key), Depends(limit_writes)])
+def _link_header(path: str, limit: int, offset: int, total: int) -> Optional[str]:
+    """RFC 8288 `Link` relations for the current page."""
+    links = []
+    if offset + limit < total:
+        links.append(f'<{path}?limit={limit}&offset={offset + limit}>; rel="next"')
+    if offset > 0:
+        links.append(f'<{path}?limit={limit}&offset={max(0, offset - limit)}>; rel="prev"')
+        links.append(f'<{path}?limit={limit}&offset=0>; rel="first"')
+    return ", ".join(links) or None
+
+
+@router.get("/projects", dependencies=[Depends(limit_reads)])
+def list_projects(
+    request: Request,
+    response: Response,
+    limit: int = MAX_PAGE,
+    offset: int = 0,
+    user: Optional[User] = Depends(current_user),
+) -> list:
+    """Projects the caller owns, plus any shared with them.
+
+    A grant the recipient cannot see is a grant that does not work: they would
+    have to be told the project id out of band before they could use it.
+
+    **Paged via `Link` and `X-Total-Count` headers (RFC 8288), not an envelope.**
+    An envelope is more discoverable, and it was the first thing written here —
+    but it changes the response from an array to an object, which is a breaking
+    change, and both the `/v1` and legacy mounts share this handler. Shipping
+    that one commit after ADR 0049, whose whole argument was not breaking
+    clients, would have been incoherent. Headers give real pagination while an
+    existing caller that sends no parameters sees no change at all.
+
+    Offset rather than a cursor: this list is per-tenant and bounded by
+    `MAX_PROJECTS`. A cursor is the right answer once a list can shift under a
+    reader mid-page, and over-engineering at this size.
+    """
+    if limit < 1 or limit > MAX_PAGE:
+        raise HTTPException(400, f"limit must be between 1 and {MAX_PAGE}")
+    if offset < 0:
+        raise HTTPException(400, "offset must not be negative")
+
+    owned = store.list_for_owner(user.id if user else None)
+    if user is None:
+        rows = [_summary(p) for p in owned]
+    else:
+        rows = [{**_summary(p), "role": Role.ADMIN.value, "owner": True} for p in owned]
+        seen = {p.id for p in owned}
+        for pid in memberships.projects_for(user.id):
+            if pid in seen:
+                continue
+            project = store.get(pid)
+            if project is None:
+                continue  # granted then deleted; nothing to show
+            role = memberships.role_for(pid, user.id, project.owner_id)
+            rows.append({**_summary(project), "role": role.value if role else None,
+                         "owner": False})
+
+    response.headers["X-Total-Count"] = str(len(rows))
+    link = _link_header(request.url.path, limit, offset, len(rows))
+    if link:
+        response.headers["Link"] = link
+    return rows[offset:offset + limit]
+
+
+@router.post("/projects", status_code=201, dependencies=[Depends(require_api_key), Depends(limit_writes)])
 def create_project(body: CreateProject, user: Optional[User] = Depends(current_user)) -> dict:
     if body.target not in list_targets():
         raise HTTPException(400, f"target '{body.target}' not supported (available: {', '.join(list_targets())})")
@@ -445,10 +820,27 @@ def create_project(body: CreateProject, user: Optional[User] = Depends(current_u
                 400,
                 f"unknown policies {sorted(unknown)} (available: {', '.join(sorted(list_policies()))})",
             )
+    # Renderer support is per-target: CloudFormation is an AWS service, Bicep an
+    # Azure one. Rejecting here means the caller learns at create time, with the
+    # valid list in hand, instead of after uploading an inventory and running a
+    # pipeline that cannot produce output.
+    if body.renderer not in list_renderers():
+        raise HTTPException(
+            400,
+            f"renderer '{body.renderer}' not supported "
+            f"(available: {', '.join(list_renderers())})",
+        )
+    if not renderer_supports(body.renderer, body.target):
+        raise HTTPException(
+            400,
+            f"renderer '{body.renderer}' cannot target '{body.target}' "
+            f"(valid for {body.target}: {', '.join(renderers_for(body.target))})",
+        )
     project = store.create(
         name=body.name, target=body.target, source=body.source,
         column_map=body.column_map, region=body.region, policy=body.policy,
         provider=body.provider, owner_id=user.id if user else None,
+        renderer=body.renderer,
     )
     logger.info("created project %s (target=%s source=%s)", project.id, project.target, project.source)
     bus.publish(Event(EventType.PROJECT_CREATED, project_id=project.id,
@@ -469,40 +861,54 @@ def prometheus_metrics() -> PlainTextResponse:
     )
 
 
-@app.get("/policies")
+@router.get("/policies")
 def policies() -> dict:
     """Available policy rules (name -> description) for building a policy config."""
     return list_policies()
 
 
-@app.get("/targets")
+@router.get("/targets")
 def targets() -> list:
-    """Targets and their advertised capabilities — lets a UI enable features declaratively."""
+    """Targets and their advertised capabilities — lets a UI enable features declaratively.
+
+    `renderers` is part of that contract: which IaC formats a cloud can actually
+    be emitted as is a property of the target, and a client that has to hardcode
+    the answer will eventually disagree with the server about it.
+    """
     return [
-        {"name": name, "capabilities": sorted(get_target(name).capabilities)}
+        {
+            "name": name,
+            "capabilities": sorted(get_target(name).capabilities),
+            "renderers": renderers_for(name),
+            # Support is not uniform and saying so is the point: three of these
+            # are checked against the real provider on every push, two are not.
+            "maturity": maturity_of(name).label,
+            "maturity_means": maturity_of(name).means,
+        }
         for name in list_targets()
     ]
 
 
-@app.get("/projects/{pid}", dependencies=[Depends(require_api_key), Depends(limit_reads)])
+@router.get("/projects/{pid}", dependencies=[Depends(require_api_key), Depends(limit_reads)])
 def get_project(pid: str, user: Optional[User] = Depends(current_user)) -> dict:
-    return _summary(_require_project(pid, user))
+    return _summary(_require_project(pid, user, Role.VIEWER))
 
 
-@app.delete("/projects/{pid}", status_code=204, dependencies=[Depends(require_api_key), Depends(limit_writes)])
+@router.delete("/projects/{pid}", status_code=204, dependencies=[Depends(require_api_key), Depends(limit_writes)])
 def delete_project(pid: str, user: Optional[User] = Depends(current_user)) -> None:
     # Ownership is checked *before* deleting — otherwise any signed-in user
     # could destroy another tenant's project by guessing its id.
-    _require_project(pid, user)
+    _require_project(pid, user, Role.ADMIN)
     if not store.delete(pid):
         raise HTTPException(404, "project not found")
+    memberships.drop_project(pid)
     logger.info("deleted project %s", pid)
     bus.publish(Event(EventType.PROJECT_DELETED, project_id=pid))
 
 
-@app.post("/projects/{pid}/upload", dependencies=[Depends(require_api_key), Depends(limit_writes)])
+@router.post("/projects/{pid}/upload", dependencies=[Depends(require_api_key), Depends(limit_writes)])
 async def upload(pid: str, file: UploadFile, user: Optional[User] = Depends(current_user)) -> dict:
-    project = _require_project(pid, user)
+    project = _require_project(pid, user, Role.EDITOR)
 
     suffix = Path(file.filename or "").suffix.lower()
     if suffix not in _ALLOWED_SUFFIXES:
@@ -510,16 +916,36 @@ async def upload(pid: str, file: UploadFile, user: Optional[User] = Depends(curr
 
     dest = project.workspace / f"upload{suffix}"
     total = 0
+    # Buffered rather than streamed to disk because the bytes are encrypted as a
+    # unit (one authenticated blob per file). MAX_UPLOAD_BYTES already bounds
+    # this — it is the same ceiling the streaming version enforced, and the
+    # chunk loop still stops the moment it is crossed, so an oversized upload is
+    # never fully buffered.
+    chunks: List[bytes] = []
     try:
-        with open(dest, "wb") as out:
-            while chunk := await file.read(_UPLOAD_CHUNK):
-                total += len(chunk)
-                if total > MAX_UPLOAD_BYTES:
-                    raise HTTPException(413, f"file exceeds the {MAX_UPLOAD_BYTES // (1024 * 1024)} MB limit")
-                out.write(chunk)
+        while chunk := await file.read(_UPLOAD_CHUNK):
+            total += len(chunk)
+            if total > MAX_UPLOAD_BYTES:
+                raise HTTPException(413, f"file exceeds the {MAX_UPLOAD_BYTES // (1024 * 1024)} MB limit")
+            chunks.append(chunk)
+        # Off the event loop. This is the one route handler that is `async def`
+        # — correctly, because it awaits `file.read()` — and encrypting plus
+        # writing 25 MB inside it stalls every other request for 14-70 ms
+        # (measured at the MAX_UPLOAD_BYTES ceiling). Non-async handlers are
+        # already run in a threadpool by FastAPI, which is why they do not have
+        # this problem and why sync handlers are the right choice for the
+        # CPU-bound pipeline work elsewhere.
+        await run_in_threadpool(write_file, dest, b"".join(chunks))
     except HTTPException:
         dest.unlink(missing_ok=True)
         raise
+    except EncryptionUnavailable as e:
+        # Configured-but-broken encryption must not degrade to plaintext.
+        dest.unlink(missing_ok=True)
+        logger.error("upload rejected: encryption unavailable", extra={"project_id": project.id})
+        raise HTTPException(500, str(e)) from e
+    finally:
+        chunks.clear()
 
     project.upload_path = dest
     project.status = "uploaded"
@@ -537,19 +963,35 @@ def _execute_run(project: Project) -> None:
     caller maps them to HTTP codes (sync) or to a failed job (async).
     """
     out_dir = project.workspace / "project"
+    # One run per project at a time, across every instance. Acquired here
+    # rather than in the endpoints so the sync and async paths cannot race
+    # each other either. Released in `finally` on every exit — including an
+    # exception nobody anticipated — because a project stuck on `running`
+    # until the lease expires is a worse outcome than any error.
+    if not store.try_begin_run(project.id):
+        raise RunInProgress(project.id)
     try:
-        result = run_pipeline(
-            input_path=str(project.upload_path),
-            project_name=project.name,
-            out_dir=str(out_dir),
-            target=project.target,
-            source=project.source,
-            column_map=project.column_map,
-            region=project.region,
-            provider=get_provider(get_target(project.target), name=project.provider),
-            make_zip=True,
-            policy_config=project.policy,
-        )
+        _execute_run_locked(project, out_dir)
+    finally:
+        store.end_run(project.id)
+
+
+def _execute_run_locked(project: Project, out_dir: Path) -> None:
+    try:
+        with _plaintext_upload(project) as readable:
+            result = run_pipeline(
+                input_path=readable,
+                project_name=project.name,
+                out_dir=str(out_dir),
+                target=project.target,
+                source=project.source,
+                column_map=project.column_map,
+                region=project.region,
+                provider=get_provider(get_target(project.target), name=project.provider),
+                make_zip=True,
+                policy_config=project.policy,
+                renderer=project.renderer,
+            )
     except (PlanValidationError, PolicyViolationError, ValueError) as e:
         project.status = "failed"
         if isinstance(e, PlanValidationError):
@@ -558,6 +1000,16 @@ def _execute_run(project: Project) -> None:
             project.error = "; ".join(f"[{v.policy}] {v.message}" for v in e.violations)
         else:
             project.error = str(e)
+        store.save(project)
+        raise
+    except Exception:
+        # Anything nobody anticipated. The API still answers 500 — that is
+        # correct, it *is* our fault — but the project must not be left
+        # reading "running": the caller would wait on a run that is not
+        # happening, and the next attempt would look like a takeover of a
+        # live run rather than a retry of a dead one.
+        project.status = "failed"
+        project.error = "the run stopped unexpectedly; retry, and report it if it recurs"
         store.save(project)
         raise
 
@@ -572,9 +1024,16 @@ def _execute_run(project: Project) -> None:
         # README in the same bundle (ADR 0039). `compute_monthly_cost_usd` is
         # kept alongside it so a caller can still see the instance-only figure.
         "estimated_monthly_cost_usd": _costs.total,
+        # False for an on-premises target. The UI must render the absence, not
+        # the zero — "$0.00" next to five priced clouds reads as free.
+        "priced": _costs.priced,
+        "pricing_basis": _costs.pricing_basis,
         "compute_monthly_cost_usd": _costs.compute,
         "cost_breakdown": _costs.model_dump(),
         "pricing_source": result.plan.pricing_source,
+        # Surfaced so a dashboard can say *why* the numbers are catalog rates
+        # rather than leaving a customer to assume they are real market prices.
+        "pricing_source_degraded": result.plan.pricing_source_degraded,
         "right_sized_count": sum(1 for c in result.plan.compute if c.right_sized),
         "provider_requested": project.provider,
         "provider_used": result.plan.provider_used,
@@ -593,23 +1052,47 @@ def _execute_run(project: Project) -> None:
              "stages": [{"stage": s.stage, "duration_ms": s.duration_ms} for s in result.trace.stages]}
             if result.trace else None
         ),
+        # Each row carries how its size was reached, not just what was chosen.
+        # A reviewer's first question about a recommendation is what it rested
+        # on, and a table of instance types alone cannot answer it.
         "instances": [
-            {"vm": c.vm_name, "instance_type": c.instance_type, "tier": c.tier.value}
+            {
+                "vm": c.vm_name,
+                "instance_type": c.instance_type,
+                "tier": c.tier.value,
+                "basis": c.decision.basis.value if c.decision else None,
+                "basis_label": c.decision.basis.label if c.decision else None,
+                "evidence": (
+                    [{"field": e.field, "value": e.value, "source": e.source}
+                     for e in c.decision.evidence] if c.decision else []
+                ),
+                "assumptions": c.decision.assumptions if c.decision else [],
+                "unknowns": c.decision.unknowns if c.decision else [],
+            }
             for c in result.plan.compute
         ],
+        # Estate-level honesty marker: how many sizes rest on measurement rather
+        # than on what somebody once provisioned.
+        "measured_sizing_count": sum(
+            1 for c in result.plan.compute if c.decision and c.decision.basis.is_measured
+        ),
     }
     store.save(project)
     logger.info("project %s generated %d instances", project.id, result.plan.vm_count)
 
 
-@app.post("/projects/{pid}/run", dependencies=[Depends(require_api_key), Depends(limit_writes)])
+@router.post("/projects/{pid}/run", dependencies=[Depends(require_api_key), Depends(limit_writes)])
 def run(pid: str, user: Optional[User] = Depends(current_user)) -> dict:
     """Synchronous run — generates in-request. See POST /jobs for the async path."""
-    project = _require_project(pid, user)
+    project = _require_project(pid, user, Role.EDITOR)
     if project.upload_path is None:
         raise HTTPException(400, "no file uploaded for this project")
     try:
         _execute_run(project)
+    except RunInProgress:
+        raise HTTPException(
+            409, "a run is already in progress for this project; wait for it to finish"
+        ) from None
     except PlanValidationError as e:
         raise HTTPException(422, {"message": "plan failed validation", "issues": e.issues}) from e
     except PolicyViolationError as e:
@@ -620,10 +1103,27 @@ def run(pid: str, user: Optional[User] = Depends(current_user)) -> dict:
     return _summary(project)
 
 
-@app.post("/projects/{pid}/jobs", status_code=202, dependencies=[Depends(require_api_key), Depends(limit_writes)])
+def _run_project_job(project_id: str) -> None:
+    """Durable-queue entry point: look the project up, then run it.
+
+    The queue stores a project id rather than a closure, so the work has to be
+    re-resolved from the store on whichever process picks it up — possibly a
+    different one from the process that accepted the request.
+    """
+    project = store.get(project_id)
+    if project is None:
+        raise RuntimeError(f"project {project_id} no longer exists")
+    _execute_run(project)
+
+
+jobs.register("run", _run_project_job)
+jobs.start()
+
+
+@router.post("/projects/{pid}/jobs", status_code=202, dependencies=[Depends(require_api_key), Depends(limit_writes)])
 def create_job(pid: str, user: Optional[User] = Depends(current_user)) -> dict:
     """Asynchronous run — enqueue the pipeline and return a job id to poll."""
-    project = _require_project(pid, user)
+    project = _require_project(pid, user, Role.EDITOR)
     if project.upload_path is None:
         raise HTTPException(400, "no file uploaded for this project")
     project.status = "queued"
@@ -632,7 +1132,7 @@ def create_job(pid: str, user: Optional[User] = Depends(current_user)) -> dict:
     return job.to_dict()
 
 
-@app.get("/jobs/{job_id}", dependencies=[Depends(require_api_key), Depends(limit_reads)])
+@router.get("/jobs/{job_id}", dependencies=[Depends(require_api_key), Depends(limit_reads)])
 def get_job(job_id: str, user: Optional[User] = Depends(current_user)) -> dict:
     job = jobs.get(job_id)
     if job is None:
@@ -647,7 +1147,7 @@ def get_job(job_id: str, user: Optional[User] = Depends(current_user)) -> dict:
     return data
 
 
-@app.get("/audit", dependencies=[Depends(require_api_key), Depends(limit_reads)])
+@router.get("/audit", dependencies=[Depends(require_api_key), Depends(limit_reads)])
 def get_audit(
     project_id: Optional[str] = None,
     limit: int = 100,
@@ -670,56 +1170,88 @@ def get_audit(
     return [e.to_dict() for e in events if e.project_id in owned]
 
 
-@app.post("/projects/{pid}/recommend", dependencies=[Depends(require_api_key), Depends(limit_writes)])
-def recommend_cloud(pid: str, user: Optional[User] = Depends(current_user)) -> dict:
-    project = _require_project(pid, user)
+@router.post("/projects/{pid}/recommend", dependencies=[Depends(require_api_key), Depends(limit_writes)])
+def recommend_cloud(
+    pid: str,
+    weights: Optional[ScoringWeights] = Body(default=None),
+    user: Optional[User] = Depends(current_user),
+) -> dict:
+    # A recommendation is read-only analysis, but it builds a plan per cloud —
+    # five full pipelines of real CPU — so it is gated as work, not as a read.
+    # `weights` is optional: no body means the default, neutral weighting, so
+    # existing callers are unaffected. Invalid weights are a 422 from the model.
+    project = _require_project(pid, user, Role.EDITOR)
     if project.upload_path is None:
         raise HTTPException(400, "no file uploaded for this project")
 
     vms = _parse_inventory(project)
     try:
-        return recommend(vms).model_dump()
+        return recommend(vms, weights=weights).model_dump()
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
 
 
-@app.post("/projects/{pid}/assess", dependencies=[Depends(require_api_key), Depends(limit_writes)])
+@router.post("/projects/{pid}/assess", dependencies=[Depends(require_api_key), Depends(limit_writes)])
 def assess_estate(pid: str, user: Optional[User] = Depends(current_user)) -> dict:
-    project = _require_project(pid, user)
+    project = _require_project(pid, user, Role.EDITOR)
     if project.upload_path is None:
         raise HTTPException(400, "no file uploaded for this project")
 
     vms = _parse_inventory(project)
-    src = resolve_source(str(project.upload_path), project.source)
+    # `resolve_source` sniffs the file to auto-detect, so it needs plaintext too.
+    with _plaintext_upload(project) as readable:
+        src = resolve_source(readable, project.source)
     a = assess(vms, project_name=project.name, source_platform=src.name)
     return a.model_dump(mode="json")
 
 
-@app.post(
+@router.post(
     "/projects/{pid}/report",
     response_class=HTMLResponse,
     dependencies=[Depends(require_api_key), Depends(limit_writes)],
 )
 def executive_report(pid: str, include_recommendation: bool = True,
-                     user: Optional[User] = Depends(current_user)) -> HTMLResponse:
-    project = _require_project(pid, user)
+                     format: str = "html",
+                     user: Optional[User] = Depends(current_user)) -> Response:
+    project = _require_project(pid, user, Role.VIEWER)
     if project.upload_path is None:
         raise HTTPException(400, "no file uploaded for this project")
 
     vms = _parse_inventory(project)
-    src = resolve_source(str(project.upload_path), project.source)
+    with _plaintext_upload(project) as readable:
+        src = resolve_source(readable, project.source)
     target = get_target(project.target)
     plan = build_migration_plan(
         vms, project_name=project.name, target=target, region=project.region,
         source_platform=getattr(src, "source_platform", src.name),
     )
     rec = recommend(vms) if include_recommendation else None
-    return HTMLResponse(build_executive_report(plan, vms, recommendation=rec))
+    html = build_executive_report(plan, vms, recommendation=rec)
+
+    if format.lower() == "pdf":
+        try:
+            pdf = render_pdf(html)
+        except PdfUnavailable as e:
+            # 501, not 500: the request was valid and the server simply does not
+            # offer this representation. A 500 would send the caller hunting for
+            # a bug that does not exist.
+            raise HTTPException(501, str(e)) from e
+        return Response(
+            content=pdf,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition":
+                    f'attachment; filename="{_safe_filename(project.name)}-report.pdf"'
+            },
+        )
+    if format.lower() != "html":
+        raise HTTPException(400, "format must be 'html' or 'pdf'")
+    return HTMLResponse(html)
 
 
-@app.get("/projects/{pid}/download", dependencies=[Depends(require_api_key), Depends(limit_reads)])
+@router.get("/projects/{pid}/download", dependencies=[Depends(require_api_key), Depends(limit_reads)])
 def download(pid: str, user: Optional[User] = Depends(current_user)) -> FileResponse:
-    project = _require_project(pid, user)
+    project = _require_project(pid, user, Role.VIEWER)
     if not project.zip_path or not Path(project.zip_path).exists():
         raise HTTPException(409, "project has not been generated yet; call /run first")
     return FileResponse(
@@ -727,3 +1259,155 @@ def download(pid: str, user: Optional[User] = Depends(current_user)) -> FileResp
         media_type="application/zip",
         filename=f"{project.name}.zip",
     )
+
+
+class GrantAccess(BaseModel):
+    email: str
+    role: str = Role.VIEWER.value
+
+
+@router.get("/projects/{pid}/members", dependencies=[Depends(require_api_key), Depends(limit_reads)])
+def list_members(pid: str, user: Optional[User] = Depends(current_user)) -> list:
+    """Who has access. Visible to anyone with access — knowing who else can see
+    a project is part of understanding your own exposure."""
+    project = _require_project(pid, user, Role.VIEWER)
+    return memberships.members(pid, project.owner_id)
+
+
+@router.post("/projects/{pid}/members", status_code=201,
+             dependencies=[Depends(require_api_key), Depends(limit_writes)])
+def grant_access(pid: str, body: GrantAccess,
+                 user: Optional[User] = Depends(current_user)) -> dict:
+    """Grant a user a role on this project. Admin only."""
+    project = _require_project(pid, user, Role.ADMIN)
+    if accounts is None:
+        raise HTTPException(400, "sharing requires multi-tenant mode (IACTRANSLATE_AUTH=session)")
+    try:
+        role = parse_role(body.role)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+    target_user = accounts.get_user_by_email(body.email)
+    if target_user is None:
+        # Deliberately explicit: the caller is an admin of this project and is
+        # naming someone they intend to work with. Hiding the difference between
+        # "no such account" and "granted" would leave them unable to tell a typo
+        # from a silent success.
+        raise HTTPException(404, f"no account for '{body.email}'")
+    if target_user.id == project.owner_id:
+        raise HTTPException(400, "the owner already administers this project")
+
+    memberships.grant(pid, target_user.id, role)
+    logger.info("granted %s on project %s", role.value, pid,
+                extra={"project_id": pid, "role": role.value})
+    return {"user_id": target_user.id, "role": role.value, "owner": False}
+
+
+@router.delete("/projects/{pid}/members/{user_id}",
+               dependencies=[Depends(require_api_key), Depends(limit_writes)])
+def revoke_access(pid: str, user_id: str,
+                  user: Optional[User] = Depends(current_user)) -> dict:
+    """Revoke a grant. Admin only, and the owner cannot be removed —
+    a project with no administrator is unrecoverable without a database edit."""
+    project = _require_project(pid, user, Role.ADMIN)
+    if user_id == project.owner_id:
+        raise HTTPException(400, "the owner cannot be removed from their own project")
+    if not memberships.revoke(pid, user_id):
+        raise HTTPException(404, "no such grant on this project")
+    logger.info("revoked access on project %s", pid, extra={"project_id": pid})
+    return {"revoked": user_id}
+
+
+@router.get("/auth/sso/login", dependencies=[Depends(limit_auth)])
+def sso_login(request: Request) -> Response:
+    """Start the authorization-code flow: redirect the browser to the provider."""
+    if sso_config is None:
+        raise HTTPException(404, "single sign-on is not configured on this deployment")
+    _require_accounts()
+    login = sso_logins.begin()
+    try:
+        url = _oidc.authorization_url(sso_config, login)
+    except _oidc.OidcError as e:
+        logger.error("sso login could not start", exc_info=True)
+        raise HTTPException(502, f"identity provider unavailable: {e}") from e
+    # 302 rather than a JSON body: this is a browser flow, and the caller is a
+    # browser following a link.
+    return Response(status_code=302, headers={"Location": url})
+
+
+@router.get("/auth/sso/callback", dependencies=[Depends(limit_auth)])
+def sso_callback(request: Request, code: str = "", state: str = "",
+                 error: str = "") -> JSONResponse:
+    """Complete the flow: validate the ID token and establish a session."""
+    if sso_config is None:
+        raise HTTPException(404, "single sign-on is not configured on this deployment")
+    accts = _require_accounts()
+    if error:
+        # The provider's own error, echoed back to the browser. Not trusted as
+        # markup — it lands in a JSON body, never in HTML.
+        raise HTTPException(400, f"identity provider returned an error: {error[:200]}")
+    if not code or not state:
+        raise HTTPException(400, "callback is missing code or state")
+
+    try:
+        login = sso_logins.consume(state)
+        tokens = _oidc.exchange_code(sso_config, code, login.verifier)
+        id_token = tokens.get("id_token")
+        if not id_token:
+            raise _oidc.OidcError("token response carried no id_token")
+        claims = _oidc.verify_id_token(sso_config, id_token, login.nonce)
+        subject, email = _oidc.identity_from_claims(sso_config, claims)
+    except _oidc.OidcError as e:
+        # Logged with detail, returned without: the message can name issuers,
+        # audiences and claim contents, which is diagnostic for us and
+        # reconnaissance for anyone probing the endpoint.
+        logger.warning("sso callback rejected", exc_info=True, extra={"reason": str(e)})
+        raise HTTPException(401, "single sign-on failed") from e
+
+    user = accts.get_user_by_email(email)
+    if user is None:
+        # Just-in-time provisioning. The password is random and never used —
+        # an SSO account must not also be reachable by password, or the identity
+        # provider stops being the only way in.
+        user = accts.create_user(email, secrets.token_urlsafe(32))
+        logger.info("provisioned user from sso", extra={"user_id": user.id})
+
+    response = JSONResponse(
+        status_code=200, content={"id": user.id, "email": user.email, "via": "sso"}
+    )
+    _set_session_cookie(response, accts.create_session(user.id))
+    logger.info("sso login", extra={"user_id": user.id, "subject": subject})
+    return response
+
+# --------------------------------------------------------------------------- #
+# Mounting
+# --------------------------------------------------------------------------- #
+
+API_VERSION = "v1"
+_DEPRECATION_NOTE = (
+    'unversioned paths are deprecated; use /v1'
+)
+
+app.include_router(router, prefix=f"/{API_VERSION}")
+
+# Legacy, unprefixed mount. Kept so the web app and any existing caller keep
+# working; removing it is a breaking change and belongs in a major release.
+app.include_router(router, include_in_schema=False)
+
+
+@app.middleware("http")
+async def _deprecate_unversioned(request: Request, call_next):
+    """Mark responses served from the legacy unprefixed paths.
+
+    A client should be able to discover the move without reading a changelog,
+    and a deployment should be able to measure how much traffic still needs
+    migrating before the legacy mount is removed. `/health` and `/metrics` are
+    versionless by design and are not flagged.
+    """
+    response = await call_next(request)
+    path = request.url.path
+    if not path.startswith(f"/{API_VERSION}/") and path not in ("/health", "/metrics"):
+        response.headers.setdefault("Deprecation", "true")
+        response.headers.setdefault("Warning", f'299 - "{_DEPRECATION_NOTE}"')
+        response.headers.setdefault("Link", f'</{API_VERSION}{path}>; rel="successor-version"')
+    return response

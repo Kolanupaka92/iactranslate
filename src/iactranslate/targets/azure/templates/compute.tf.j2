@@ -2,7 +2,7 @@
 # An instance fronted by a load balancer (loadbalancer.tf) gets its public
 # entry point there, not its own public IP.
 {% for c in compute %}
-{% if c.subnet_tier == SubnetTier.PUBLIC and c.vm_name not in fronted_vm_names %}
+{% if c.vm_name in public_vm_names %}
 resource "azurerm_public_ip" "{{ c.resource_name }}" {
   name                = "{{ vm_slug[c.vm_name] }}-pip"
   resource_group_name = azurerm_resource_group.main.name
@@ -10,9 +10,9 @@ resource "azurerm_public_ip" "{{ c.resource_name }}" {
   allocation_method   = "Static"
   sku                 = "Standard"
 
-  tags = {
+  tags = merge(local.common_tags, {
     SourceVM = "{{ c.vm_name }}"
-  }
+  })
 }
 
 {% endif %}
@@ -25,14 +25,14 @@ resource "azurerm_network_interface" "{{ c.resource_name }}" {
     name                          = "internal"
     subnet_id                     = azurerm_subnet.{{ subnet_of[c.vm_name] }}.id
     private_ip_address_allocation = "Dynamic"
-{% if c.subnet_tier == SubnetTier.PUBLIC and c.vm_name not in fronted_vm_names %}
+{% if c.vm_name in public_vm_names %}
     public_ip_address_id          = azurerm_public_ip.{{ c.resource_name }}.id
 {% endif %}
   }
 
-  tags = {
+  tags = merge(local.common_tags, {
     SourceVM = "{{ c.vm_name }}"
-  }
+  })
 }
 
 resource "azurerm_network_interface_security_group_association" "{{ c.resource_name }}" {
@@ -51,6 +51,12 @@ resource "azurerm_network_interface_backend_address_pool_association" "{{ c.reso
 
 {% if c.image_key.startswith('windows') %}
 resource "azurerm_windows_virtual_machine" "{{ c.resource_name }}" {
+{% if identity_roles %}
+  identity {
+    type         = "UserAssigned"
+    identity_ids = [azurerm_user_assigned_identity.{{ c.tier.value }}.id]
+  }
+{% endif %}
   name                  = "{{ vm_slug[c.vm_name] }}"
   resource_group_name   = azurerm_resource_group.main.name
   location              = azurerm_resource_group.main.location
@@ -63,6 +69,11 @@ resource "azurerm_windows_virtual_machine" "{{ c.resource_name }}" {
     caching              = "ReadWrite"
     storage_account_type = "StandardSSD_LRS"
     disk_size_gb         = {{ c.root_volume_gib }}
+{% if kms_key_id %}
+    # Managed disks are always encrypted at rest with a platform-managed key;
+    # this replaces it with the customer's own, via a disk encryption set.
+    disk_encryption_set_id = "{{ kms_key_id }}"
+{% endif %}
   }
 
   source_image_reference {
@@ -72,12 +83,12 @@ resource "azurerm_windows_virtual_machine" "{{ c.resource_name }}" {
     version   = "latest"
   }
 
-  tags = {
+  tags = merge(local.common_tags, {
     Name        = "{{ c.vm_name }}"
     Tier        = "{{ c.tier.value }}"
     Environment = "{{ c.environment.value }}"
     SourceVM    = "{{ c.vm_name }}"
-  }
+  })
 }
 {% else %}
 resource "azurerm_linux_virtual_machine" "{{ c.resource_name }}" {
@@ -97,6 +108,11 @@ resource "azurerm_linux_virtual_machine" "{{ c.resource_name }}" {
     caching              = "ReadWrite"
     storage_account_type = "StandardSSD_LRS"
     disk_size_gb         = {{ c.root_volume_gib }}
+{% if kms_key_id %}
+    # Managed disks are always encrypted at rest with a platform-managed key;
+    # this replaces it with the customer's own, via a disk encryption set.
+    disk_encryption_set_id = "{{ kms_key_id }}"
+{% endif %}
   }
 
   source_image_reference {
@@ -106,12 +122,12 @@ resource "azurerm_linux_virtual_machine" "{{ c.resource_name }}" {
     version   = "latest"
   }
 
-  tags = {
+  tags = merge(local.common_tags, {
     Name        = "{{ c.vm_name }}"
     Tier        = "{{ c.tier.value }}"
     Environment = "{{ c.environment.value }}"
     SourceVM    = "{{ c.vm_name }}"
-  }
+  })
 }
 {% endif %}
 

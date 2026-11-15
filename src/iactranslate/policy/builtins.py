@@ -114,3 +114,27 @@ def require_nat(plan: MigrationPlan, target: Target, config: dict, sev: Severity
             message="network has no NAT gateway (private workloads cannot reach the internet)",
         )]
     return []
+
+
+@register("require_customer_managed_key", Severity.DENY,
+          "Volume encryption must use the customer's own key, not the provider's.")
+def require_customer_managed_key(
+    plan: MigrationPlan, target: Target, config: dict, sev: Severity
+) -> List[PolicyViolation]:
+    """Regulated estates often must hold their own encryption keys.
+
+    Note what this does *not* check. Encryption at rest is unconditional — every
+    target either encrypts by default or is told to (ADR 0062) — so a policy
+    asserting "volumes are encrypted" could never fail and would be compliance
+    theatre. What genuinely varies, and what an auditor actually asks, is *whose
+    key* protects the data.
+    """
+    if plan.kms_key_id:
+        return []
+    return [PolicyViolation(
+        policy="require_customer_managed_key", severity=sev,
+        message=(
+            f"volumes are encrypted with {target.name}'s provider-managed key; "
+            "supply a customer-managed key to satisfy this policy"
+        ),
+    )]

@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -23,17 +23,33 @@ jobs:
         run: ruff check src tests
 
   test:
-    runs-on: ubuntu-latest
+    name: test (${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.9", "3.11", "3.12"]
+        include:
+          # 3.9 is pinned to 24.04: ubuntu-latest (26.04) ships no 3.9 build, so
+          # the job failed at setup without running a test. 3.9 stays supported
+          # because it is the python3 that comes with macOS's developer tools —
+          # the zero-install path for running the CLI on a stock Mac. Revisit
+          # when GitHub retires ubuntu-24.04.
+          - python-version: "3.9"
+            os: ubuntu-24.04
+          - python-version: "3.11"
+            os: ubuntu-latest
+          - python-version: "3.12"
+            os: ubuntu-latest
+          # The Docker image's Python. Tested here so the version production
+          # runs is never one only the container smoke test has seen.
+          - python-version: "3.15"
+            os: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
@@ -50,12 +66,13 @@ jobs:
         run: pytest -q
 
   terraform-validate:
-    # Prove the generated Terraform is genuinely valid against the real
-    # AWS / azurerm / google providers — not just shape-checked.
+    # Prove the generated Terraform is genuinely valid against every target's
+    # real provider — aws, azurerm, google, oci, digitalocean, nutanix and
+    # bpg/proxmox — not just shape-checked. The list lives in test_e2e.py.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -68,13 +85,13 @@ jobs:
           pip install -e ".[dev]"
       - name: Generate test fixtures
         run: python scripts/make_fixtures.py
-      - name: Validate generated Terraform (aws/azure/gcp)
+      - name: Validate generated Terraform (and moved blocks) against every target's real provider
         env:
           IACTRANSLATE_E2E_TOFU: "1"
           TF_PLUGIN_CACHE_DIR: /tmp/tf-plugin-cache
         run: |
           mkdir -p /tmp/tf-plugin-cache
-          pytest tests/test_e2e.py::test_generated_terraform_validates -q
+          pytest tests/test_e2e.py::test_generated_terraform_validates tests/test_e2e.py::test_generated_moved_blocks_validate tests/test_e2e.py::test_foreach_layout_validates -q
 
   web:
     runs-on: ubuntu-latest
@@ -109,6 +126,45 @@ jobs:
             sleep 1
           done
           echo "health check failed"; docker logs iac; exit 1
+      - name: Smoke-test server-side PDF rendering
+        # The one place PDF rendering can actually be exercised: WeasyPrint needs
+        # Pango and Cairo, which the image installs and a developer laptop
+        # usually does not. Verifies a real PDF comes out, not just that the
+        # import succeeded.
+        run: |
+          docker run --rm iactranslate:ci python -c "
+          from iactranslate import pdf
+          assert pdf.available(), 'weasyprint should be importable in the image'
+          from iactranslate.normalize import normalize
+          from iactranslate.parsers import parse
+          from iactranslate.agents import build_migration_plan
+          from iactranslate.targets import get_target
+          from iactranslate.exec_report import build_executive_report
+          from iactranslate.cli import sample_estate_path
+          vms = normalize(parse(str(sample_estate_path())))
+          plan = build_migration_plan(vms, 'ci', get_target('aws'))
+          out = pdf.render(build_executive_report(plan, vms))
+          assert out.startswith(b'%PDF-'), out[:20]
+          assert len(out) > 5000, len(out)
+          print('rendered', len(out), 'byte PDF')
+          "
+
+      - name: Smoke-test encryption and the PostgreSQL driver
+        # Both are optional extras of the library and mandatory in the image: a
+        # hosted deployment sets IACTRANSLATE_ENCRYPTION_KEY, and without
+        # `cryptography` the API fails closed and refuses every upload (ADR
+        # 0043) — correct behaviour, useless deployment. That shipped once and
+        # was only caught by a smoke test against the real service.
+        run: |
+          docker run --rm -e IACTRANSLATE_ENCRYPTION_KEY=zZ8kQ2mVv1sB4nR7tY0uX3wC6eA9gJ5hK8lN1pS4dF0= \
+            iactranslate:ci python -c "
+          from iactranslate.crypto import encryption_enabled, encrypt_bytes, decrypt_bytes
+          assert encryption_enabled(), 'cryptography must be installed in the image'
+          assert decrypt_bytes(encrypt_bytes(b'estate')) == b'estate'
+          import psycopg, psycopg_pool  # noqa: F401 — the postgres backend needs both
+          print('encryption and psycopg both available')
+          "
+
       - name: Smoke-test the zero-input demo
         # The path a first-time evaluator takes: no inventory, no account,
         # no upload. If this breaks, nobody can try the product.
@@ -116,6 +172,71 @@ jobs:
           docker run --rm iactranslate:ci iactranslate demo --out /tmp/demo \
             | tee /tmp/demo.log
           grep -q "Nothing is uploaded" /tmp/demo.log
+
+  redis-integration:
+    # The shared rate limiter is verified against `fakeredis` in the main suite so
+    # it runs offline. This job repeats those tests against a real Redis, because
+    # the Lua script, server-side TIME and TTL semantics are exactly what a
+    # reimplementation can get subtly wrong — and the limiter's correctness rests
+    # on them.
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,redis]"
+      - name: Shared rate limiting against a real Redis
+        env:
+          IACTRANSLATE_TEST_REDIS_URL: redis://localhost:6379/0
+        run: pytest tests/test_ratelimit_shared.py -v
+
+  postgres-integration:
+    # The stores are covered against SQLite in the main suite, which is the
+    # default engine and covers the logic. It cannot cover what actually breaks
+    # when the engine is swapped: placeholder binding, type mapping, schema
+    # introspection and the job-queue claim. Those are only meaningful against a
+    # real server, so this runs them against one.
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: iactranslate
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,postgres]"
+      - name: Durable stores against a real PostgreSQL
+        env:
+          IACTRANSLATE_TEST_POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/iactranslate
+        run: pytest tests/test_postgres_store.py -v
 
   security:
     # Supply-chain gate. Enterprise procurement asks for an SBOM and a
@@ -125,9 +246,14 @@ jobs:
     permissions:
       contents: read
       security-events: write
+      # `upload-sarif` reads the workflow run to fingerprint results and
+      # deduplicate alerts. Without this it fails with "Resource not accessible
+      # by integration" *after* the scan has already succeeded — so the job goes
+      # red for a reporting permission rather than for anything it found.
+      actions: read
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -156,13 +282,16 @@ jobs:
         run: docker build -t iactranslate:scan .
 
       - name: Scan image for OS and library CVEs
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: iactranslate:scan
           format: sarif
           output: trivy.sarif
           severity: CRITICAL,HIGH
           ignore-unfixed: true
+          # Without this the SARIF carries every severity regardless of the
+          # filter above, burying the findings that gate the build.
+          limit-severities-for-sarif: true
 
       - name: Upload scan results
         uses: github/codeql-action/upload-sarif@v3
@@ -174,7 +303,7 @@ jobs:
       - name: Fail on fixable CRITICAL/HIGH findings
         # Reported to the Security tab above *and* enforced here — a report
         # nobody is required to read is not a control.
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: iactranslate:scan
           format: table
@@ -198,7 +327,7 @@ jobs:
 
   publish-image:
     # Publish only from main, so anyone can `docker run` it without cloning.
-    needs: [lint, test, docker, web, terraform-validate, security]
+    needs: [lint, test, docker, web, terraform-validate, security, redis-integration]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
@@ -209,9 +338,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install cosign
-        uses: sigstore/cosign-installer@v3
+        uses: sigstore/cosign-installer@v4.1.2
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -240,7 +369,7 @@ jobs:
           DIGEST: ${{ steps.push.outputs.digest }}
 
       - name: Attest build provenance (SLSA)
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-name: ${{ env.IMAGE }}
           subject-digest: ${{ steps.push.outputs.digest }}

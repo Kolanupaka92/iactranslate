@@ -8,6 +8,11 @@ const TARGETS: { id: Target; label: string; blurb: string }[] = [
   { id: "gcp", label: "GCP", blurb: "Compute Engine · VPC · Firewalls" },
   { id: "oci", label: "OCI", blurb: "Compute · VCN · Network Security Groups" },
   { id: "digitalocean", label: "DigitalOcean", blurb: "Droplets · VPC · Firewalls" },
+  // On-premises. Most of the VMware exodus is going to another hypervisor, not
+  // a hyperscaler, and no cloud vendor's tooling will ever suggest that. These
+  // generate real infrastructure code but carry no price — see RunSummary.
+  { id: "nutanix", label: "Nutanix AHV", blurb: "VMs · VLAN subnets · Flow categories" },
+  { id: "proxmox", label: "Proxmox VE", blurb: "VMs · VLAN bridges · Firewall groups" },
 ];
 
 export default function TargetPicker({
@@ -20,7 +25,7 @@ export default function TargetPicker({
   disabled?: boolean;
 }) {
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3" role="radiogroup" aria-label="Target cloud">
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4" role="radiogroup" aria-label="Target cloud">
       {TARGETS.map((t) => {
         const selected = t.id === value;
         return (

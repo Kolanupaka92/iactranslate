@@ -96,13 +96,36 @@ def test_costing_never_mutates_the_plan(realistic_vms):
     assert plan.model_dump_json() == before
 
 
-def test_every_cloud_prices_without_falling_back_to_a_default(realistic_vms):
-    from iactranslate.targets import list_targets
+def test_every_priced_cloud_prices_without_falling_back_to_a_default(realistic_vms):
+    from iactranslate.targets import get_target, list_targets
+    from iactranslate.targets.base import CAP_PRICED
 
     for cloud in list_targets():
+        if CAP_PRICED not in get_target(cloud).capabilities:
+            continue
         costs = estimate_costs(_plan(realistic_vms, cloud))
+        assert costs.priced
         assert costs.total > 0
         assert costs.storage > 0, f"{cloud}: storage must be priced"
+
+
+def test_an_unpriced_target_gets_no_number_at_all(realistic_vms):
+    """The rate tables carry defaults for unknown clouds. The first on-premises
+    target rendered with a fabricated $1,883/month — storage, Windows licensing
+    and load balancers priced at public-cloud rates for a hypervisor where none
+    of that is billed. Zero here means "not computed", and the flag says so."""
+    from iactranslate.targets import get_target, list_targets
+    from iactranslate.targets.base import CAP_PRICED
+
+    unpriced = [c for c in list_targets() if CAP_PRICED not in get_target(c).capabilities]
+    assert unpriced, "expected at least one on-premises target"
+    for cloud in unpriced:
+        costs = estimate_costs(_plan(realistic_vms, cloud))
+        assert not costs.priced
+        assert (costs.total, costs.storage, costs.windows_licensing, costs.load_balancers) == (0, 0, 0, 0)
+        assert "inventory cannot supply" in costs.pricing_basis
+        # The counts are still real: what is unknown is the price, not the estate.
+        assert costs.total_storage_gib > 0
 
 
 def test_report_headlines_the_full_total_not_the_compute_subtotal(realistic_vms):

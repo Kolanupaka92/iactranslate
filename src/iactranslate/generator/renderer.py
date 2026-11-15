@@ -7,14 +7,23 @@ from __future__ import annotations
 
 import os
 import re
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 from ..costing import estimate_costs
-from ..graph import EdgeKind, NodeKind, build_graph
+from ..graph import NodeKind, assign_subnets, build_graph, public_instances
+from ..hybrid import SUMMARY_PREFIX, HybridPlan
+from ..identity import (
+    SSM_MANAGED_POLICY,
+    IdentityMode,
+    roles_for,
+)
+from ..identity import notes as identity_notes
+from ..identity import supported as identity_supported
+from ..landing_zone import LandingZone, gcp_labels
 from ..models import ComputePlan, MigrationPlan, SubnetTier, terraform_safe_name
 from ..state import StateBackend, resolve_backend
 from ..targets.base import Target
@@ -46,22 +55,14 @@ def _env(template_dir: Path) -> Environment:
     )
 
 
-def _assign_subnets(plan: MigrationPlan) -> Dict[str, str]:
-    """Map each compute vm_name -> a subnet resource name.
-
-    Derived from the Infrastructure Graph's `placed_in` edges (see
-    `graph.assign_subnets` / ADR 0016) rather than re-deriving placement here,
-    so Terraform/Pulumi and the graph-based renderers (CloudFormation, Bicep,
-    CDK) and the diagram can never disagree about where an instance lands.
-    """
-    graph = build_graph(plan)
-    subnet_resource_by_id = {n.id: n.id.split(":", 1)[1] for n in graph.nodes_of(NodeKind.SUBNET)}
-    mapping: Dict[str, str] = {}
-    for inst in graph.nodes_of(NodeKind.INSTANCE):
-        placed_in = graph.out_edges(inst.id, EdgeKind.PLACED_IN)
-        if placed_in:
-            mapping[inst.name] = subnet_resource_by_id[placed_in[0].target]
-    return mapping
+# Placement is decided once, in `graph.assign_subnets`. This module used to hold
+# a second implementation that built the graph and read the answer back out of
+# its `placed_in` edges — the same mapping, obtained by a round trip. Verified
+# identical on every fixture and target before removing it.
+#
+# It also meant Pulumi imported a *private* name across a module boundary, so a
+# rename here would have broken that renderer silently.
+_assign_subnets = assign_subnets
 
 
 def _sg_resource_map(plan: MigrationPlan) -> Dict[str, str]:
@@ -132,11 +133,126 @@ def _compute_split(
     return list(grouped.items())
 
 
+#: Output layouts. `classic` is one resource block per machine; `for_each` is
+#: one resource over a per-machine map (ADR 0073), opt-in and AWS-only so far.
+LAYOUTS = ("classic", "for_each")
+
+# Templates the `for_each` layout swaps in, where the target has them. Compute
+# is required; storage is optional, because on targets whose data disks are
+# inline in the VM (Nutanix, Proxmox) `storage.tf` is only an explanatory stub
+# and is the same in both layouts.
+_FOR_EACH_TEMPLATES = {"compute.tf.j2": "compute.foreach.tf.j2",
+                       "storage.tf.j2": "storage.foreach.tf.j2"}
+
+
+class RendererNotSupportedError(ValueError):
+    """The for_each layout was asked for a target that has no templates for it."""
+
+
+def supports_for_each(target: Target) -> bool:
+    return (Path(target.template_dir) / _FOR_EACH_TEMPLATES["compute.tf.j2"]).exists()
+
+
+_DECLARATION = re.compile(r'^resource "([A-Za-z0-9_]+)" "([A-Za-z0-9_-]+)"', re.MULTILINE)
+
+
+def _declared(files: Dict[str, str]) -> List[Tuple[str, str]]:
+    """Every (type, label) a render declares, in file then source order."""
+    return [d for name in sorted(files) if name.endswith(".tf")
+            for d in _DECLARATION.findall(files[name])]
+
+
+def _migrate_from_classic(plan: MigrationPlan, classic: Dict[str, str],
+                          for_each: Dict[str, str]) -> str:
+    """`moved` blocks from the classic layout's addresses to this one's.
+
+    Shipped with every `for_each` render. On a fresh deployment they are
+    no-ops — a `moved` block whose source is not in state does nothing — and
+    on a deployment applied from the classic layout they carry every machine
+    across, so switching layouts never plans a destroy.
+
+    Derived from the two renders rather than listed per cloud: a classic
+    resource whose type the `for_each` render now declares as a `vm` map (keyed
+    by machine label) or a `data` map (keyed by volume label) moves to that
+    map's entry. A cloud can't gain a per-machine resource the file forgets.
+    """
+    maps = {(t, n) for t, n in _declared(for_each) if n in ("vm", "data")}
+    machines = {c.resource_name for c in plan.compute}
+    volumes = {v["resource_name"] for v in _data_volumes(plan.compute)}
+    blocks = []
+    for rtype, label in _declared(classic):
+        if (rtype, "vm") in maps and label in machines:
+            blocks.append((f"{rtype}.{label}", f'{rtype}.vm["{label}"]'))
+        elif (rtype, "data") in maps and label in volumes:
+            blocks.append((f"{rtype}.{label}", f'{rtype}.data["{label}"]'))
+    body = "\n".join(f"moved {{\n  from = {a}\n  to   = {b}\n}}\n" for a, b in blocks)
+    return (
+        "# Generated by IaCTranslate — carries state from the classic layout.\n"
+        "# If this estate was first applied with the classic (one-block-per-machine)\n"
+        "# layout, these move each machine to its `for_each` address instead of\n"
+        "# destroying and recreating it. On a fresh deployment they do nothing.\n"
+        "# Delete this file once every state that needed it has been applied.\n\n"
+        + body
+    )
+
+
+#: Host numbers a /24 VLAN offers machines: .1 is the gateway and .2-.9 are
+#: left for infrastructure.
+_FIRST_HOST, _LAST_HOST = 10, 254
+
+
+def _static_hosts(compute: List[ComputePlan], subnet_of: Dict[str, str]) -> Dict[str, int]:
+    """Host number per machine for static addressing (Proxmox).
+
+    A machine gets `.10 + its position in the estate`. That was
+    `10 + loop.index0` in the template, which restarts in every file once
+    compute is split (ADR 0032), so above 50 machines several shared an
+    address. Estate position is unique, and keeping it means no machine that
+    already has a valid address is ever re-addressed.
+
+    It is also wasteful: past 245 machines the number leaves the /24
+    (`10.0.3.262`) though every subnet still has room. Only those overflowing
+    machines take the lowest free host in their own subnet. A subnet that
+    genuinely needs more than 245 addresses is an error, not invalid output.
+    """
+    hosts: Dict[str, int] = {}
+    used: Dict[str, set] = defaultdict(set)
+    overflow: List[ComputePlan] = []
+    for i, c in enumerate(compute):
+        host = _FIRST_HOST + i
+        if host <= _LAST_HOST:
+            hosts[c.vm_name] = host
+            used[subnet_of[c.vm_name]].add(host)
+        else:
+            overflow.append(c)
+    for c in overflow:
+        subnet = subnet_of[c.vm_name]
+        host = next((h for h in range(_FIRST_HOST, _LAST_HOST + 1) if h not in used[subnet]), None)
+        if host is None:
+            raise ValueError(
+                f"subnet {subnet} needs more than {_LAST_HOST - _FIRST_HOST + 1} static "
+                "addresses, more than a /24 VLAN holds; split the estate across more "
+                "VLANs or assign addresses by DHCP"
+            )
+        hosts[c.vm_name] = host
+        used[subnet].add(host)
+    return hosts
+
+
 def build_files(
     plan: MigrationPlan,
     target: Target,
     state_backend: Optional[StateBackend] = None,
+    zone: Optional[LandingZone] = None,
+    identity: Optional[IdentityMode] = None,
+    hybrid: Optional[HybridPlan] = None,
+    layout: str = "classic",
 ) -> Dict[str, str]:
+    if layout not in LAYOUTS:
+        raise ValueError(f"unknown layout '{layout}' (available: {', '.join(LAYOUTS)})")
+    for_each = layout == "for_each"
+    if for_each and not supports_for_each(target):
+        raise RendererNotSupportedError(f"the for_each layout is not available for {target.name} yet")
     # Default is an explicit *local* backend, not a silent one: `versions.tf`
     # renders a warning banner and the README explains the consequence. See
     # ADR 0041 — the original defect was that local state was never mentioned.
@@ -151,6 +267,8 @@ def build_files(
         for key in _image_keys(plan.compute)
     }
     _costs = estimate_costs(plan)
+    _mandated = dict((zone or LandingZone()).tags)
+    _identity = identity or IdentityMode.BASIC
     context = {
         "plan": plan,
         # `plan.total_estimated_monthly_cost_usd` is compute only. Templates
@@ -159,6 +277,28 @@ def build_files(
         # contradicts the executive report shipped in the same bundle.
         "costs": _costs,
         "state_backend": state_backend,
+        # Tags mandated by the customer's governance. Applied at the provider on
+        # AWS/GCP, via a locals block on Azure/OCI, and as tag resources on
+        # DigitalOcean — see ADR 0045.
+        # Workload identity. Empty for clouds without a per-instance identity
+        # model, which is why the templates guard on it (ADR 0057).
+        "identity_mode": _identity.value,
+        "identity_roles": (
+            roles_for(plan.compute, _identity) if identity_supported(target.name) else []
+        ),
+        "ssm_policy_arn": SSM_MANAGED_POLICY,
+        "identity_notes": identity_notes(target.name, _identity),
+        # On-prem networks the estate still depends on. None when no flow export
+        # was supplied, in which case `hybrid.tf` renders empty and is dropped —
+        # absence of evidence, stated as nothing rather than as "no dependency".
+        "hybrid": hybrid,
+        "SUMMARY_PREFIX": SUMMARY_PREFIX,
+        # Volume encryption is unconditional in the templates; this only selects
+        # whose key. Empty means the provider's managed key (ADR 0062).
+        "kms_key_id": plan.kms_key_id,
+        "mandated_tags": _mandated,
+        "gcp_labels": gcp_labels(_mandated),
+        "mandated_do_tags": (zone or LandingZone()).do_tags(),
         "state_backend_block": state_backend.terraform_block(),
         # Preformatted with thousands separators: Jinja's `format` filter is
         # printf-style, and "%.2f" rendered the estate total as "$21865.97".
@@ -173,18 +313,35 @@ def build_files(
         "subnet_of": subnet_of,
         "sg_resource": sg_resource,
         "fronted_vm_names": {vm for lb in plan.network.load_balancers for vm in lb.targets},
+        # Machines with their own public address: decided once, in the graph.
+        "public_vm_names": public_instances(plan),
         "lb_resource_of": {vm: lb.resource_name for lb in plan.network.load_balancers for vm in lb.targets},
         "has_https_listener": any(
             listener.protocol == "HTTPS" for lb in plan.network.load_balancers for listener in lb.listeners
         ),
         "vm_slug": {c.vm_name: _rfc1035_slug(c.vm_name) for c in plan.compute},
+        # Proxmox is the one target that assigns static addresses.
+        "static_host_of": (
+            _static_hosts(plan.compute, subnet_of) if target.name == "proxmox" else {}
+        ),
         "volumes": _data_volumes(plan.compute),
         "SubnetTier": SubnetTier,
+        # How other resources address a machine's instance: its own label in
+        # the classic layout, its map key in the for_each one.
+        "instance_addr": {
+            c.vm_name: (f'vm["{c.resource_name}"]' if for_each else c.resource_name)
+            for c in plan.compute
+        },
     }
     out: Dict[str, str] = {}
     for template_name, filename in target.template_map.items():
+        if for_each:
+            swap = _FOR_EACH_TEMPLATES.get(template_name)
+            if swap and (Path(target.template_dir) / swap).exists():
+                template_name = swap
         template = env.get_template(template_name)
-        groups = _compute_split(filename, plan.compute)
+        # One resource over a map has nothing to split per file.
+        groups = None if for_each else _compute_split(filename, plan.compute)
         if groups is None:
             out[filename] = template.render(**context)
             continue
@@ -198,6 +355,9 @@ def build_files(
     # is precisely the defect this feature exists to remove.
     if not state_backend.is_local and not state_backend.is_complete:
         out["backend.hcl.example"] = state_backend.example_hcl()
+    if for_each and plan.compute:
+        classic = build_files(plan, target, state_backend, zone, identity, hybrid)
+        out["migrate-from-classic.tf"] = _migrate_from_classic(plan, classic, out)
     # Drop files that rendered empty — e.g. imports.tf when there are no
     # brownfield resource ids to adopt.
     return {name: content for name, content in out.items() if content.strip()}

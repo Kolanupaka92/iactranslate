@@ -1,10 +1,53 @@
 /** Typed client for the IaCTranslate FastAPI backend. */
 
+/**
+ * `||`, not `??`: an env var that is *set but empty* is the failure this hit in
+ * production. `??` only falls back on null/undefined, so an empty string became
+ * the API root and every call went to the web app instead of the API.
+ */
 export const API_URL =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-export type Target = "aws" | "azure" | "gcp" | "oci" | "digitalocean";
+/**
+ * Versioned API root. The backend also serves the unprefixed paths for
+ * back-compat, but those return a `Deprecation` header — our own client should
+ * not be the thing triggering it.
+ *
+ * In the browser this is the same-origin proxy (`/api/v1`, rewritten to the API
+ * in `next.config.ts`) rather than the API's own hostname. The two are deployed
+ * separately and are therefore different *sites*, and a `SameSite` cookie does
+ * not cross that boundary — sign-in succeeded and every request after it came
+ * back unauthenticated. Going through the proxy makes the request same-origin,
+ * so the cookie is sent and no CORS relaxation is needed for ordinary traffic.
+ *
+ * Server-side rendering has no origin to be relative to, so it keeps the
+ * absolute URL.
+ */
+export const API_BASE =
+  typeof window === "undefined" ? `${API_URL}/v1` : "/api/v1";
+
+export type Target = "aws" | "azure" | "gcp" | "oci" | "digitalocean" | "nutanix" | "proxmox";
 export type Source = "auto" | "vmware" | "hyperv" | "kubernetes" | "cloud" | "generic";
+
+export type Renderer =
+  | "terraform"
+  | "terraform-foreach"
+  | "pulumi"
+  | "cloudformation"
+  | "bicep"
+  | "cdk"
+  | "kubernetes";
+
+/** A target and what it can do, straight from the server. */
+export interface TargetInfo {
+  name: Target;
+  capabilities: string[];
+  /** IaC formats this cloud can be emitted as. Not a full cross product —
+   *  CloudFormation is an AWS service, Bicep an Azure one. Read from the API
+   *  rather than duplicated here, so the picker cannot disagree with the
+   *  server about what will be accepted. */
+  renderers: Renderer[];
+}
 export type Provider = "rule" | "anthropic";
 
 export interface InstanceRow {
@@ -23,8 +66,16 @@ export interface ConfidenceSummary {
 export interface RunResult {
   vm_count: number;
   estimated_monthly_cost_usd: number;
+  /** False for an on-premises target, where the figure above is 0 and means
+   *  "not computed", never "free". Render the absence, not the number. */
+  priced?: boolean;
+  pricing_basis?: string;
   pricing_source?: "static" | "live";
   right_sized_count?: number;
+  /** Workloads whose size rests on measured utilization rather than on what
+   *  was allocated. The estate-level honesty signal: when this is low, any
+   *  saving shown is unproven, and the UI says so. */
+  measured_sizing_count?: number;
   confidence?: ConfidenceSummary;
   instances: InstanceRow[];
   provider_requested?: Provider;
@@ -37,6 +88,7 @@ export interface ProjectSummary {
   target: Target;
   region: string | null;
   provider?: Provider;
+  renderer?: Renderer;
   status: "created" | "uploaded" | "completed" | "failed";
   error?: string;
   result?: RunResult;
@@ -72,6 +124,8 @@ export interface Recommendation {
   /** The cloud ranked #2 — what `margin` is measured against. */
   runner_up?: string | null;
   weights: ScoringWeights;
+  /** True when the caller supplied weights; the ranking is then not the neutral one. */
+  custom_weights?: boolean;
   notes: string[];
 }
 
@@ -126,7 +180,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     // app and API are separate origins in dev). The API must therefore echo a
     // specific Origin in IACTRANSLATE_CORS_ORIGINS — "*" is rejected by the
     // browser whenever credentials are included.
-    res = await fetch(`${API_URL}${path}`, { credentials: "include", ...init });
+    res = await fetch(`${API_BASE}${path}`, { credentials: "include", ...init });
   } catch {
     throw new ApiError(
       0,
@@ -159,12 +213,39 @@ export function createProject(
   source: Source = "auto",
   region?: string,
   provider: Provider = "rule",
+  renderer: Renderer = "terraform",
 ): Promise<ProjectSummary> {
   return request("/projects", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, target, source, region: region || null, provider }),
+    body: JSON.stringify({
+      name,
+      target,
+      source,
+      region: region || null,
+      provider,
+      renderer,
+    }),
   });
+}
+
+/** Targets with their capabilities and valid IaC formats. */
+/**
+ * Delete the signed-in account and everything it owns. The password is
+ * required — a stolen session can already read the estate; it must not also
+ * be able to make the loss permanent. On success the session cookie is cleared
+ * by the server, so callers should treat the user as signed out.
+ */
+export function deleteAccount(currentPassword: string): Promise<void> {
+  return request("/auth/me", {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ current_password: currentPassword }),
+  });
+}
+
+export function listTargets(): Promise<TargetInfo[]> {
+  return request("/targets");
 }
 
 export function uploadFile(
@@ -183,8 +264,22 @@ export function runProject(projectId: string): Promise<ProjectSummary> {
   return request(`/projects/${projectId}/run`, { method: "POST" });
 }
 
-export function recommendClouds(projectId: string): Promise<Recommendation> {
-  return request(`/projects/${projectId}/recommend`, { method: "POST" });
+/** Rank every cloud. With no `weights` the API uses its neutral defaults; with
+ *  them, the ranking comes back flagged `custom_weights` (ADR 0071). */
+export function recommendClouds(
+  projectId: string,
+  weights?: ScoringWeights,
+): Promise<Recommendation> {
+  return request(
+    `/projects/${projectId}/recommend`,
+    weights
+      ? {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(weights),
+        }
+      : { method: "POST" },
+  );
 }
 
 export function assessEstate(projectId: string): Promise<Assessment> {
@@ -200,11 +295,11 @@ export function deleteProject(projectId: string): Promise<void> {
  *  exactly why auth here is a cookie and not a bearer token: a navigation has
  *  no fetch call to hang an Authorization header on. */
 export function downloadUrl(projectId: string): string {
-  return `${API_URL}/projects/${projectId}/download`;
+  return `${API_BASE}/projects/${projectId}/download`;
 }
 
 export function reportUrl(projectId: string): string {
-  return `${API_URL}/projects/${projectId}/report`;
+  return `${API_BASE}/projects/${projectId}/report`;
 }
 
 /** POST the report and return its HTML.

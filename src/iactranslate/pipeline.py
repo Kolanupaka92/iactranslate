@@ -12,16 +12,22 @@ from __future__ import annotations
 
 import json
 import time
+import zipfile
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from openpyxl.utils.exceptions import InvalidFileException
 from pydantic import BaseModel
 
 from .agents import build_migration_plan
 from .agents.base import LLMProvider
 from .config import MAX_VMS
+from .dependencies import analyze_dependencies, parse_flows
+from .hybrid import plan_hybrid
+from .identity import IdentityMode
+from .landing_zone import LandingZone
 from .models import MigrationPlan, NormalizedVM
 from .normalize import normalize
 from .observability import get_logger
@@ -70,8 +76,12 @@ def run_pipeline(
     make_zip: bool = False,
     renderer: str = "terraform",
     gitops: bool = False,
+    ci: str = "github",
     policy_config: Optional[Dict] = None,
     state_backend: Optional[StateBackend] = None,
+    zone: Optional[LandingZone] = None,
+    identity: Optional[IdentityMode] = None,
+    flows_path: Optional[str] = None,
 ) -> PipelineResult:
     timings: List[StageTiming] = []
 
@@ -105,14 +115,40 @@ def run_pipeline(
         )
 
     tgt = get_target(target)  # raises UnknownTargetError for bad target
-    src = resolve_source(input_path, source)  # auto-detect unless named
 
-    with stage("parse"):
-        raw = src.parse(input_path, column_map=column_map)
+    # Everything that opens the file is inside this guard. A malformed upload —
+    # an HTML page renamed .xlsx, a truncated zip — raised zipfile.BadZipFile
+    # or openpyxl's InvalidFileException, neither of which is a ValueError, so
+    # the API's handler let them through as a 500 "internal server error".
+    # That is the wrong answer twice over: it is the caller's file that is
+    # broken, not the server, and a generic 500 tells them nothing they can
+    # act on. Everything a bad file can raise now becomes one ValueError with
+    # a message that names the problem and not the server's path to it.
+    try:
+        src = resolve_source(input_path, source)  # auto-detect unless named
+        with stage("parse"):
+            raw = src.parse(input_path, column_map=column_map)
+    except (zipfile.BadZipFile, InvalidFileException) as e:
+        raise ValueError(
+            "the uploaded file is not a valid .xlsx workbook (it may be renamed, "
+            "truncated, or a different format). Export it again from the source tool."
+        ) from e
+    except UnicodeDecodeError as e:
+        raise ValueError(
+            "the uploaded file is not readable as text — a .csv must be UTF-8 (or "
+            "UTF-8 with BOM). Re-export it, or upload the .xlsx instead."
+        ) from e
+
     with stage("normalize"):
         vms = normalize(raw)
     if not vms:
-        raise ValueError(f"No workloads found in '{input_path}' (source: {src.name})")
+        # The source name is useful; the server-side path is not, and leaking it
+        # told the caller the workspace root, the project directory and the
+        # naming scheme of the decrypted temporary file.
+        raise ValueError(
+            f"No workloads found in the uploaded inventory (read as: {src.name}). "
+            "Check the file has a header row and at least one machine."
+        )
     if len(vms) > MAX_VMS:
         raise ValueError(f"Inventory has {len(vms)} workloads, exceeding the limit of {MAX_VMS}")
 
@@ -120,7 +156,7 @@ def run_pipeline(
         plan = build_migration_plan(
             vms, project_name=project_name, target=tgt, region=region, provider=provider,
             source_platform=getattr(src, "source_platform", src.name),
-            live_pricing=live_enabled(),
+            live_pricing=live_enabled(), zone=zone,
         )
 
     with stage("validate"):
@@ -133,10 +169,22 @@ def run_pipeline(
     if not policy_result.ok:
         raise PolicyViolationError(policy_result.denials)
 
+    # On-prem networks the estate still depends on, from an optional flow
+    # export. Runs after the plan because it needs the VPC range to detect an
+    # on-prem network that collides with it. Analysis only — the plan is
+    # immutable by here and this reads it (ADR 0007).
+    hybrid = None
+    if flows_path:
+        with stage("hybrid"):
+            hybrid = plan_hybrid(
+                analyze_dependencies(parse_flows(flows_path), vms), plan.network.vpc_cidr
+            )
+
     with stage("package"):
         project_dir = build_project(
-            plan, out_dir, tgt, vms=vms, renderer=renderer, gitops=gitops,
-            policy_result=policy_result, state_backend=state_backend,
+            plan, out_dir, tgt, vms=vms, renderer=renderer, gitops=gitops, ci=ci,
+            policy_result=policy_result, state_backend=state_backend, zone=zone,
+            identity=identity, hybrid=hybrid,
         )
 
     zip_path = None

@@ -19,15 +19,13 @@ step past "gone on restart" — not a compliance claim.
 from __future__ import annotations
 
 import json
-import os
-import sqlite3
 import threading
 from collections import deque
 from dataclasses import dataclass
-from pathlib import Path
 from typing import List, Optional
 
 from .events import Event, EventBus
+from .sql import Database, backend, create_database
 
 
 @dataclass
@@ -74,8 +72,8 @@ class AuditLog:
         return events[-limit:][::-1]  # newest first
 
 
-class SqliteAuditLog:
-    """Same interface as `AuditLog`, appended to a local SQLite file.
+class SqlAuditLog:
+    """Same interface as `AuditLog`, appended to the configured database.
 
     Append-only by construction: this class issues no UPDATE or DELETE except
     the capacity trim, which drops the *oldest* rows only.
@@ -83,8 +81,8 @@ class SqliteAuditLog:
 
     _SCHEMA = """
         CREATE TABLE IF NOT EXISTS audit (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp REAL NOT NULL,
+            id {SERIAL_PK},
+            timestamp {REAL} NOT NULL,
             action TEXT NOT NULL,
             project_id TEXT,
             job_id TEXT,
@@ -92,27 +90,23 @@ class SqliteAuditLog:
         )
     """
 
-    def __init__(self, db_path: str, capacity: int = 5000) -> None:
+    def __init__(self, db: "Database | str", capacity: int = 5000) -> None:
         self._capacity = capacity
-        self._lock = threading.Lock()
-        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(db_path, check_same_thread=False)
-        self._conn.execute(self._SCHEMA)
-        self._conn.execute("CREATE INDEX IF NOT EXISTS audit_project ON audit (project_id)")
-        self._conn.commit()
+        # A path string opens SQLite, which is how this was always constructed.
+        self._db = db if isinstance(db, Database) else Database("sqlite", db)
+        self._db.execute(self._db.schema(self._SCHEMA))
+        self._db.execute("CREATE INDEX IF NOT EXISTS audit_project ON audit (project_id)")
 
     def attach(self, bus: EventBus) -> None:
         bus.subscribe(self._on_event)
 
     def _on_event(self, event: Event) -> None:
-        with self._lock:
-            self._conn.execute(
-                "INSERT INTO audit (timestamp, action, project_id, job_id, detail) VALUES (?, ?, ?, ?, ?)",
-                (event.timestamp, event.type.value, event.project_id, event.job_id,
-                 json.dumps(event.detail)),
-            )
-            self._conn.commit()
-            self._trim_locked()
+        self._db.execute(
+            "INSERT INTO audit (timestamp, action, project_id, job_id, detail) VALUES (?, ?, ?, ?, ?)",
+            (event.timestamp, event.type.value, event.project_id, event.job_id,
+             json.dumps(event.detail)),
+        )
+        self._trim()
 
     def recent(self, project_id: Optional[str] = None, limit: int = 100) -> List[AuditEvent]:
         sql = "SELECT timestamp, action, project_id, job_id, detail FROM audit"
@@ -122,35 +116,39 @@ class SqliteAuditLog:
             params = (project_id,)
         sql += " ORDER BY id DESC LIMIT ?"  # newest first, matching AuditLog
         params += (limit,)
-        with self._lock:
-            rows = self._conn.execute(sql, params).fetchall()
+        rows = self._db.query(sql, params)
         return [
             AuditEvent(timestamp=r[0], action=r[1], project_id=r[2], job_id=r[3],
                        detail=json.loads(r[4]))
             for r in rows
         ]
 
-    def _trim_locked(self) -> None:
-        """Drop the oldest rows beyond capacity. Caller must hold the lock."""
-        count = self._conn.execute("SELECT COUNT(*) FROM audit").fetchone()[0]
-        overflow = count - self._capacity
+    def _trim(self) -> None:
+        """Drop the oldest rows beyond capacity.
+
+        Still append-only in spirit: this is the only statement in the class
+        that removes anything, and it can only remove the oldest rows.
+        """
+        row = self._db.query_one("SELECT COUNT(*) FROM audit")
+        overflow = (row[0] if row else 0) - self._capacity
         if overflow <= 0:
             return
-        self._conn.execute(
+        self._db.execute(
             "DELETE FROM audit WHERE id IN (SELECT id FROM audit ORDER BY id ASC LIMIT ?)",
             (overflow,),
         )
-        self._conn.commit()
 
 
-def create_audit_log(capacity: int = 5000) -> "AuditLog | SqliteAuditLog":
+#: The engine-specific name used before the two were unified.
+SqliteAuditLog = SqlAuditLog
+
+
+def create_audit_log(capacity: int = 5000) -> "AuditLog | SqlAuditLog":
     """Resolve the configured audit log: `IACTRANSLATE_STORE` (default `memory`).
 
-    `sqlite` appends to `IACTRANSLATE_DB_PATH` (default `./iactranslate.db`) —
-    the same file the project store uses, in its own table.
+    `sqlite` and `postgres` both append to the same database the project store
+    uses, in their own table.
     """
-    backend = os.getenv("IACTRANSLATE_STORE", "memory").strip().lower()
-    if backend == "sqlite":
-        db_path = os.getenv("IACTRANSLATE_DB_PATH", "./iactranslate.db")
-        return SqliteAuditLog(db_path, capacity=capacity)
+    if backend() in {"sqlite", "postgres"}:
+        return SqlAuditLog(create_database(), capacity=capacity)
     return AuditLog(capacity=capacity)

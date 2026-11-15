@@ -26,6 +26,16 @@ choose AWS, Azure, GCP, or OCI instead, or bring your own Windows custom image t
 (`digitalocean_custom_image`) and edit `compute.tf` to reference it.
 
 {% endif %}
+## Workload identity
+
+{% if identity_notes %}
+{% for note in identity_notes %}
+- {{ note }}
+{% endfor %}
+{% else %}
+No workload identity was generated (`--instance-identity none`).
+{% endif %}
+
 ## Terraform state
 
 {% if state_backend.is_local %}

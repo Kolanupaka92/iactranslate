@@ -50,5 +50,38 @@ Format: [Michael Nygard's ADR template](https://cognitect.com/blog/2011/11/15/do
 | [0040](0040-structured-logging-and-request-correlation.md) | Structured JSON logging and request correlation, OTel field names without the SDK | Accepted |
 | [0041](0041-remote-state-backends-in-generated-terraform.md) | Remote state backends in generated Terraform; local state stated, never silent | Accepted |
 | [0042](0042-supply-chain-security.md) | Supply-chain security: SBOM, pip-audit, bandit, Trivy, cosign signing, SLSA provenance | Accepted |
+| [0043](0043-encryption-at-rest-for-uploaded-inventory.md) | AES-256-GCM encryption at rest for uploaded inventory, failing closed | Accepted |
+| [0044](0044-landing-zone-cidr-and-subnet-carving.md) | Landing-zone CIDRs, with subnets carved from them and ingress retargeted | Accepted |
+| [0045](0045-mandated-tags-in-every-clouds-native-form.md) | Mandated tags via each cloud's native mechanism; normalise, never drop | Accepted |
+| [0046](0046-shared-rate-limit-buckets.md) | Shared rate-limit buckets in Redis, atomic via Lua, degrading to per-replica | Accepted |
+| [0047](0047-data-transfer-and-cutover-windows.md) | Data-transfer time and cutover-window fit, per migration wave | Accepted |
+| [0048](0048-rank-the-recommendation-on-the-full-bill.md) | Rank the recommendation on the itemized total, not compute alone | Accepted |
+| [0049](0049-api-versioning.md) | Version the API at /v1 before it has clients; legacy mount marks itself deprecated | Accepted |
+| [0050](0050-project-roles.md) | Ordered project roles (viewer/editor/approver/admin); 404 absent, 403 insufficient | Accepted |
+| [0051](0051-idempotent-writes-and-paged-lists.md) | Idempotency-Key replay protection; paging via Link headers to avoid a breaking change | Accepted |
+| [0052](0052-pdf-output-for-every-report.md) | PDF for every report: a shared print stylesheet always, WeasyPrint optionally | Accepted |
+| [0053](0053-durable-job-queue.md) | A SQLite job queue that survives restart, with leases, backoff and dead letters | Accepted |
+| [0054](0054-oidc-single-sign-on.md) | OIDC SSO with PKCE, tested against a mock issuer; validation by PyJWT, not by hand | Accepted |
+| [0055](0055-dependencies-from-observed-flows.md) | Application dependencies from a flow export; wave violations and external systems | Accepted |
+| [0056](0056-durable-project-grants.md) | Project grants persist; half-durable authorization was a bug, not a limitation | Accepted |
+| [0057](0057-workload-identity-without-permissions.md) | An identity per tier, wired to instances, with no permissions — guessing them creates the breach | Accepted |
+| [0058](0058-de-identify-inventory-before-ai.md) | Consistent per-token pseudonyms before inventory reaches a remote model — grouping signal survives, identity does not | Accepted |
+| [0059](0059-pricing-circuit-breaker.md) | Bound the cost of unreachable billing endpoints, and stop reporting a mostly-static estate as live-priced | Accepted |
+| [0060](0060-hybrid-connectivity-from-observed-flows.md) | On-prem networks the estate still needs, from observed flows — including the overlap that no route can fix | Accepted |
+| [0061](0061-renderer-selection-through-the-api.md) | All six IaC formats reach the API and console, with per-target support declared once and tested against the renderers | Accepted |
+| [0062](0062-encryption-at-rest-in-generated-infrastructure.md) | Generated volumes are encrypted with no off switch; what is configurable is whose key | Accepted |
+| [0063](0063-one-sql-layer-for-sqlite-and-postgresql.md) | Durable state runs on SQLite or PostgreSQL through one implementation per component, not one per engine | Accepted |
+| [0064](0064-decision-evidence-and-honest-capability-claims.md) | Every sizing decision carries its evidence and basis; validation depth and provider maturity are stated and tested, not claimed | Accepted |
+| [0065](0065-on-premises-destinations.md) | Nutanix AHV and Proxmox VE as targets; unpriced destinations are excluded from cost ranking and rendered as "not estimated", never $0 | Accepted |
+| [0066](0066-run-lease-for-concurrent-runs.md) | Concurrent runs of one project are serialised by a lease claimed in one conditional UPDATE — correct across instances, and self-healing after a crash | Accepted |
+| [0067](0067-nonce-based-content-security-policy.md) | The console's CSP is generated per request with a script nonce; the static header could not refuse inline scripts and so protected nothing | Accepted |
+| [0068](0068-database-on-a-private-address-only.md) | Cloud SQL has no public address; Cloud Run reaches it over Direct VPC egress, and the Auth Proxy sidecar is gone because it cannot work that way | Accepted |
+| [0069](0069-live-rates-for-every-line-of-the-bill.md) | Live pricing covers storage, Windows licensing and load balancers too, falling back per line, and the estimate names which lines are live | Accepted |
+| [0070](0070-key-vm-identity-on-the-vm-uuid.md) | De-duplication, disk/NIC joins and snapshot diffs key on the RVTools VM UUID; same-named machines are both kept, and a rename is reported as one. Terraform labels stay name-derived | Accepted |
+| [0071](0071-user-adjustable-scoring-weights.md) | Callers can set the recommendation's cost/fit/OS weights; they are normalised, eligibility still dominates, and a custom ranking is always labelled custom | Accepted |
+| [0072](0072-moved-blocks-for-renamed-machines.md) | `diff --moved-tf` generates Terraform `moved` blocks for machines renamed at the source, from the two snapshots alone; renames that reuse an address become a `state mv` sequence, because Terraform chains blocks | Accepted |
+| [0073](0073-for-each-layout.md) | Opt-in `terraform-foreach` renderer (every target): one resource per kind over per-machine maps keyed by the classic labels, shipped with `moved` blocks from the classic layout; default output unchanged | Accepted |
+| [0074](0074-shared-decisions-not-a-shared-renderer.md) | Decisions renderers would otherwise re-derive (which machines get a public address) live once in the graph; the wholesale Terraform/Pulumi graph migration is not done, since it would fix nothing | Accepted |
+| [0075](0075-ci-pipelines-for-four-systems.md) | GitOps pipelines for GitHub Actions, GitLab CI, Azure DevOps and Jenkins from one credentials table per cloud; OCI/DigitalOcean/Nutanix/Proxmox gain credentials, and renderers with their own tooling are refused | Accepted |
 
 See also the [Architecture & Design](../architecture.md) overview.

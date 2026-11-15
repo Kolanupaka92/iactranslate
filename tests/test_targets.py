@@ -8,7 +8,9 @@ from iactranslate.validation import validate_plan
 
 
 def test_registry_lists_all_clouds():
-    assert set(list_targets()) == {"aws", "azure", "gcp", "oci", "digitalocean"}
+    assert set(list_targets()) == {
+        "aws", "azure", "gcp", "oci", "digitalocean", "nutanix", "proxmox",
+    }
 
 
 def test_unknown_target_raises():

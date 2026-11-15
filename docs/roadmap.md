@@ -119,12 +119,63 @@ in CI on `main`.
   estate's cost. Every surface (report, README, `main.tf`, CLI, API, budget
   policy) quotes the same total, and the estimate names what it excludes
   (see [ADR 0039](adr/0039-cost-the-whole-bill-not-just-the-instances.md))
+- ✅ **The recommendation ranks on that same bill** — `recommend()` scores cost
+  on the itemized total rather than compute alone. The uplift over compute
+  ranges from +20% (DigitalOcean) to +47% (OCI), so ranking on compute weighted
+  the clouds unevenly; each score now carries both figures so the gap is checkable
+  (see [ADR 0048](adr/0048-rank-the-recommendation-on-the-full-bill.md))
+- ✅ **Live rates for every line of the bill** — with live pricing on, storage,
+  Windows licensing and load balancers are fetched live too (AWS, Azure, GCP),
+  falling back to catalog one line at a time, and the estimate names which
+  lines are live. Azure Standard SSD came back at $0.075/GB-month against the
+  table's $0.113
+  (see [ADR 0069](adr/0069-live-rates-for-every-line-of-the-bill.md))
+- ✅ **A machine is its VM UUID** — RVTools `VM UUID` drives de-duplication,
+  disk/NIC joins and snapshot diffs. Two machines sharing a name (one per
+  cluster) used to merge, silently dropping one from the migration; both are now
+  kept, with stable UUID-derived suffixes. A rename is reported as a rename
+  (see [ADR 0070](adr/0070-key-vm-identity-on-the-vm-uuid.md))
+- ✅ **User-adjustable scoring weights** — `--weights cost=…,fit=…,os=…` on the
+  CLI and a JSON body on `POST /projects/{id}/recommend`. Weights are scaled to
+  sum to 1, eligibility still dominates, and a ranking under custom weights is
+  labelled as such everywhere it appears. The console's cloud comparison has
+  sliders that show the share each weight will actually get, a re-rank and a
+  reset, and a "Custom weights" badge on any non-default ranking
+  (see [ADR 0071](adr/0071-user-adjustable-scoring-weights.md))
+- ✅ **A renamed machine is moved, not recreated** — `iactranslate diff --moved-tf`
+  writes Terraform `moved` blocks for every resource of a machine renamed at the
+  source (matched by VM UUID), with no state kept between runs. A rename that
+  hands one machine's address to another, which Terraform cannot express as
+  blocks, comes back as an ordered `state mv` sequence instead
+  (see [ADR 0072](adr/0072-moved-blocks-for-renamed-machines.md))
+- ✅ **Opt-in `for_each` layout (every target)** — `--renderer terraform-foreach`
+  emits one resource per kind over per-machine maps, cutting compute and storage
+  HCL by 60–73%. Building it for Proxmox exposed duplicate static IPs in the
+  default output above 50 VMs (the per-file loop index restarted after the
+  compute split); numbering is now estate-wide, unchanged for smaller estates.
+  Past 245 machines that numbering left the /24 (`10.0.3.262`, 55 of 300 invalid);
+  only those machines now take a free host in their own subnet, and a subnet that
+  truly needs more than 245 addresses is a clear error rather than invalid output. It ships `migrate-from-classic.tf`,
+  so an estate already applied with the default layout is moved in state, not
+  recreated. The default output is byte-for-byte unchanged
+  (see [ADR 0073](adr/0073-for-each-layout.md))
 - ✅ Model schema versioning (`NormalizedVM` / `MigrationPlan`)
 
 **Surfaces & delivery**
 - ✅ CLI, FastAPI, Next.js web UI
 - ✅ Docker image (non-root, healthchecked)
 - ✅ CI: lint, pytest (3.9/3.11/3.12), Docker, web build, real `tofu validate`
+- ✅ **One run per project at a time, across instances** — the project row is
+  the lock, claimed in one conditional UPDATE and leased so a dead instance
+  cannot wedge a project; a second caller gets `409`, never a half-written plan
+  (see [ADR 0066](adr/0066-run-lease-for-concurrent-runs.md))
+- ✅ **A CSP that refuses inline scripts** — per-request nonce via the Next.js
+  proxy, `'strict-dynamic'`, `connect-src 'self'`; verified live with zero
+  violations. The static header it replaced allowed `'unsafe-inline'`
+  (see [ADR 0067](adr/0067-nonce-based-content-security-policy.md))
+- ✅ **The database has no public address** — Cloud SQL on a private IP,
+  reached over Direct VPC egress; the Auth Proxy sidecar removed because it
+  cannot run that way (see [ADR 0068](adr/0068-database-on-a-private-address-only.md))
 
 ## Planned
 
@@ -137,9 +188,9 @@ backends and integrations that plug into them, via the
 |---|---|---|
 | v2.1 | PostgreSQL store + object-storage artifact store + **durable** job queue (Redis/Celery) — ✅ *metadata* persistence and ✅ *single-node durable artifacts* (`IACTRANSLATE_WORKSPACE_ROOT`, [ADR 0029](adr/0029-durable-artifact-workspaces.md)) shipped now via an opt-in `SqliteProjectStore` (`IACTRANSLATE_STORE=sqlite`), a real stdlib-only stepping stone verified with an actual kill-and-restart, not just Postgres itself (see [ADR 0025](adr/0025-persistent-store-and-bearer-auth.md)) | in-memory store, `JobQueue`, event bus (shipped seams) |
 | v2.2 | Desktop app (Tauri) over the same core engine | CLI/API (shipped) |
-| v2.3 | AuthN (OIDC/SAML) + RBAC + persistent audit — ✅ **multi-tenant accounts, session-cookie login, and per-project ownership** ([ADR 0027](adr/0027-multi-tenancy-and-session-auth.md)), ✅ a **restart-surviving audit trail** ([ADR 0026](adr/0026-persistent-audit-and-metrics.md)), and ✅ a single-token API key for machine callers ([ADR 0025](adr/0025-persistent-store-and-bearer-auth.md)). Still open: OIDC/SSO, orgs/teams, RBAC roles, email verification + a reset email backend | audit trail (shipped) |
+| v2.3 | AuthN (OIDC/SAML) + RBAC + persistent audit — ✅ **multi-tenant accounts, session-cookie login, and per-project ownership** ([ADR 0027](adr/0027-multi-tenancy-and-session-auth.md)), ✅ a **restart-surviving audit trail** ([ADR 0026](adr/0026-persistent-audit-and-metrics.md)), ✅ a single-token API key for machine callers ([ADR 0025](adr/0025-persistent-store-and-bearer-auth.md)), ✅ **OIDC single sign-on** with PKCE ([ADR 0054](adr/0054-oidc-single-sign-on.md)), ✅ **project roles** viewer/editor/approver/admin ([ADR 0050](adr/0050-project-roles.md)) and ✅ **durable project grants** ([ADR 0056](adr/0056-durable-project-grants.md)). Still open: SAML, organisations/teams, email verification, and a real sender for password-reset links (delivery is deliberately a log-only seam, [ADR 0030](adr/0030-password-change-and-reset.md)) | audit trail (shipped) |
 | v2.4 | Notifications (Slack/Teams/Email) + metrics (Prometheus/Grafana/OTel) — ✅ **Prometheus `GET /metrics`** shipped now (counters + in-flight gauge, stdlib-only); OTel distributed tracing and notifications still open (see [ADR 0026](adr/0026-persistent-audit-and-metrics.md)) | event bus + `pipeline-trace` (shipped) |
-| v2.5 | CI/CD pipeline generation (Jenkins/GitHub/GitLab/Azure DevOps) | GitOps workflow (shipped for GH Actions) |
+| v2.5 | CI/CD pipeline generation (Jenkins/GitHub/GitLab/Azure DevOps) — ✅ **shipped**: `--ci` generates all four for Terraform and Pulumi, with credentials for all seven targets; every GitHub/GitLab/Azure DevOps pipeline validates against the official schemas ([ADR 0075](adr/0075-ci-pipelines-for-four-systems.md)) | GitOps workflow (shipped for GH Actions) |
 | v2.6 | Ticketing (Jira/ServiceNow/Azure DevOps) from the assessment | assessment (shipped) |
 | v3.0 | Multi-tenant SaaS + plugin ecosystem + OPA-compatible policy | policy engine, source/target registries (shipped) |
 
@@ -151,21 +202,15 @@ backends and integrations that plug into them, via the
   fixed a subnet-collapse bug this surfaced (see [ADR 0016](adr/0016-terraform-pulumi-placement-from-graph.md))
 - ✅ Kubernetes/KubeVirt — VMs as `VirtualMachine` CRDs, SG ingress as
   `NetworkPolicy`, cloud-agnostic (see [ADR 0017](adr/0017-kubernetes-from-graph.md))
-- ◻ Migrate the rest of Terraform/Pulumi's resource generation onto the graph
-- ◻ **Rank the recommendation on the full breakdown** — `recommend()` still
-  compares clouds on compute alone, while every other surface now quotes the
-  itemized total. Windows licensing varies enough between clouds to move the
-  ranking, so this is a behaviour change worth making deliberately
-- ◻ **Live storage pricing** — compute already supports `--live-pricing`; the
-  storage, licensing and load-balancer rates are hardcoded and dated Aug 2026
-- ◻ **User-adjustable scoring weights** — a cost-insensitive regulated estate
-  weights fit/OS far higher than 0.45/0.30/0.25; exposing the weights invites it
-- ◻ **Key identity on `VM UUID`** — real RVTools rows carry a stable UUID; de-dup
-  and resource labels key on the VM *name*, so a renamed machine looks new
-- ◻ **Emit reusable modules with `for_each`** — the per-environment/tier split
-  ([ADR 0032](adr/0032-split-compute-output-for-reviewability.md)) made output
-  reviewable; modules would compress ~8k-line files dramatically, but change
-  what the customer reads, so it is a separate piece of work
+- ✅ **Shared decisions, not a shared renderer** — an audit found one decision still
+  re-derived across renderers (which machines get their own public address: six
+  templates, Pulumi, Bicep). It now lives once in the graph; all renderer output is
+  byte-identical. Moving the rest of Terraform/Pulumi onto the graph fixes nothing
+  and is not planned (see [ADR 0074](adr/0074-shared-decisions-not-a-shared-renderer.md))
+- ✅ **PostgreSQL store / job queue / grants** — once deferred here, since built:
+  every durable component runs on SQLite or PostgreSQL through one implementation
+  per component, and CI's `postgres-integration` job exercises it against a real
+  server (see [ADR 0063](adr/0063-one-sql-layer-for-sqlite-and-postgresql.md))
 
 **Considered, deliberately deferred** (tracked so the reasoning is explicit):
 

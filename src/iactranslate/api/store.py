@@ -33,7 +33,6 @@ from __future__ import annotations
 import json
 import os
 import shutil
-import sqlite3
 import tempfile
 import threading
 import time
@@ -44,6 +43,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from ..config import MAX_PROJECTS
+from .sql import Database, backend, create_database
 
 
 def new_workspace() -> Path:
@@ -67,6 +67,12 @@ def new_workspace() -> Path:
     return Path(tempfile.mkdtemp(prefix="iactranslate_"))
 
 
+#: How long a `running` project stays locked before a new run may take over.
+#: Matches the job queue's lease: long enough for a 20,000-workload estate,
+#: short enough that a crashed instance does not lock a project for the day.
+RUN_LEASE_SECONDS = 900.0
+
+
 @dataclass
 class Project:
     id: str
@@ -77,6 +83,13 @@ class Project:
     region: Optional[str] = None
     policy: Optional[dict] = None
     provider: str = "rule"
+    #: IaC output format. Defaults to terraform, the only renderer every target
+    #: supports, so a project created before this existed behaves as it did.
+    renderer: str = "terraform"
+    #: When the current run began, or None. Doubles as the lease on the
+    #: `running` state: a run that started longer ago than RUN_LEASE_SECONDS
+    #: is presumed dead (a crashed instance) and may be taken over.
+    run_started_at: Optional[float] = None
     owner_id: Optional[str] = None  # None = single-tenant mode (IACTRANSLATE_AUTH unset)
     status: str = "created"  # created -> uploaded -> completed / failed
     workspace: Path = field(default_factory=new_workspace)
@@ -103,12 +116,13 @@ class ProjectStore:
         policy: Optional[dict] = None,
         provider: str = "rule",
         owner_id: Optional[str] = None,
+        renderer: str = "terraform",
     ) -> Project:
         pid = uuid.uuid4().hex[:12]
         project = Project(
             id=pid, name=name, target=target, source=source,
             column_map=column_map, region=region, policy=policy, provider=provider,
-            owner_id=owner_id,
+            owner_id=owner_id, renderer=renderer,
         )
         with self._lock:
             self._projects[pid] = project
@@ -118,6 +132,35 @@ class ProjectStore:
     def get(self, pid: str) -> Optional[Project]:
         with self._lock:
             return self._projects.get(pid)
+
+    def try_begin_run(self, pid: str) -> bool:
+        """Atomically claim a project for one run. False if one is in flight.
+
+        Five concurrent POST /run on one project used to run five pipelines
+        over the same workspace. State stayed consistent — every run writes
+        the same deterministic output — but it was five times the CPU for one
+        result, and a hostile caller gets that multiplier for free. One run at
+        a time, per project, is the contract; a stale claim (older than the
+        lease) belongs to an instance that died and may be taken over.
+        """
+        now = time.time()
+        with self._lock:
+            project = self._projects.get(pid)
+            if project is None:
+                return False
+            stale = (project.run_started_at or 0) < now - RUN_LEASE_SECONDS
+            if project.status == "running" and not stale:
+                return False
+            project.status = "running"
+            project.run_started_at = now
+            return True
+
+    def end_run(self, pid: str) -> None:
+        """Release the claim without changing the outcome the caller set."""
+        with self._lock:
+            project = self._projects.get(pid)
+            if project is not None:
+                project.run_started_at = None
 
     def list_for_owner(self, owner_id: Optional[str]) -> List[Project]:
         """Projects belonging to one owner, newest first."""
@@ -145,12 +188,16 @@ class ProjectStore:
             shutil.rmtree(victim.workspace, ignore_errors=True)
 
 
-class SqliteProjectStore:
-    """Same interface as `ProjectStore`, persisted to a local SQLite file.
+class SqlProjectStore:
+    """Project metadata in SQLite or PostgreSQL, behind one implementation.
 
-    Project *metadata* survives a process restart. Whether the generated
-    *files* also survive depends on `IACTRANSLATE_WORKSPACE_ROOT` — see the
-    module docstring and `new_workspace`.
+    Project *metadata* survives a process restart. Whether the generated *files*
+    also survive depends on `IACTRANSLATE_WORKSPACE_ROOT` — see the module
+    docstring and `new_workspace`.
+
+    Written once against `Database` rather than twice per engine: two parallel
+    implementations drift, and a column added to one and forgotten in the other
+    is invisible until a customer hits it (ADR 0063).
     """
 
     _SCHEMA = """
@@ -170,38 +217,51 @@ class SqliteProjectStore:
             zip_path TEXT,
             error TEXT,
             summary TEXT,
-            created_at REAL NOT NULL,
-            owner_id TEXT
+            created_at {REAL} NOT NULL,
+            owner_id TEXT,
+            renderer TEXT,
+            run_started_at {REAL}
         )
     """
     _COLUMNS = (
         "id", "name", "target", "source", "column_map", "region", "policy",
         "provider", "status", "workspace", "upload_path", "project_dir",
-        "zip_path", "error", "summary", "created_at", "owner_id",
+        "zip_path", "error", "summary", "created_at", "owner_id", "renderer",
+        "run_started_at",
     )
 
-    def __init__(self, db_path: str, max_projects: int = MAX_PROJECTS) -> None:
+    def __init__(
+        self, db: "Database | str", max_projects: int = MAX_PROJECTS
+    ) -> None:
+        # A path string opens a SQLite database, which is what this class was
+        # called with before the two engines were unified. Callers that already
+        # hold a `Database` (the API, and anything on PostgreSQL) pass it in.
+        self._db = db if isinstance(db, Database) else Database("sqlite", db)
         self._max = max_projects
-        self._lock = threading.Lock()
-        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(db_path, check_same_thread=False)
-        self._conn.execute(self._SCHEMA)
+        self._db.execute(self._db.schema(self._SCHEMA))
         self._migrate()
-        self._conn.execute("CREATE INDEX IF NOT EXISTS projects_owner ON projects (owner_id)")
-        self._conn.commit()
+        self._db.execute(
+            "CREATE INDEX IF NOT EXISTS projects_owner ON projects (owner_id)"
+        )
 
     def _migrate(self) -> None:
         """Add columns missing from a database created by an older version.
 
-        A file written before multi-tenancy has no `owner_id`; opening it would
-        otherwise fail on every query. Additive and idempotent — it never drops
-        or rewrites existing rows, so pre-existing projects simply come back
-        with `owner_id = NULL` (single-tenant, as they were).
+        Additive and idempotent — it never drops or rewrites existing rows, so a
+        file written before multi-tenancy comes back with `owner_id = NULL`
+        (single-tenant, as it was) and one written before renderer selection
+        reads as `terraform`, the only renderer it could have used.
         """
-        existing = {row[1] for row in self._conn.execute("PRAGMA table_info(projects)")}
-        if "owner_id" not in existing:
-            self._conn.execute("ALTER TABLE projects ADD COLUMN owner_id TEXT")
-            self._conn.commit()
+        existing = self._db.columns("projects")
+        for column, ddl in (
+            ("owner_id", "ALTER TABLE projects ADD COLUMN owner_id TEXT"),
+            ("renderer", "ALTER TABLE projects ADD COLUMN renderer TEXT"),
+            ("run_started_at", "ALTER TABLE projects ADD COLUMN run_started_at {REAL}"),
+        ):
+            if column not in existing:
+                # Through `schema()` so type placeholders resolve per engine —
+                # `{REAL}` is DOUBLE PRECISION on PostgreSQL, REAL on SQLite.
+                self._db.execute(self._db.schema(ddl))
 
     def _row_to_project(self, row: tuple) -> Project:
         data = dict(zip(self._COLUMNS, row))
@@ -218,6 +278,8 @@ class SqliteProjectStore:
             error=data["error"],
             summary=json.loads(data["summary"]) if data["summary"] else None,
             owner_id=data["owner_id"],
+            renderer=data["renderer"] or "terraform",
+            run_started_at=data["run_started_at"],
         )
 
     def create(
@@ -230,102 +292,119 @@ class SqliteProjectStore:
         policy: Optional[dict] = None,
         provider: str = "rule",
         owner_id: Optional[str] = None,
+        renderer: str = "terraform",
     ) -> Project:
         pid = uuid.uuid4().hex[:12]
         workspace = new_workspace()
-        with self._lock:
-            self._conn.execute(
-                "INSERT INTO projects (id, name, target, source, column_map, region, policy, "
-                "provider, status, workspace, upload_path, project_dir, zip_path, error, summary, "
-                "created_at, owner_id) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'created', ?, NULL, NULL, NULL, NULL, NULL, ?, ?)",
-                (pid, name, target, source,
-                 json.dumps(column_map) if column_map else None, region,
-                 json.dumps(policy) if policy else None, provider, str(workspace), time.time(),
-                 owner_id),
-            )
-            self._conn.commit()
-            self._evict_locked()
+        self._db.execute(
+            "INSERT INTO projects (id, name, target, source, column_map, region, policy, "
+            "provider, status, workspace, upload_path, project_dir, zip_path, error, summary, "
+            "created_at, owner_id, renderer) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'created', ?, NULL, NULL, NULL, NULL, NULL, ?, ?, ?)",
+            (pid, name, target, source,
+             json.dumps(column_map) if column_map else None, region,
+             json.dumps(policy) if policy else None, provider, str(workspace), time.time(),
+             owner_id, renderer),
+        )
+        self._evict()
         return Project(
             id=pid, name=name, target=target, source=source, column_map=column_map,
             region=region, policy=policy, provider=provider, workspace=workspace,
-            owner_id=owner_id,
+            owner_id=owner_id, renderer=renderer,
         )
 
     def get(self, pid: str) -> Optional[Project]:
-        with self._lock:
-            # The f-string interpolates `self._COLUMNS` only — a class constant
-            # tuple of column names, never caller input. The one caller-supplied
-            # value is bound as `?`. (nosec: B608 flags the f-string shape, not
-            # a reachable injection.)
-            row = self._conn.execute(
-                f"SELECT {', '.join(self._COLUMNS)} FROM projects WHERE id = ?",  # nosec B608
-                (pid,),
-            ).fetchone()
+        # The f-string interpolates `self._COLUMNS` only — a class constant tuple
+        # of column names, never caller input. The one caller-supplied value is
+        # bound. (nosec: B608 flags the f-string shape, not a reachable injection.)
+        row = self._db.query_one(
+            f"SELECT {', '.join(self._COLUMNS)} FROM projects WHERE id = ?",  # nosec B608
+            (pid,),
+        )
         return self._row_to_project(row) if row else None
 
     def list_for_owner(self, owner_id: Optional[str]) -> List[Project]:
         """Projects belonging to one owner, newest first."""
-        clause = "owner_id IS ?" if owner_id is None else "owner_id = ?"
-        with self._lock:
-            # As above: `clause` is chosen from two literals and `_COLUMNS` is a
-            # constant; `owner_id` is bound. SQLite cannot bind `IS NULL`, which
-            # is why the clause is selected rather than parameterized.
-            rows = self._conn.execute(
-                f"SELECT {', '.join(self._COLUMNS)} FROM projects WHERE {clause} ORDER BY rowid DESC",  # nosec B608
-                (owner_id,),
-            ).fetchall()
+        # Chosen from two literals; `owner_id` is bound. Neither engine can bind
+        # `IS NULL`, which is why the clause is selected rather than parameterized.
+        clause = "owner_id IS NULL" if owner_id is None else "owner_id = ?"
+        params: tuple = () if owner_id is None else (owner_id,)
+        rows = self._db.query(
+            f"SELECT {', '.join(self._COLUMNS)} FROM projects WHERE {clause} "  # nosec B608
+            "ORDER BY created_at DESC, id DESC",
+            params,
+        )
         return [self._row_to_project(row) for row in rows]
 
+    def try_begin_run(self, pid: str) -> bool:
+        """One conditional UPDATE — the claim has to be atomic *across
+        instances*, and a SELECT followed by an UPDATE is the race it exists
+        to prevent. The row is claimed only if no run is in flight, or the one
+        that is has outlived its lease and belongs to a dead instance."""
+        now = time.time()
+        claimed = self._db.execute(
+            "UPDATE projects SET status='running', run_started_at=? "
+            "WHERE id=? AND (status != 'running' OR run_started_at IS NULL OR run_started_at < ?)",
+            (now, pid, now - RUN_LEASE_SECONDS),
+        )
+        return claimed == 1
+
+    def end_run(self, pid: str) -> None:
+        self._db.execute("UPDATE projects SET run_started_at=NULL WHERE id=?", (pid,))
+
     def save(self, project: Project) -> None:
-        with self._lock:
-            self._conn.execute(
-                "UPDATE projects SET status=?, upload_path=?, project_dir=?, zip_path=?, "
-                "error=?, summary=? WHERE id=?",
-                (project.status,
-                 str(project.upload_path) if project.upload_path else None,
-                 str(project.project_dir) if project.project_dir else None,
-                 str(project.zip_path) if project.zip_path else None,
-                 project.error,
-                 json.dumps(project.summary) if project.summary else None,
-                 project.id),
-            )
-            self._conn.commit()
+        self._db.execute(
+            "UPDATE projects SET status=?, upload_path=?, project_dir=?, zip_path=?, "
+            "error=?, summary=? WHERE id=?",
+            (project.status,
+             str(project.upload_path) if project.upload_path else None,
+             str(project.project_dir) if project.project_dir else None,
+             str(project.zip_path) if project.zip_path else None,
+             project.error,
+             json.dumps(project.summary) if project.summary else None,
+             project.id),
+        )
 
     def delete(self, pid: str) -> bool:
-        with self._lock:
-            row = self._conn.execute("SELECT workspace FROM projects WHERE id = ?", (pid,)).fetchone()
-            if row is None:
-                return False
-            self._conn.execute("DELETE FROM projects WHERE id = ?", (pid,))
-            self._conn.commit()
+        row = self._db.query_one("SELECT workspace FROM projects WHERE id = ?", (pid,))
+        if row is None:
+            return False
+        self._db.execute("DELETE FROM projects WHERE id = ?", (pid,))
         shutil.rmtree(row[0], ignore_errors=True)
         return True
 
-    def _evict_locked(self) -> None:
-        """Drop oldest projects beyond capacity. Caller must hold the lock."""
-        count = self._conn.execute("SELECT COUNT(*) FROM projects").fetchone()[0]
-        overflow = count - self._max
+    def _evict(self) -> None:
+        """Drop oldest projects beyond capacity.
+
+        Ordered by `created_at, id` rather than SQLite's `rowid`, which has no
+        PostgreSQL equivalent. Two projects created in the same millisecond are
+        broken apart by id instead of by insertion order — which is arbitrary
+        but deterministic, and for a capacity guard "evict one of the oldest" is
+        the actual requirement.
+        """
+        row = self._db.query_one("SELECT COUNT(*) FROM projects")
+        overflow = (row[0] if row else 0) - self._max
         if overflow <= 0:
             return
-        victims = self._conn.execute(
-            # rowid, not created_at, orders by actual insertion — immune to
-            # same-millisecond timestamp collisions under rapid creation.
-            "SELECT id, workspace FROM projects ORDER BY rowid ASC LIMIT ?", (overflow,)
-        ).fetchall()
+        victims = self._db.query(
+            "SELECT id, workspace FROM projects ORDER BY created_at ASC, id ASC LIMIT ?",
+            (overflow,),
+        )
         for vid, workspace in victims:
-            self._conn.execute("DELETE FROM projects WHERE id = ?", (vid,))
+            self._db.execute("DELETE FROM projects WHERE id = ?", (vid,))
             shutil.rmtree(workspace, ignore_errors=True)
-        self._conn.commit()
 
 
-def create_store(max_projects: int = MAX_PROJECTS) -> "ProjectStore | SqliteProjectStore":
-    """Resolve the configured store: `IACTRANSLATE_STORE` (default `memory`).
+#: The engine-specific name the codebase used before the two were unified.
+SqliteProjectStore = SqlProjectStore
 
-    `sqlite` persists to `IACTRANSLATE_DB_PATH` (default `./iactranslate.db`).
+
+def create_store(max_projects: int = MAX_PROJECTS) -> "ProjectStore | SqlProjectStore":
+    """Resolve the configured store from `IACTRANSLATE_STORE` (default `memory`).
+
+    `sqlite` persists to `IACTRANSLATE_DB_PATH`; `postgres` to
+    `IACTRANSLATE_DATABASE_URL`. Both use the same implementation (ADR 0063).
     """
-    backend = os.getenv("IACTRANSLATE_STORE", "memory").strip().lower()
-    if backend == "sqlite":
-        db_path = os.getenv("IACTRANSLATE_DB_PATH", "./iactranslate.db")
-        return SqliteProjectStore(db_path, max_projects=max_projects)
+    if backend() in {"sqlite", "postgres"}:
+        return SqlProjectStore(create_database(), max_projects=max_projects)
     return ProjectStore(max_projects=max_projects)

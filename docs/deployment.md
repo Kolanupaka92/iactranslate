@@ -128,6 +128,26 @@ docker run -p 8000:8000 iactranslate
 Good for a team, a demo, or CI. State is in-memory and workspaces are
 temporary — restart loses projects (by design at this tier).
 
+### The hosted deployment
+
+The hosted service is three pieces, deployed separately:
+
+| Piece | Where | How |
+|---|---|---|
+| API | Cloud Run `iactranslate-api` (us-central1) | `scripts/deploy_api.sh [COMMIT]` |
+| Console | Vercel project `iactranslate` → iactranslate.com | `vercel deploy --prod` from `web/` |
+| Docs | Vercel project `iactranslate-docs` | automatic on every push to `main` |
+
+`deploy_api.sh` never rebuilds. It promotes the image CI already built, scanned
+and signed for that commit (`ghcr.io/kolanupaka92/iactranslate:<commit>`, which
+exists only if every CI job passed) into Artifact Registry, then changes only the
+service's image, so its environment, secrets, VPC egress and service account are
+untouched. It verifies `/health` and prints the exact rollback command if the new
+revision is unhealthy.
+
+**Deploy the API before the console.** The console calls API features (for
+example custom scoring weights) that an older API silently ignores.
+
 ## Reference architecture
 
 > **Not yet built.** This is the target topology for multi-user, large-estate

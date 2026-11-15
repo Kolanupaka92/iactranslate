@@ -23,12 +23,17 @@ CI proves the output is valid against the real cloud providers (`tofu validate`)
 
 ## Key features
 
-- **Any source → any cloud.** Source registry (VMware · Hyper-V · Kubernetes ·
-  generic CMDB · existing cloud fleet) and target registry (AWS · Azure · GCP · OCI · DigitalOcean),
-  both behind protocols — new ones need no pipeline changes.
-- **Unbiased cloud recommendation.** Ranks all five clouds on cost, sizing fit,
-  and OS affinity, with explicit weights and plain-English rationale. No vendor
-  gets a thumb on the scale.
+- **Any source → any destination.** Source registry (VMware · Hyper-V · Kubernetes ·
+  generic CMDB · existing cloud fleet) and target registry (AWS · Azure · GCP · OCI ·
+  DigitalOcean · **Nutanix AHV · Proxmox VE**), both behind protocols — new ones need
+  no pipeline changes. Most estates leaving VMware go to another hypervisor, not a
+  hyperscaler; this is the tool that can say so.
+- **Unbiased recommendation, on-premises included.** Ranks the five clouds on cost,
+  sizing fit and OS affinity, with explicit weights and plain-English rationale. The
+  on-premises targets are generated as destinations but **never cost-ranked**: their
+  cost is hardware, licensing and facilities, which no inventory contains, and this
+  tool will not invent it (ADR 0065). No vendor gets a thumb on the scale — including
+  the one whose answer is "stay".
 - **Right-sized from real usage.** When utilization data is present, instances
   are sized to actual demand, not to over-provisioned allocations.
 - **Load balancer topology.** Any tier with more than one instance gets fronted
@@ -42,6 +47,20 @@ CI proves the output is valid against the real cloud providers (`tofu validate`)
   `depends_on` chains, rollback strategy, and validation checks per wave
   (`waves.json`) — honest about not discovering cross-application dependencies
   it has no signal for.
+- **Hybrid connectivity from observed flows.** Point `--flows` at a network-flow
+  export (vRNI, Cisco Secure Workload, NetFlow, `ss`/`netstat`) and traffic to
+  addresses absent from the inventory identifies systems that are *not*
+  migrating: `hybrid.tf` generates routes and a VPN/gateway scaffold so the
+  estate can still reach them. It also catches the failure no route can fix —
+  an on-prem range that overlaps the landing-zone CIDR, where the VPC claims
+  the address and traffic never leaves. Physical circuits (Direct Connect,
+  ExpressRoute, Interconnect) are deliberately never generated; they bill on
+  apply. Without `--flows`, output is unchanged.
+- **Inventory is de-identified before any AI call.** Hostnames, cluster,
+  datacenter and VLAN names are pseudonymised consistently — `acme-prod-db-01`
+  becomes `w1-prod-db-01`, so grouping signal survives and identity does not —
+  and addresses, tags and cloud resource ids are dropped. On by default; the
+  deterministic engine runs locally and is unaffected.
 - **Persistent store + bearer auth (stopgap).** Project metadata survives a
   process restart via an opt-in SQLite store (`IACTRANSLATE_STORE=sqlite`),
   and endpoints require `Authorization: Bearer <key>` when
@@ -71,7 +90,7 @@ CI proves the output is valid against the real cloud providers (`tofu validate`)
   **AWS CDK** (Python, AWS-only), and **Kubernetes/KubeVirt** (any cloud)
   renderers — the latter four walking the
   [Infrastructure Graph](docs/adr/0010-infrastructure-graph.md) — and opt-in
-  **GitOps** CI/CD.
+  **GitOps** CI/CD for GitHub Actions, GitLab CI, Azure DevOps and Jenkins.
 - **Policy engine.** Enforce org rules — no public subnets, approved instance
   families, budget caps, naming conventions — as pluggable, read-only policies
   (`deny` blocks rendering, `warn` reports) before any IaC is written.
@@ -112,7 +131,8 @@ iactranslate translate tests/fixtures/rvtools_sample.xlsx --target aws --out ./o
 
 Other clouds and formats are auto-detected: `--target azure|gcp|oci|digitalocean`,
 `--source auto|vmware|hyperv|kubernetes|generic|cloud`,
-`--renderer terraform|pulumi|cloudformation|bicep|cdk|kubernetes`, `--gitops`.
+`--renderer terraform|terraform-foreach|pulumi|cloudformation|bicep|cdk|kubernetes`, `--gitops`,
+`--ci github|gitlab|azure-devops|jenkins`.
 See the [Operations Guide](docs/operations-guide.md) for the full CLI, API, and web UI.
 
 ## Example: input → output
@@ -169,11 +189,11 @@ scope, and assumptions — is in **[docs/architecture.md](docs/architecture.md)*
 ## Test & lint
 
 ```bash
-pytest                 # ~475 tests: parsers, sizing, validation, all 5 clouds, renderers, API
+pytest                 # ~894 tests: parsers, sizing, validation, all 7 targets, renderers, API
 ruff check src tests
 ```
 
-CI runs lint, pytest on 3.9/3.11/3.12, a Docker build/health check, the web
+CI runs lint, pytest on 3.9/3.11/3.12/3.15, a Docker build/health check, the web
 build, and a real `tofu validate` of generated Terraform for AWS, Azure, and GCP.
 
 ## Security posture (at a glance)

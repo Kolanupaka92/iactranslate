@@ -6,7 +6,7 @@
 # Terraform >= 1.5 / OpenTofu.
 {% for c in adopt %}
 import {
-  to = aws_instance.{{ c.resource_name }}
+  to = aws_instance.{{ instance_addr[c.vm_name] }}
   id = "{{ c.external_id }}"
 }
 {% endfor %}

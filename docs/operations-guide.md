@@ -55,7 +55,7 @@ diagrams, infrastructure diff, brownfield adoption, load balancer topology,
 managed-DB re-platforming advice, migration wave planning, a Kubernetes discovery source,
 Pulumi/CloudFormation/Bicep/CDK/Kubernetes renderers, a policy engine, an
 Infrastructure Graph IR, async jobs + audit, and opt-in GitOps.
-~475 tests, 8 green CI jobs (lint, pytest 3.9/3.11/3.12, Docker health, web build, real
+~778 tests, 9 green CI jobs (lint, pytest 3.9/3.11/3.12/3.15, Docker health, web build, real
 Terraform validate). Repo: `github.com/Kolanupaka92/iactranslate` (public).
 
 ---
@@ -141,7 +141,7 @@ iactranslate/
 | **NormalizedVM** | The canonical unit of a workload (name, cpu, memory_gib, disks, os, ip, …). Every source produces these; everything downstream consumes them. | `models.py` |
 | **MigrationPlan** | The validated object the generator renders: `network` + `compute[]` + `app_groups[]` + `source_platform` + `target` + `region`. | `models.py` |
 | **Source** | Reads one inventory format → raw records that `normalize.py` understands. Has `detect(path)→confidence` and `parse(path, column_map)`. VMware/Hyper-V/CMDB/cloud are tabular; **Kubernetes** reads `kubectl -o json` (containers sized from resource requests). | `sources/base.py` |
-| **Target** | One cloud: an instance **catalog**, tier→family/subnet/security **mappings**, OS→image detection, and Jinja2 **templates**. | `targets/base.py` |
+| **Target** | One destination: an instance **catalog**, tier→family/subnet/security **mappings**, OS→image detection, and Jinja2 **templates**. Five public clouds plus two on-premises hypervisors (Nutanix AHV, Proxmox VE). Only targets with `CAP_PRICED` are cost-ranked; the on-premises pair render as "not estimated", never `$0` (ADR 0065). | `targets/base.py`, `targets/_onprem.py` |
 | **Provider** | Makes the *structured decisions* (grouping, instance choice). `rule` (deterministic, default) or `anthropic` (Claude) — reachable via `--provider`/API `provider` field/web toggle, not just an env var. Always re-checked by validation; `plan.provider_used` honestly records which one ran. | `agents/providers/` |
 | **Narrative** | The executive report's AI-written summary paragraph — only when the plan itself was AI-assisted, else a deterministic paragraph from the same facts. Presentation-layer only; never changes the plan. | `narrative.py` |
 | **Recommender** | Runs all clouds on one inventory and scores cost (0.45) + fit (0.30) + OS-affinity (0.25). 2.0 adds decisiveness (clear/moderate/close), annualized cost, and estate notes. | `recommend.py` |
@@ -151,11 +151,13 @@ iactranslate/
 | **Architecture Diagram** | Deterministic SVG + Mermaid of the target topology (VPC → subnets → tiered instances → load balancers). | `diagram.py` |
 | **Load Balancer** | Any `(tier, environment, subnet_tier)` group with >1 instance gets one, with listeners from the tier's own security-group ingress (AWS ALB, Azure Standard LB, GCP Network/Internal LB, OCI flexible LB). | `agents/network.py`, `models.py` |
 | **Infrastructure Diff** | Drift between two inventory snapshots (added/removed/modified + aggregate deltas). | `diff.py` |
-| **Renderer** | Swappable IaC output: `terraform` (default, HCL, all 5 clouds), `pulumi` (Python, AWS/Azure/GCP — not yet OCI/DigitalOcean), `cloudformation` (JSON, AWS-only), `bicep` (Azure-only), `cdk` (Python, AWS-only), or `kubernetes` (JSON/KubeVirt, any cloud) — the latter four render from the Infrastructure Graph, not the plan. | `renderers/` |
+| **Renderer** | Swappable IaC output: `terraform` (default, HCL, all 7 targets), `pulumi` (Python, AWS/Azure/GCP — not yet OCI/DigitalOcean), `cloudformation` (JSON, AWS-only), `bicep` (Azure-only), `cdk` (Python, AWS-only), or `kubernetes` (JSON/KubeVirt, any target) — the latter four render from the Infrastructure Graph, not the plan. | `renderers/` |
+| **Durable state** | Project store, accounts, roles, audit and the job queue. `IACTRANSLATE_STORE=memory` (default), `sqlite` (`IACTRANSLATE_DB_PATH`) or `postgres` (`IACTRANSLATE_DATABASE_URL`, needs the `postgres` extra). One implementation per component serves both engines. | `api/sql.py` |
+| **Encryption at rest** | Generated volumes are always encrypted — explicitly on AWS (EBS is not encrypted by default), and by the provider on Azure/GCP/OCI/DigitalOcean. `--kms-key` selects a customer-managed key; `require_customer_managed_key` enforces one. | `landing_zone.py`, `targets/*/templates` |
 | **Brownfield** | Existing cloud fleet with resource ids → Terraform/Pulumi `import` blocks (adopt, don't recreate). | `sources/cloud`, `renderers/` |
 | **Re-platforming advisor** | Flags database-tier workloads as managed-DB candidates (RDS/Cloud SQL/Azure SQL) with engine detection + caveats. Advisory-only — never changes the plan. Emits `replatforming.json`. | `replatform.py` |
 | **Migration wave planner** | Sequences workloads by tier dependency (data/cache → app → web) + environment order (dev → staging → prod), with `depends_on` chains, rollback strategy, validation checks, LB-aware downtime estimates. Advisory-only. Emits `waves.json`. | `waves.py` |
-| **GitOps** | Opt-in CI/CD workflow (plan on PR, apply on merge) + .gitignore, target/renderer-aware. | `gitops.py` |
+| **GitOps** | Opt-in CI/CD pipeline (plan on PR, apply on merge) + .gitignore for GitHub Actions, GitLab CI, Azure DevOps or Jenkins; credentials for all seven targets from each system's secret store. | `gitops.py` |
 | **Validation layer** | Never trusts provider output: checks catalog membership, CIDR overlap/containment, duplicate names, referential integrity. | `validation/validators.py` |
 
 **The raw-record contract** (what a `Source.parse` returns, consumed by `normalize`):
@@ -216,7 +218,7 @@ database-tier workloads are detected.
 
 | Tool | Version | Required for | Install |
 |---|---|---|---|
-| **Python** | 3.9+ (CI tests 3.9 / 3.11 / 3.12) | The core service, CLI, API — **required** | python.org · `pyenv` · `brew install python@3.12` |
+| **Python** | 3.9+ (CI tests 3.9 / 3.11 / 3.12 / 3.15) | The core service, CLI, API — **required** | python.org · `pyenv` · `brew install python@3.12` |
 | **pip + venv** | bundled with Python | Installing the package | (comes with Python) |
 | **Node.js + npm** | Node **20+**, npm 10+ | The web UI (`web/`) only | nodejs.org · `nvm install 20` · `brew install node` |
 | **OpenTofu** *or* **Terraform** | 1.5+ | Validating / deploying the generated `.tf`, and the `tofu validate` E2E test | `brew install opentofu` · opentofu.org · terraform.io |
@@ -261,6 +263,14 @@ iactranslate translate my-cmdb.csv --source generic \
 # Pulumi output (AWS) instead of Terraform, with a GitOps CI/CD workflow
 iactranslate translate rvtools.xlsx --target aws --renderer pulumi --gitops --out ./out-pl
 
+# Same, as a GitLab CI pipeline (also: --ci azure-devops, --ci jenkins)
+iactranslate translate rvtools.xlsx --target aws --ci gitlab --out ./out-gl
+
+# Terraform with for_each (any target, opt-in): one resource per kind over a per-VM map,
+# plus migrate-from-classic.tf so an estate already applied with the default
+# layout is moved, not recreated (ADR 0073)
+iactranslate translate rvtools.xlsx --target aws --renderer terraform-foreach --out ./out-fe
+
 # CloudFormation output (AWS-only), rendered from the Infrastructure Graph
 iactranslate translate rvtools.xlsx --target aws --renderer cloudformation --out ./out-cfn
 
@@ -278,9 +288,11 @@ kubectl get deployments,statefulsets -A -o json > k8s.json
 iactranslate translate k8s.json --source kubernetes --target aws --out ./out-from-k8s
 ```
 Flags: `--target aws|azure|gcp|oci|digitalocean`, `--source auto|vmware|hyperv|kubernetes|generic|cloud`, `--map`,
-`--region`, `--name`, `--zip`, `--renderer terraform|pulumi|cloudformation|bicep|cdk|kubernetes`
+`--region`, `--name`, `--zip`, `--renderer terraform|terraform-foreach|pulumi|cloudformation|bicep|cdk|kubernetes`
 (CloudFormation and CDK are AWS-only; Bicep is Azure-only; Kubernetes has no
-target restriction), `--gitops` (adds `.github/workflows/*` + `.gitignore`).
+target restriction), `--gitops` (adds a CI/CD pipeline + `.gitignore`), `--ci
+github|gitlab|azure-devops|jenkins` (which CI system; implies `--gitops`; Terraform and
+Pulumi output only — ADR 0075).
 
 Every generated project also ships, under `documentation/`, an executive report
 (`executive-report.html`), an architecture diagram (`architecture.svg`/`.md`), the
@@ -310,9 +322,14 @@ A `translate` run also writes the assessment into the project package
 iactranslate report rvtools.xlsx --target aws --out report.html
 iactranslate report rvtools.xlsx --no-recommend           # skip the 3-cloud compare
 
-# Drift between two inventory snapshots (added/removed/resized + aggregate deltas)
+# Drift between two inventory snapshots (added/removed/renamed/resized + aggregate deltas)
 iactranslate diff old-inventory.csv new-inventory.csv
 iactranslate diff old.csv new.csv --json
+
+# Machines renamed at the source (matched by VM UUID): write Terraform `moved`
+# blocks so the renamed resources are moved in state, not destroyed and recreated.
+# Use the target/region the Terraform was generated for (ADR 0072).
+iactranslate diff old.xlsx new.xlsx --moved-tf moved.tf --target aws
 ```
 
 ### 6.3d Policy enforcement
@@ -390,6 +407,17 @@ Projects created before multi-tenancy was enabled have no owner and are visible
 only in single-tenant mode; the database migrates itself additively on open, so
 nothing is lost.
 
+**Deleting an account** is self-service and total — `DELETE /auth/me` with
+`{"current_password": "..."}` removes every project the user owns (workspaces
+included), every grant they hold, their sessions and reset tokens, and the user
+row, then clears the cookie. The password is required so a stolen session cannot
+make the loss permanent. The audit event carries the user id only, never the
+email. Idempotent: a retry after an interrupted run is a no-op.
+```bash
+curl -s -b jar.txt -XDELETE localhost:8000/auth/me \
+  -H 'content-type: application/json' -d '{"current_password":"a-long-passphrase"}'
+```
+
 **Monitoring** — `GET /metrics` serves Prometheus exposition format. It is
 unauthenticated by design (scrapers don't send bearer tokens; the payload is
 aggregate counts only, no project or inventory data):
@@ -414,8 +442,9 @@ IACTRANSLATE_CORS_ORIGINS=http://localhost:3000 uvicorn iactranslate.api.main:ap
 cd web && npm install && npm run dev        # http://localhost:3000
 ```
 Wizard: create project (target + source picker) → upload → optional compare → generate →
-download. A one-click sample inventory is provided. Point at another API with
-`NEXT_PUBLIC_API_URL`.
+download. A one-click sample inventory is provided. `npm run dev` talks to the
+API on `localhost:8000`; production builds default to the deployed API. Point at
+another API with `NEXT_PUBLIC_API_URL`.
 
 ### 6.6 Docker
 ```bash
@@ -489,9 +518,10 @@ All env vars (see `src/iactranslate/config.py`):
 |---|---|---|
 | `IACTRANSLATE_LLM_PROVIDER` | `rule` | Default engine when `--provider`/`provider` isn't given: `rule` or `anthropic`. |
 | `ANTHROPIC_API_KEY` | — | Required for `anthropic`; absent → auto-fallback to `rule` (see §6.7, ADR 0021). |
+| `IACTRANSLATE_AI_DEIDENTIFY` | `1` (on) | Replace customer identifiers before inventory reaches a remote model — hostnames, cluster/datacenter/VLAN names are pseudonymised consistently; addresses, tags and `external_id` are dropped. Set `0` to send raw inventory. Rule engine is local and unaffected (ADR 0058). |
 | `IACTRANSLATE_ANTHROPIC_MODEL` | `claude-opus-4-8` | Model for classify/rightsize. |
 | `IACTRANSLATE_MAX_UPLOAD_MB` | `25` | Upload cap → `413`. Streamed, never buffered whole. |
-| `IACTRANSLATE_MAX_VMS` | `5000` | Inventory size cap → `400`. |
+| `IACTRANSLATE_MAX_VMS` | `20000` | Inventory size cap → `400`. |
 | `IACTRANSLATE_MAX_PROJECTS` | `200` | Store capacity cap; oldest evicted (temp dirs deleted). |
 | `IACTRANSLATE_STORE` | `memory` | `memory` (dies on restart, zero setup) or `sqlite` (persists project metadata **and the audit trail** to `IACTRANSLATE_DB_PATH`, surviving a restart — see ADR 0025, 0026). |
 | `IACTRANSLATE_DB_PATH` | `./iactranslate.db` | SQLite file path when `IACTRANSLATE_STORE=sqlite`. |
@@ -506,11 +536,11 @@ All env vars (see `src/iactranslate/config.py`):
 | `IACTRANSLATE_APP_URL` | `http://localhost:3000` | Public origin of the web app, used to build the password-reset link. The API's own origin is usually wrong here — the reset form lives in the frontend. |
 | `IACTRANSLATE_SPLIT_COMPUTE_ABOVE` | `50` | Workload count above which compute output is split into `compute-<env>-<tier>.tf` files for reviewability. `0` keeps a single `compute.tf`. Purely organizational — no state impact. |
 | `IACTRANSLATE_TARGET_UTILIZATION` | `0.65` | When a source carries utilization, size instances so they run at ~this utilization (right-sizing). |
-| `IACTRANSLATE_PRICING` | `static` | `static` (curated catalog rates, offline) or `live` (real market prices, cached, falls back to static). |
+| `IACTRANSLATE_PRICING` | `static` | `static` (curated catalog rates, offline) or `live` (real market prices, cached, falls back to static). A cloud whose billing endpoint fails 3 times in a row is skipped for 5 minutes rather than retried per SKU; the run summary reports `pricing_source` (`live`/`degraded`/`static`) and `pricing_source_degraded` (ADR 0059). Storage, Windows-licensing and load-balancer rates are fetched live too (AWS, Azure, GCP), each falling back to catalog on its own; `cost_breakdown.rate_sources` and `pricing_basis` say which lines are live (ADR 0069). |
 | `IACTRANSLATE_GCP_BILLING_API_KEY` | (none) | API key for GCP live pricing (Cloud Billing Catalog). Without it, GCP live falls back to static. |
 | `IACTRANSLATE_PRICE_CACHE` | temp file | Path for the on-disk live-price cache (24h TTL). |
 | `IACTRANSLATE_CORS_ORIGINS` | (none) | Comma-separated allowed origins for the frontend. `*` = all (dev only). |
-| `NEXT_PUBLIC_API_URL` | `http://localhost:8000` | Frontend → API base URL (web/). |
+| `NEXT_PUBLIC_API_URL` | `http://localhost:8000` under `npm run dev`; the deployed Cloud Run API in production builds | Frontend → API base URL (web/). |
 | `IACTRANSLATE_E2E_TOFU` | — | Set `1` to run the real `tofu validate` E2E test. |
 | `TF_PLUGIN_CACHE_DIR` | — | Provider-plugin cache for the tofu E2E (speeds re-runs). |
 
@@ -521,7 +551,7 @@ All env vars (see `src/iactranslate/config.py`):
 | Method | Path | Body / notes |
 |---|---|---|
 | `GET` | `/health` | Liveness. `{"status":"ok"}`. |
-| `POST` | `/projects` | `{name, target, source?, column_map?, region?}` → 201 project summary. |
+| `POST` | `/projects` | `{name, target, source?, column_map?, region?, provider?, renderer?}` → 201 project summary. `renderer` defaults to `terraform`; a renderer the target cannot emit (Bicep on AWS, say) is refused with 400 and the valid list — see `GET /targets`. |
 | `POST` | `/projects/{id}/upload` | multipart `file` (.xlsx/.csv). 413 if too big, 400 if wrong type. |
 | `POST` | `/projects/{id}/run` | Runs the pipeline **synchronously**. 200 summary; 422 validation/policy; 400 bad input. |
 | `POST` | `/projects/{id}/jobs` | Runs **asynchronously**; 202 + `job_id`. Poll `/jobs/{id}`. |
@@ -532,9 +562,9 @@ All env vars (see `src/iactranslate/config.py`):
 | `POST` | `/projects/{id}/recommend` | Cloud recommendation (with decisiveness, annualized cost, notes). |
 | `POST` | `/projects/{id}/report` | Executive report HTML. `?include_recommendation=false` to skip the 3-cloud compare. |
 | `GET` | `/policies` | Available policy rules (name → description). |
-| `GET` | `/targets` | Targets and their capability flags. |
+| `GET` | `/targets` | Targets, their capability flags, and the IaC renderers each cloud supports. |
 | `GET` | `/projects/{id}` | Status + summary (includes the plan's confidence + policy warnings). |
-| `GET` | `/projects/{id}/download` | The Terraform project ZIP. 409 if not generated yet. |
+| `GET` | `/projects/{id}/download` | The generated project ZIP, in the project's chosen IaC format. 409 if not generated yet. |
 | `DELETE` | `/projects/{id}` | Deletes the project + its temp workspace. 204. |
 
 Error contract: 4xx return `{"detail": "..."}` (422 validation returns `{"detail":{"message","issues"[]}}`);
@@ -546,7 +576,7 @@ Interactive docs at `/docs` (Swagger) when the server is running.
 ## 10. Testing & CI
 
 ```bash
-pytest                                   # full suite (fast, offline) — ~475 tests
+pytest                                   # full suite (fast, offline) — ~778 tests
 ruff check src tests                     # lint
 cd web && npm run lint && npm run build  # frontend
 
@@ -558,7 +588,7 @@ Test layout: `test_parsers/normalize/rightsizing/validation/generator` (units),
 `test_recommend`, `test_api_security`, and `test_e2e.py` (full source×target API matrix +
 real `tofu validate`).
 
-**CI** (`.github/workflows/ci.yml`, 7 jobs, all green): `lint`, `test` (3.9/3.11/3.12),
+**CI** (`.github/workflows/ci.yml`, 7 jobs, all green): `lint`, `test` (3.9/3.11/3.12/3.15),
 `web` (npm build), `docker` (build + container health), `terraform-validate` (installs
 OpenTofu, validates aws/azure/gcp output against real providers).
 
@@ -580,9 +610,15 @@ OpenTofu, validates aws/azure/gcp output against real providers).
   pipeline on a worker and returns a `job_id` to poll (`GET /jobs/{id}`); lifecycle events flow
   through an in-process bus; `GET /audit` returns the trail. These are the interfaces the
   production backends drop into — see [Deployment & Execution](deployment.md).
-- **State:** the project store, jobs, and audit are **in-memory** (single-node). Restarting the
-  API loses them; durability arrives with the Postgres + object-storage backend (the
-  [reference architecture](deployment.md#reference-architecture)).
+- **State:** `IACTRANSLATE_STORE=memory` (default, single-node, lost on restart), `sqlite`, or
+  `postgres` — one SQL layer serves both engines (ADR 0063). The hosted deployment runs
+  PostgreSQL on Cloud SQL with **no public address**: the instance sits on a private IP,
+  Cloud Run reaches it over Direct VPC egress (`private-ranges-only`), and the DSN lives in
+  Secret Manager (ADR 0068). Administrative access needs an in-VPC path (IAP-tunnelled VM, or
+  the Auth Proxy with `--private-ip` from inside the network).
+- **One run per project at a time:** `POST /run` claims the project row with a single
+  conditional UPDATE and holds a 900 s lease (`RUN_LEASE_SECONDS`); a concurrent caller gets
+  `409`, and a lease left by a crashed instance expires so the project cannot wedge (ADR 0066).
 - **Scale:** the `MAX_VMS` cap bounds request cost today; horizontal scale (stateless API pods +
   Redis/Celery workers + Postgres + object storage) is the documented v2.1 path.
 
@@ -650,9 +686,24 @@ diagram, and the `.zip`.
 | 1,000 | ~0.035 s | ~0.08 s | ~0.21 s | ~90 MB |
 | 5,000 | ~0.16 s | ~0.31 s | ~0.68 s | ~170 MB |
 
+Measured again at larger sizes with `scripts/bench_scale.py`, because the
+earlier numbers stopped at the old 5,000 cap and that cap had hardened into an
+assumed architectural limit:
+
+| Workloads | CSV parse+normalize | XLSX parse+normalize | plan | peak RSS |
+|---|---|---|---|---|
+| 20,000 | ~0.94 s | ~9.2 s | ~0.64 s | 129–190 MB |
+| 50,000 | ~3.7 s | — | ~3.3 s | ~357 MB |
+
 Notes:
-- Scaling is roughly linear in workload count; 5,000 (`IACTRANSLATE_MAX_VMS`
-  default) is comfortably sub-second end-to-end.
+- **Memory is not the constraint.** 50,000 workloads peak around 357 MB, and the
+  `.xlsx` path actually uses *less* than CSV. `IACTRANSLATE_MAX_VMS` now defaults
+  to 20,000 on the strength of these numbers.
+- **The constraint is CPU on `.xlsx`** — roughly 10× slower than CSV for the same
+  rows. A very large estate is much cheaper exported as CSV, and worth saying to
+  a customer before they wait nine seconds for twenty thousand rows.
+- Cost per workload rises gently with size (0.06 → 0.14 ms), so the curve is
+  slightly superlinear rather than flat; extrapolate with that in mind.
 - The `anthropic` provider and `live` pricing add network latency (per-call, with
   a 24 h price cache) — those paths are I/O-bound, not CPU-bound.
 - Reproduce with `scripts/` bench or the snippet in the repo; numbers are
@@ -675,8 +726,17 @@ require the minimum possible trust from the operator.
 - ✅ **Input validation** — malformed uploads return `400`, never a `500` or a leaked traceback.
 - ✅ **No arbitrary template execution** — templates are shipped with the app, never user-supplied;
   Jinja renders data into fixed templates, it does not execute user input.
-- ✅ **No secrets in output** — generated GitOps workflows reference GitHub *secrets*; credentials
-  are never embedded in generated files.
+- ✅ **No secrets in output** — generated GitOps pipelines reference the CI system's secret store
+  (GitHub secrets, GitLab masked variables, an Azure DevOps variable group, Jenkins credentials);
+  credentials are never embedded in generated files.
+- ✅ **Strict CSP on the console** — per-request script nonce + `'strict-dynamic'`; inline scripts
+  without the nonce do not run, `connect-src` is same-origin only, framing is refused (ADR 0067).
+- ✅ **Database unreachable from the internet** — private address only, VPC-internal egress from the
+  API, TLS required on the connection (ADR 0068).
+- ✅ **Bounded reads** — CSV/XLSX rows are counted at read time and rejected past `MAX_VMS` before
+  anything is parsed, so an oversized upload costs ~10 ms and ~90 MB, not seconds and gigabytes.
+- ✅ **Account deletion is one transaction** — `DELETE /auth/me` (password-confirmed) removes
+  projects, workspaces, grants, sessions and the user; the audit records the user id, never the email.
 
 Unhandled errors return a generic `500` and are logged server-side with context,
 never surfaced to the client.

@@ -17,7 +17,7 @@ resource "oci_core_instance" "{{ c.resource_name }}" {
   create_vnic_details {
     subnet_id        = oci_core_subnet.{{ subnet_of[c.vm_name] }}.id
     nsg_ids          = [oci_core_network_security_group.{{ sg_resource[c.security_group] }}.id]
-{% if c.subnet_tier == SubnetTier.PUBLIC and c.vm_name not in fronted_vm_names %}
+{% if c.vm_name in public_vm_names %}
     assign_public_ip = true
 {% else %}
     assign_public_ip = false
@@ -37,11 +37,11 @@ resource "oci_core_instance" "{{ c.resource_name }}" {
   }
 {% endif %}
 
-  freeform_tags = {
+  freeform_tags = merge(local.common_tags, {
     Tier        = "{{ c.tier.value }}"
     Environment = "{{ c.environment.value }}"
     SourceVM    = "{{ c.vm_name }}"
-  }
+  })
 }
 
 {% endfor %}

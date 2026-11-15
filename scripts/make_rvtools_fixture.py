@@ -53,14 +53,55 @@ VINFO_COLUMNS = [
 ]
 
 
-def _vm_names(count: int) -> list:
-    """Names shaped like a real estate: mixed case, separators, and spaces."""
-    names, i = [], 0
-    while len(names) < count:
-        env, tier = ENVS[i % len(ENVS)], TIERS[i % len(TIERS)]
-        n = i // (len(ENVS) * len(TIERS)) + 1
-        # Real inventories are inconsistent; rotate through plausible styles.
-        style = i % 5
+#: How a real estate is actually distributed. Cycling through the lists in order
+#: gives exactly equal counts per environment and tier, which is a synthetic tell
+#: — no enterprise has as many test machines as production ones, or as many
+#: databases as app servers. Weighted sampling is used for large estates; the
+#: small committed fixture keeps the deterministic round-robin so it does not
+#: change under existing tests.
+ENV_WEIGHTS = {"prod": 0.44, "dev": 0.24, "stg": 0.16, "uat": 0.16}
+TIER_WEIGHTS = {"web": 0.22, "app": 0.34, "db": 0.14, "cache": 0.10, "mq": 0.08, "batch": 0.12}
+
+
+def _weighted(rng, weights: dict) -> str:
+    roll, cumulative = rng.random(), 0.0
+    for key, weight in weights.items():
+        cumulative += weight
+        if roll <= cumulative:
+            return key
+    return next(reversed(weights))
+
+
+def _vm_names(count: int, rng=None) -> list:
+    """Names shaped like a real estate: mixed case, separators, and spaces.
+
+    `rng` switches on weighted environment/tier sampling — used for the large
+    demo estates, where uniform counts would look obviously generated.
+
+    Numbering is per (environment, tier) pair so every name is unique *by
+    construction*. An earlier version sampled first and de-duplicated
+    afterwards, filling the gaps with `host00001`-style names — which carry no
+    environment or tier marker and therefore all classified as `unknown`,
+    pushing a fifth of the estate into a bucket that made the demo look like the
+    classifier had failed. It had not; the fixture was feeding it junk.
+    """
+    names: list = []
+    counters: dict = {}
+    for i in range(count):
+        if rng is not None:
+            env, tier = _weighted(rng, ENV_WEIGHTS), _weighted(rng, TIER_WEIGHTS)
+            # Style 4 carries no environment marker, so those land in `unknown` —
+            # realistic, since every estate has badly named machines, but kept to
+            # roughly 8% so the assessment's data-quality finding has something
+            # true to report without dominating the picture.
+            style = rng.choices([0, 1, 2, 3, 4], weights=[26, 24, 22, 20, 8])[0]
+        else:
+            env, tier = ENVS[i % len(ENVS)], TIERS[i % len(TIERS)]
+            style = i % 5
+        key = (env, tier)
+        counters[key] = counters.get(key, 0) + 1
+        n = counters[key]
+
         if style == 0:
             names.append(f"{env}-{tier}-{n:02d}")
         elif style == 1:
@@ -71,14 +112,14 @@ def _vm_names(count: int) -> list:
             names.append(f"{env} {tier} {n:02d}")          # spaces happen
         else:
             names.append(f"{tier}{n:03d}")
-        i += 1
     return names
 
 
 def build(vms: int, out: Path, seed: int = 11) -> Path:
     rng = random.Random(seed)
     wb = Workbook(write_only=True)
-    names = _vm_names(vms)
+    # Large estates get realistic weighting; the small fixture stays as it was.
+    names = _vm_names(vms, rng if vms > 100 else None)
 
     vinfo = wb.create_sheet("vInfo")
     vinfo.append(VINFO_COLUMNS)

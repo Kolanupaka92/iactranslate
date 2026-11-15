@@ -9,6 +9,7 @@ from ..base import (
     CAP_BROWNFIELD_IMPORT,
     CAP_GITOPS,
     CAP_LIVE_PRICING,
+    CAP_PRICED,
     CAP_PULUMI,
     CAP_TERRAFORM,
     TEMPLATE_MAP,
@@ -25,7 +26,7 @@ class AwsTarget:
     vpc_cidr = mapping.VPC_CIDR
     template_dir = Path(__file__).parent / "templates"
     capabilities = frozenset(
-        {CAP_TERRAFORM, CAP_PULUMI, CAP_GITOPS, CAP_LIVE_PRICING, CAP_BROWNFIELD_IMPORT}
+        {CAP_PRICED, CAP_TERRAFORM, CAP_PULUMI, CAP_GITOPS, CAP_LIVE_PRICING, CAP_BROWNFIELD_IMPORT}
     )
     # AWS resolves AMIs with data sources in an extra images.tf, and emits
     # import blocks (imports.tf) for any brownfield resources to adopt.

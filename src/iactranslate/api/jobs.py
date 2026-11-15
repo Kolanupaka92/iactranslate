@@ -65,6 +65,22 @@ class JobQueue:
         self._lock = threading.Lock()
         self._bus = bus
 
+    def register(self, kind: str, handler: Callable[[str], None]) -> None:
+        """Accepted and ignored — this queue runs the closure it was given.
+
+        Present so the two queues are interchangeable at the call site. The
+        durable queue cannot persist a closure, so it dispatches by kind instead;
+        making callers branch on which implementation they got would leak that
+        difference everywhere.
+        """
+
+    def start(self) -> None:
+        """No-op: this queue's executor is live from construction.
+
+        The durable queue defers starting workers until handlers are registered,
+        so the call exists on both.
+        """
+
     def submit(self, project_id: str, work: Callable[[], None]) -> Job:
         """Enqueue `work` to run on a worker; returns the queued Job immediately."""
         job = Job(id=uuid.uuid4().hex[:12], project_id=project_id, created_at=time.time())

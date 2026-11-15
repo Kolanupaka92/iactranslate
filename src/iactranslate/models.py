@@ -11,6 +11,8 @@ from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
+from .evidence import Decision
+
 # --------------------------------------------------------------------------- #
 # Enums
 # --------------------------------------------------------------------------- #
@@ -85,6 +87,10 @@ class NormalizedVM(BaseModel):
     # instance id), when the source is an existing fleet. Enables generating
     # Terraform `import` blocks so the fleet is adopted, not recreated.
     external_id: Optional[str] = None
+    # The hypervisor's own identifier for the machine (RVTools `VM UUID`). A
+    # name is a label an administrator can change; this survives a rename, so
+    # it is what de-duplication and snapshot diffs match on when present.
+    source_uuid: Optional[str] = None
     tags: Dict[str, str] = Field(default_factory=dict)
 
     @field_validator("vm_name")
@@ -146,6 +152,11 @@ class ComputePlan(BaseModel):
     source_memory_gib: Optional[float] = None
     # Explainability: a human-readable "why this instance / tier" for the decision.
     reason: Optional[str] = None
+    #: The structured form of `reason` — evidence, assumptions, alternatives and
+    #: what was unknown. `reason` stays the one-line human summary; this is what a
+    #: reviewer interrogates and what the UI renders. Optional so a plan built by
+    #: an older version still loads.
+    decision: Optional[Decision] = None
     # The OS the source inventory reported, kept so downstream consumers can ask
     # "what was this before?" without re-parsing the estate.
     source_os: Optional[str] = None
@@ -254,6 +265,25 @@ class MigrationPlan(BaseModel):
             "this field is the honest record of what actually ran, not what was asked for."
         ),
     )
+    kms_key_id: Optional[str] = Field(
+        default=None,
+        description=(
+            "Customer-managed key protecting volume encryption, when the estate "
+            "supplied one. Volumes are always encrypted; this records whether the "
+            "customer's own key or the provider's managed key was used — a "
+            "distinction auditors ask about and the generated code alone does "
+            "not make obvious."
+        ),
+    )
+    live_pricing_requested: bool = Field(
+        default=False,
+        description=(
+            "Whether live market pricing was asked for. Needed to tell 'this "
+            "estate was priced from the catalog by choice' apart from 'the live "
+            "endpoints were unreachable and it fell back' — those carry very "
+            "different confidence and the numbers alone cannot distinguish them."
+        ),
+    )
 
     @property
     def total_estimated_monthly_cost_usd(self) -> float:
@@ -265,5 +295,26 @@ class MigrationPlan(BaseModel):
 
     @property
     def pricing_source(self) -> str:
-        """'live' if any instance was priced from a live source, else 'static'."""
-        return "live" if any(c.price_source == "live" for c in self.compute) else "static"
+        """'live', 'degraded' or 'static'.
+
+        This used to report 'live' if *any* single instance got a live price,
+        which meant an estate where 1,492 of 1,493 workloads silently fell back
+        to catalog rates was presented as live-priced. A customer builds a
+        business case on that number, so the mixed case gets its own name.
+        """
+        if not self.compute:
+            return "static"
+        sources = {c.price_source for c in self.compute}
+        if sources == {"live"}:
+            return "live"
+        return "degraded" if "live" in sources else "static"
+
+    @property
+    def pricing_source_degraded(self) -> bool:
+        """True when live pricing was asked for and not fully delivered.
+
+        Covers the total-blackout case that `pricing_source` cannot: if every
+        endpoint was unreachable, every workload is 'static' and the plan is
+        indistinguishable from one that never wanted live prices.
+        """
+        return self.live_pricing_requested and self.pricing_source != "live"

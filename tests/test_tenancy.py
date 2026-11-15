@@ -109,7 +109,7 @@ def test_session_tokens_are_stored_hashed_not_plaintext(tmp_path):
     user = store.create_user("a@example.com", "correct-horse-battery")
     token = store.create_session(user.id)
 
-    rows = store._conn.execute("SELECT token_hash FROM sessions").fetchall()
+    rows = store._db.query("SELECT token_hash FROM sessions")
     assert rows and token not in [r[0] for r in rows]  # a DB leak yields no usable session
     assert store.user_for_session(token).id == user.id
 

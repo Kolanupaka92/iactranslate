@@ -14,7 +14,7 @@ ADR 0016 (Terraform/Pulumi placement migrated onto the graph).
 from __future__ import annotations
 
 from enum import Enum
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set
 
 from pydantic import BaseModel, Field
 
@@ -112,6 +112,24 @@ def assign_subnets(plan: MigrationPlan) -> Dict[str, str]:
     return mapping
 
 
+def public_instances(plan: MigrationPlan) -> Set[str]:
+    """vm_names of the machines that get their own public address.
+
+    A machine in a public subnet is reachable from the internet — unless a
+    load balancer fronts it, in which case the load balancer is its public
+    entry point and the machine itself stays private. That rule was written
+    out separately in six Terraform templates, twice in the Pulumi renderer and
+    in Bicep. They agreed, but ADR 0016 is the record of what happens when a
+    decision lives in several places: one copy drifts and nothing notices. So,
+    like `assign_subnets`, it is decided once, here, and recorded on the graph.
+    """
+    fronted = {vm for lb in plan.network.load_balancers for vm in lb.targets}
+    return {
+        c.vm_name for c in plan.compute
+        if c.subnet_tier == SubnetTier.PUBLIC and c.vm_name not in fronted
+    }
+
+
 def build_graph(plan: MigrationPlan) -> InfrastructureGraph:
     """Derive the topology graph from a validated MigrationPlan."""
     net = plan.network
@@ -163,6 +181,7 @@ def build_graph(plan: MigrationPlan) -> InfrastructureGraph:
     # Instances, placed in a subnet of their tier (spread across AZs via
     # assign_subnets) and secured by their SG.
     subnet_of = assign_subnets(plan)
+    public = public_instances(plan)
     for c in plan.compute:
         iid = _instance_id(c.resource_name)
         nodes.append(GraphNode(
@@ -177,6 +196,7 @@ def build_graph(plan: MigrationPlan) -> InfrastructureGraph:
                 "image_key": c.image_key,
                 "root_volume_gib": c.root_volume_gib,
                 "extra_volumes_gib": list(c.extra_volumes_gib),
+                "public_ip": c.vm_name in public,
             },
         ))
         subnet_resource_name = subnet_of.get(c.vm_name)
