@@ -15,18 +15,28 @@ from .agents.providers import get_provider
 from .assessment import assess, to_html, to_json
 from .confidence import score_plan
 from .costing import estimate_costs
+from .dependencies import DependencyError, analyze_dependencies, parse_flows
 from .diff import diff_inventories
 from .exec_report import build_executive_report
+from .gitops import CI_SYSTEMS, GITOPS_RENDERERS
+from .identity import IdentityError
+from .identity import parse_mode as parse_identity_mode
+from .landing_zone import DEFAULT_CIDR, LandingZone, LandingZoneError
+from .moves import moved_blocks
 from .normalize import normalize
+from .pdf import PdfUnavailable
+from .pdf import render as render_pdf
 from .pipeline import run_pipeline
 from .policy import PolicyViolationError, UnknownPolicyError, load_policy_config
-from .recommend import recommend
+from .recommend import ScoringWeights, recommend
 from .renderers import UnknownRendererError, list_renderers
 from .sources import UnknownSourceError, list_sources, resolve_source
 from .state import SUPPORTED as SUPPORTED_BACKENDS
 from .state import resolve_backend
 from .targets import UnknownTargetError, get_target, list_targets
+from .transfer import DEFAULT_LINK_SHARE, estimate_transfer
 from .validation import PlanValidationError
+from .waves import plan_waves
 
 
 def _parse_kv(raw):
@@ -45,6 +55,14 @@ def _parse_kv(raw):
     return out
 
 
+def _weights_arg(raw: str) -> ScoringWeights:
+    """argparse type for --weights; a bad value is a usage error, not a traceback."""
+    try:
+        return ScoringWeights.parse(raw)
+    except ValueError as e:
+        raise argparse.ArgumentTypeError(str(e)) from e
+
+
 def _parse_column_map(raw: Optional[str]) -> Optional[Dict[str, str]]:
     """Parse a "canon=Header,canon2=Header 2" string into a mapping dict."""
     if not raw:
@@ -60,6 +78,14 @@ def _parse_column_map(raw: Optional[str]) -> Optional[Dict[str, str]]:
 
 def _cmd_translate(args: argparse.Namespace) -> int:
     project_name = args.name or Path(args.input).stem
+
+    # Refuse before any work: a Terraform pipeline over CloudFormation, Bicep,
+    # CDK or Kubernetes output is what --gitops used to produce, and it could
+    # never run.
+    if (args.gitops or getattr(args, "ci", None)) and args.renderer not in GITOPS_RENDERERS:
+        print(f"error: --gitops generates pipelines for {', '.join(GITOPS_RENDERERS)}; "
+              f"'{args.renderer}' output is deployed with its own tooling", file=sys.stderr)
+        return 2
 
     try:
         policy_config = load_policy_config(args.policy) if args.policy else None
@@ -85,14 +111,26 @@ def _cmd_translate(args: argparse.Namespace) -> int:
             provider=provider,
             make_zip=args.zip,
             renderer=args.renderer,
-            gitops=args.gitops,
+            gitops=args.gitops or bool(getattr(args, "ci", None)),
+            ci=getattr(args, "ci", None) or "github",
             policy_config=policy_config,
+            identity=parse_identity_mode(getattr(args, "instance_identity", None)),
+            flows_path=getattr(args, "flows", None),
+            zone=LandingZone(
+                cidr=getattr(args, "vpc_cidr", None) or DEFAULT_CIDR,
+                tags=_parse_kv(getattr(args, "tags", None)),
+                name_prefix=getattr(args, "name_prefix", None),
+                kms_key_id=getattr(args, "kms_key", None),
+            ),
             state_backend=resolve_backend(
                 args.target,
                 getattr(args, "state_backend", None),
                 _parse_kv(getattr(args, "state_config", None)),
             ),
         )
+    except (LandingZoneError, IdentityError) as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
     except (UnknownTargetError, UnknownSourceError, UnknownRendererError, UnknownPolicyError) as e:
         print(f"error: {e}", file=sys.stderr)
         return 2
@@ -115,12 +153,16 @@ def _cmd_translate(args: argparse.Namespace) -> int:
     print(f"Migration:  {plan.source_platform} -> {plan.target} ({plan.region})")
     print(f"VMs:        {plan.vm_count}")
     costs = estimate_costs(plan)
-    print(f"Est. cost:  ${costs.total:,.2f}/month  "
-          f"(compute ${costs.compute:,.2f}"
-          + (f" + storage ${costs.storage:,.2f}" if costs.storage else "")
-          + (f" + Windows ${costs.windows_licensing:,.2f}" if costs.windows_licensing else "")
-          + (f" + LB ${costs.load_balancers:,.2f}" if costs.load_balancers else "")
-          + ")")
+    if not costs.priced:
+        # "$0.00" reads as free. It is not free; it is not computed.
+        print(f"Est. cost:  not estimated ({costs.pricing_basis})")
+    else:
+        print(f"Est. cost:  ${costs.total:,.2f}/month  "
+              f"(compute ${costs.compute:,.2f}"
+              + (f" + storage ${costs.storage:,.2f}" if costs.storage else "")
+              + (f" + Windows ${costs.windows_licensing:,.2f}" if costs.windows_licensing else "")
+              + (f" + LB ${costs.load_balancers:,.2f}" if costs.load_balancers else "")
+              + ")")
     if args.provider:
         engine = "Claude (Anthropic)" if plan.provider_used == "anthropic" else "rule engine (deterministic)"
         print(f"AI:         {engine}"
@@ -153,7 +195,7 @@ def _cmd_recommend(args: argparse.Namespace) -> int:
         print(f"error: no workloads found in {args.input}", file=sys.stderr)
         return 2
 
-    rec = recommend(vms)
+    rec = recommend(vms, weights=args.weights)
     print(f"Recommended cloud: {rec.recommended.upper()}\n")
     print(f"{'CLOUD':6}  {'SCORE':>6}  {'COST/MO':>11}  {'COST':>5}  {'FIT':>5}  {'OS':>5}")
     print("-" * 48)
@@ -195,7 +237,15 @@ def _cmd_assess(args: argparse.Namespace) -> int:
         print(to_json(a))
         return 0
     if args.html_out:
-        Path(args.html_out).write_text(to_html(a), encoding="utf-8")
+        out = Path(args.html_out)
+        if getattr(args, "pdf", False) or out.suffix.lower() == ".pdf":
+            try:
+                out.write_bytes(render_pdf(to_html(a)))
+            except PdfUnavailable as e:
+                print(f"error: {e}", file=sys.stderr)
+                return 2
+        else:
+            out.write_text(to_html(a), encoding="utf-8")
 
     r = a.readiness
     print(f"Assessment: {a.project_name} (source: {a.source_platform})")
@@ -244,17 +294,167 @@ def _cmd_report(args: argparse.Namespace) -> int:
         print(f"error: {e}", file=sys.stderr)
         return 2
     plan = build_migration_plan(vms, project_name=project_name, target=target, region=args.region)
-    rec = None if args.no_recommend else recommend(vms)
+    rec = None if args.no_recommend else recommend(vms, weights=args.weights)
     html = build_executive_report(plan, vms, recommendation=rec)
+
+    # `--out report.pdf` means a PDF was wanted even without the flag; writing
+    # HTML into a .pdf path would produce a file no viewer can open.
+    want_pdf = getattr(args, "pdf", False) or str(args.out).lower().endswith(".pdf")
+    if want_pdf:
+        try:
+            Path(args.out).write_bytes(render_pdf(html))
+        except PdfUnavailable as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 2
+        print(f"Executive report written to {args.out}")
+        return 0
 
     Path(args.out).write_text(html, encoding="utf-8")
     print(f"Executive report written to {args.out}")
+    print("To share as PDF: open it in a browser and choose Save as PDF "
+          "(the report carries a print stylesheet), or re-run with --pdf.")
     return 0
 
 
 def _load_inventory(path: str, source: str, column_map: Optional[str]):
     src = resolve_source(path, source)
     return normalize(src.parse(path, column_map=_parse_column_map(column_map)))
+
+
+def _cmd_transfer(args: argparse.Namespace) -> int:
+    """How long the data takes to move, and whether it fits the cutover window."""
+    try:
+        src = resolve_source(args.input, args.source)
+        vms = normalize(src.parse(args.input, column_map=_parse_column_map(args.map)))
+    except UnknownSourceError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+    except FileNotFoundError:
+        print(f"error: input file not found: {args.input}", file=sys.stderr)
+        return 2
+    if not vms:
+        print(f"error: no workloads found in {args.input}", file=sys.stderr)
+        return 2
+
+    try:
+        target = get_target(args.target)
+    except UnknownTargetError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+
+    plan = build_migration_plan(vms, project_name=args.name or Path(args.input).stem, target=target)
+    waves = plan_waves(plan)
+    est = estimate_transfer(
+        plan,
+        link_mbps=args.link_mbps,
+        link_share=args.link_share,
+        cutover_window_hours=args.window_hours,
+        waves=waves,
+    )
+
+    if args.json:
+        print(json.dumps(est.model_dump(mode="json"), indent=2))
+        return 0
+
+    print(f"Data to move:  {est.total_gib:,.0f} GiB ({est.total_tib:,.2f} TiB)")
+    print(f"Link:          {est.link_mbps:,.0f} Mbps nominal, "
+          f"{est.effective_mbps:,.0f} Mbps effective ({est.link_share:.0%} share)")
+    print(f"Elapsed:       {est.total_hours:,.1f} hours ({est.total_days:,.1f} days)")
+    if est.waves:
+        window = f", {args.window_hours:g}h window" if args.window_hours else ""
+        print(f"\nBy wave{window}:")
+        print(f"  {'#':>2}  {'WAVE':34} {'WL':>3}  {'GiB':>9}  {'HOURS':>8}")
+        print("  " + "-" * 62)
+        for w in est.waves:
+            flag = "" if w.fits_window else "  EXCEEDS"
+            print(f"  {w.sequence:>2}  {w.name[:34]:34} {w.workload_count:>3}  "
+                  f"{w.gib:>9,.0f}  {w.hours:>8,.1f}{flag}")
+    if est.warnings:
+        print()
+        for warning in est.warnings:
+            print(f"  ! {warning}")
+    print("\nAssumptions:")
+    for line in est.assumptions:
+        print(f"  - {line}")
+    return 0
+
+
+def _cmd_depends(args: argparse.Namespace) -> int:
+    """Application dependencies from observed network flows."""
+    try:
+        vms = _load_inventory(args.input, args.source, args.map)
+    except UnknownSourceError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+    except FileNotFoundError:
+        print(f"error: input file not found: {args.input}", file=sys.stderr)
+        return 2
+    if not vms:
+        print(f"error: no workloads found in {args.input}", file=sys.stderr)
+        return 2
+
+    try:
+        flows = parse_flows(args.flows)
+    except FileNotFoundError:
+        print(f"error: flow export not found: {args.flows}", file=sys.stderr)
+        return 2
+    except DependencyError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+
+    waves = None
+    if not args.no_waves:
+        try:
+            target = get_target(args.target)
+        except UnknownTargetError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 2
+        waves = plan_waves(build_migration_plan(
+            vms, project_name=args.name or Path(args.input).stem, target=target
+        ))
+
+    report = analyze_dependencies(flows, vms, waves=waves)
+
+    if args.json:
+        print(json.dumps(report.model_dump(mode="json"), indent=2))
+        return 0
+
+    print(f"Flows:        {len(flows)} ({report.mapped_flows} mapped, "
+          f"{report.unmapped_flows} unmapped, {report.filtered_flows} filtered) "
+          f"— {report.coverage_pct:.0f}% coverage")
+    print(f"Dependencies: {len(report.dependencies)}")
+    for dep in report.dependencies[: args.limit]:
+        ports = ",".join(str(p) for p in dep.ports)
+        print(f"  {dep.source} -> {dep.target}  :{ports}  ({dep.connections:,} conns)")
+    if len(report.dependencies) > args.limit:
+        print(f"  … {len(report.dependencies) - args.limit} more (use --json for all)")
+
+    if report.must_move_together:
+        print("\nMust move together (mutual calls):")
+        for group in report.must_move_together:
+            print(f"  {' + '.join(group)}")
+
+    if report.external:
+        print("\nOutside the inventory — these do not migrate and must stay reachable:")
+        for ext in report.external[: args.limit]:
+            kind = "internal, unlisted" if ext.is_private else "third-party"
+            ports = ",".join(str(p) for p in ext.ports)
+            print(f"  {ext.source} -> {ext.address}:{ports}  ({kind})")
+
+    if report.violations:
+        print("\nWAVE VIOLATIONS — each is a cutover that fails:")
+        for v in report.violations[: args.limit]:
+            ports = ",".join(str(p) for p in v.ports)
+            print(f"  wave {v.source_wave} moves {v.source} before {v.target} "
+                  f"(wave {v.target_wave}) :{ports}")
+    elif waves is not None:
+        print("\nWave order: no dependency is scheduled after something that needs it.")
+
+    if report.notes:
+        print()
+        for note in report.notes:
+            print(f"  ! {note}")
+    return 0
 
 
 def _cmd_diff(args: argparse.Namespace) -> int:
@@ -272,13 +472,27 @@ def _cmd_diff(args: argparse.Namespace) -> int:
         return 2
 
     d = diff_inventories(before, after)
+    moved = None
+    if args.moved_tf:
+        try:
+            get_target(args.target)
+        except UnknownTargetError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 2
+        moved = moved_blocks(before, after, target=args.target, region=args.region)
+        if moved.moves:
+            Path(args.moved_tf).write_text(moved.to_hcl())
     if args.json:
-        print(json.dumps(d.model_dump(mode="json"), indent=2))
+        out = d.model_dump(mode="json")
+        if moved is not None:
+            out["moved"] = moved.model_dump(mode="json")
+        print(json.dumps(out, indent=2))
         return 0
 
     print(f"Inventory diff: {args.before} → {args.after}\n")
     print(f"  Added:     {len(d.added)}")
     print(f"  Removed:   {len(d.removed)}")
+    print(f"  Renamed:   {len(d.renamed)}")
     print(f"  Modified:  {len(d.modified)}")
     print(f"  Unchanged: {d.unchanged}\n")
     print(f"  vCPU:    {d.before.vcpu} → {d.after.vcpu} ({d.vcpu_delta:+d})")
@@ -288,11 +502,30 @@ def _cmd_diff(args: argparse.Namespace) -> int:
         print(f"  + {name}")
     for name in d.removed:
         print(f"  - {name}")
+    for r in d.renamed:
+        print(f"  > {r.before} → {r.after}")
     for wc in d.modified:
         deltas = ", ".join(f"{c.field}: {c.before}→{c.after}" for c in wc.changes)
         print(f"  ~ {wc.vm_name} ({deltas})")
     if not d.has_changes:
         print("  No changes — inventories are identical.")
+    if moved is not None:
+        print()
+        if moved.moves:
+            print(f"  Wrote {len(moved.moves)} `moved` blocks for {args.target} to {args.moved_tf}.")
+            print("  Add it to the new Terraform so renamed machines are moved, not recreated.")
+        elif not moved.conflicts:
+            print(f"  No resource addresses changed for {args.target}; no `moved` blocks needed.")
+        for c in moved.conflicts:
+            print("  A rename reuses another machine's address, which `moved` blocks cannot")
+            print("  express (Terraform chains them). Run these against the old state instead:")
+            for cmd in c.state_mv:
+                print(f"    {cmd}")
+        if moved.unmatched_removed:
+            print(f"  {len(moved.unmatched_removed)} resource(s) will still be destroyed "
+                  "(no rename explains them):")
+            for a in moved.unmatched_removed:
+                print(f"    - {a}")
     return 0
 
 
@@ -305,6 +538,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     src_help = f"Discovery source: auto (default) or {', '.join(list_sources())}."
     map_help = 'Generic-source column map, e.g. "name=Hostname,cpu=Cores,memory_gib=RAM GB,disk_gib=Storage GB,os=OS".'
+    weights_help = ('Recommendation scoring weights, e.g. "cost=0.2,fit=0.4,os=0.4" '
+                    "(default cost=0.45,fit=0.30,os=0.25). Scaled to sum to 1; "
+                    "unnamed weights keep their default.")
 
     t = sub.add_parser("translate", help="Translate a discovery export into a Terraform project.")
     t.add_argument("input", help="Path to an inventory export (.xlsx/.csv): RVTools, Hyper-V, CMDB, cloud.")
@@ -317,9 +553,37 @@ def build_parser() -> argparse.ArgumentParser:
     t.add_argument("--renderer", default="terraform",
                    help=f"IaC output format ({', '.join(list_renderers())}). "
                         "CloudFormation and CDK are AWS-only; Bicep is Azure-only; "
-                        "Kubernetes (KubeVirt) works for any target.")
+                        "terraform-foreach and Kubernetes (KubeVirt) work for any target.")
     t.add_argument("--gitops", action="store_true",
-                   help="Include a GitOps CI/CD workflow (plan on PR, apply on merge) + .gitignore.")
+                   help="Include a GitOps CI/CD pipeline (plan on PR, apply on merge) + .gitignore.")
+    t.add_argument("--ci", choices=CI_SYSTEMS, default=None,
+                   help="CI system for the pipeline (default github). Implies --gitops. "
+                        "Terraform and Pulumi output only.")
+    t.add_argument("--vpc-cidr", default=None, metavar="CIDR",
+                   help="Network range for the new VPC/VNet, e.g. '172.20.8.0/21'. Subnets are "
+                        "carved from it. Use the range your IPAM team allocated — the default "
+                        "10.0.0.0/16 will collide in most enterprise networks.")
+    t.add_argument("--tags", default=None, metavar="K=V,...",
+                   help="Tags applied to every resource, e.g. "
+                        "'CostCenter=CC-4417,Owner=platform@acme.com'. Governed accounts "
+                        "commonly reject resources that lack mandated tags.")
+    t.add_argument("--name-prefix", default=None, metavar="PREFIX",
+                   help="Prefix for generated resource names, where a naming convention is enforced.")
+    t.add_argument("--kms-key", default=None, metavar="KEY",
+                   help="Customer-managed key for volume encryption (AWS KMS ARN/alias, "
+                        "Azure disk encryption set id, or GCP KMS key name). Volumes are "
+                        "always encrypted; this selects whose key. Omit to use the "
+                        "provider's managed key.")
+    t.add_argument("--instance-identity", default="basic", metavar="MODE",
+                   help="Workload identity per tier: 'basic' (role/identity with no "
+                        "permissions, wired to the instances), 'ssm' (basic plus AWS "
+                        "Session Manager for keyless access), or 'none'. Permissions are "
+                        "never generated — see the README in the output.")
+    t.add_argument("--flows", default=None, metavar="PATH",
+                   help="Network-flow export (vRNI, Cisco Secure Workload, NetFlow, ss/netstat). "
+                        "Flows to addresses that are not in the inventory identify systems that "
+                        "are NOT migrating, and hybrid.tf is generated so the estate can still "
+                        "reach them. Without this the output assumes a self-contained estate.")
     t.add_argument("--state-backend", default=None, metavar="KIND",
                    help="Terraform remote state backend: 'auto' for the target cloud's native "
                         f"backend, or one of {', '.join(SUPPORTED_BACKENDS)}. Omitted means local "
@@ -341,6 +605,7 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("input", help="Path to an inventory export (.xlsx/.csv).")
     r.add_argument("--source", default="auto", help=src_help)
     r.add_argument("--map", default=None, help=map_help)
+    r.add_argument("--weights", type=_weights_arg, default=None, help=weights_help)
     r.set_defaults(func=_cmd_recommend)
 
     a = sub.add_parser("assess", help="Assess an estate's migration readiness (risks, cost, data gaps).")
@@ -350,6 +615,8 @@ def build_parser() -> argparse.ArgumentParser:
     a.add_argument("--name", default=None, help="Project name (defaults to input filename).")
     a.add_argument("--json", action="store_true", help="Emit the assessment as JSON to stdout.")
     a.add_argument("--html-out", default=None, help="Also write a standalone HTML report to this path.")
+    a.add_argument("--pdf", action="store_true",
+                   help="Write --html-out as a PDF. Needs `pip install 'iactranslate[pdf]'`.")
     a.set_defaults(func=_cmd_assess)
 
     rp = sub.add_parser("report", help="Generate a client-facing executive migration report (HTML).")
@@ -360,8 +627,50 @@ def build_parser() -> argparse.ArgumentParser:
     rp.add_argument("--name", default=None, help="Project name (defaults to input filename).")
     rp.add_argument("--region", default=None, help="Target region/location (defaults per cloud).")
     rp.add_argument("--no-recommend", action="store_true", help="Skip the 3-cloud recommendation section.")
+    rp.add_argument("--weights", type=_weights_arg, default=None, help=weights_help)
     rp.add_argument("--out", default="executive-report.html", help="Output HTML path.")
+    rp.add_argument("--pdf", action="store_true",
+                    help="Render a PDF instead of HTML. Needs `pip install 'iactranslate[pdf]'`; "
+                         "otherwise open the HTML in a browser and Save as PDF.")
     rp.set_defaults(func=_cmd_report)
+
+    tr = sub.add_parser(
+        "transfer",
+        help="Estimate data-transfer time and whether each wave fits the cutover window.",
+    )
+    tr.add_argument("input", help="Path to an inventory export (.xlsx/.csv).")
+    tr.add_argument("--target", default="aws", help=f"Target cloud ({', '.join(list_targets())}).")
+    tr.add_argument("--source", default="auto", help=src_help)
+    tr.add_argument("--map", default=None, help=map_help)
+    tr.add_argument("--name", default=None, help="Project name (defaults to input filename).")
+    tr.add_argument("--link-mbps", type=float, default=1000.0,
+                    help="Nominal bandwidth of the link to the cloud, in Mbps (default 1000).")
+    tr.add_argument("--link-share", type=float, default=DEFAULT_LINK_SHARE,
+                    help="Fraction of the link the migration may use, 0-1 (default 0.5). "
+                         "Migration traffic shares the link with production.")
+    tr.add_argument("--window-hours", type=float, default=None,
+                    help="Cutover window in hours. Waves that will not fit are flagged.")
+    tr.add_argument("--json", action="store_true", help="Emit the estimate as JSON.")
+    tr.set_defaults(func=_cmd_transfer)
+
+    dep = sub.add_parser(
+        "depends",
+        help="Map application dependencies from a network-flow export, and check "
+             "the migration waves against them.",
+    )
+    dep.add_argument("input", help="Path to an inventory export (.xlsx/.csv).")
+    dep.add_argument("--flows", required=True,
+                     help="Network-flow export (CSV) from vRNI, Tetration, NetFlow, etc. "
+                          "Needs source, destination and destination-port columns.")
+    dep.add_argument("--target", default="aws", help=f"Target cloud ({', '.join(list_targets())}).")
+    dep.add_argument("--source", default="auto", help=src_help)
+    dep.add_argument("--map", default=None, help=map_help)
+    dep.add_argument("--name", default=None, help="Project name (defaults to input filename).")
+    dep.add_argument("--no-waves", action="store_true",
+                     help="Skip wave planning and the ordering check.")
+    dep.add_argument("--limit", type=int, default=20, help="Rows to print per section.")
+    dep.add_argument("--json", action="store_true", help="Emit the full report as JSON.")
+    dep.set_defaults(func=_cmd_depends)
 
     d = sub.add_parser("diff", help="Compare two inventory snapshots (drift detection).")
     d.add_argument("before", help="Earlier inventory export (.xlsx/.csv).")
@@ -369,6 +678,13 @@ def build_parser() -> argparse.ArgumentParser:
     d.add_argument("--source", default="auto", help=src_help)
     d.add_argument("--map", default=None, help=map_help)
     d.add_argument("--json", action="store_true", help="Emit the diff as JSON.")
+    d.add_argument("--moved-tf", default=None, metavar="PATH",
+                   help="Write Terraform `moved` blocks for machines renamed between the "
+                        "snapshots (matched by VM UUID), so they are moved, not recreated.")
+    d.add_argument("--target", default="aws",
+                   help=f"Target cloud the Terraform was generated for, with --moved-tf "
+                        f"({', '.join(list_targets())}).")
+    d.add_argument("--region", default=None, help="Target region used for that Terraform.")
     d.set_defaults(func=_cmd_diff)
 
     demo = sub.add_parser(
@@ -379,7 +695,7 @@ def build_parser() -> argparse.ArgumentParser:
                       help="Target cloud: aws|azure|gcp|oci|digitalocean (default aws).")
     demo.add_argument("--out", default="./iactranslate-demo", help="Output directory.")
     demo.add_argument("--renderer", default="terraform",
-                      help="terraform|pulumi|cloudformation|bicep|cdk|kubernetes.")
+                      help=f"IaC output format ({'|'.join(list_renderers())}).")
     demo.add_argument("--region", default=None, help="Target region (default: the cloud's).")
     demo.add_argument("--name", default=None, help="Project name.")
     demo.add_argument("--zip", action="store_true", help="Also write a .zip of the project.")

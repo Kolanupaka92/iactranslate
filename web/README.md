@@ -1,36 +1,51 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# IaCTranslate — web
 
-## Getting Started
+Next.js app with two surfaces:
 
-First, run the development server:
+| Route | What it is | Rendering |
+|---|---|---|
+| `/` | Public landing page | Static, no client JS beyond Next's runtime |
+| `/console` | The product workspace — sign in, upload, assess, compare, generate | Client component, talks to the FastAPI service |
+
+## Running it
+
+The console needs the API. Start both:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm run dev --prefix web
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+```bash
+.venv/bin/uvicorn iactranslate.api.main:app --port 8000
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+The API must allow the web origin — `IACTRANSLATE_CORS_ORIGINS=http://localhost:3000`.
+Both are configured in `.claude/launch.json` at the repo root.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Conventions
 
-## Learn More
+**Content lives in `lib/site.ts`, not in the markup.** Every figure on the landing
+page is either measured in this repository or carries a published source, and it
+is kept in one module so it cannot drift. The investor deck grew stale numbers
+(403 tests, 32 ADRs) precisely because they were written inline.
 
-To learn more about Next.js, take a look at the following resources:
+**Never state a cost or a saving without its assumptions.** The cost comparison
+renders its caveat at full size directly beneath the chart — not as a footnote and
+not behind a tooltip. Making assumptions visible is the product's central claim;
+a landing page that hides its own would contradict it on first contact.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+**Colour comes from tokens in `app/globals.css`**, defined for light and dark.
+Contrast is measured, not eyeballed: the light accent is emerald-700 rather than
+the console's 600 because the landing page sets small text in it, and 600
+measures 3.61:1 against the surface — below AA.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+**The landing page has no client state.** If a change to it needs `"use client"`,
+that is worth questioning first.
 
-## Deploy on Vercel
+## Checks
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+npm run lint --prefix web && npm run build --prefix web
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Both run in CI on every push.

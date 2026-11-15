@@ -13,10 +13,8 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional
 
-import pandas as pd
-
 from .._columns import cell, find_column
-from ..base import RawRecord, headers, is_csv, is_xlsx
+from ..base import RawRecord, headers, is_csv, is_xlsx, read_csv_bounded, read_excel_bounded
 
 # Synonyms per canonical field, ordered most- to least-specific.
 _SYNONYMS: Dict[str, List[str]] = {
@@ -85,7 +83,7 @@ class GenericSource:
         return mapping
 
     def parse(self, path: str, column_map: Optional[Dict[str, str]] = None) -> List[RawRecord]:
-        df = pd.read_csv(path) if is_csv(path) else pd.read_excel(path, engine="openpyxl")
+        df = read_csv_bounded(path) if is_csv(path) else read_excel_bounded(path)
         if df.empty:
             return []
 

@@ -12,7 +12,15 @@ from iactranslate.targets import list_targets
 def test_recommend_scores_all_clouds(rvtools_path):
     vms = normalize(parse(rvtools_path))
     rec = recommend(vms)
-    assert {s.cloud for s in rec.ranked} == set(list_targets())
+    from iactranslate.targets import get_target
+    from iactranslate.targets.base import CAP_PRICED
+    priced = {n for n in list_targets() if CAP_PRICED in get_target(n).capabilities}
+    unpriced = set(list_targets()) - priced
+    assert {s.cloud for s in rec.ranked} == priced
+    # Unpriced destinations are stated, not silently dropped — their absence
+    # from the ranking must never read as "not an option".
+    assert {n.target for n in rec.not_ranked} == unpriced
+    assert all("inventory cannot supply" in n.reason for n in rec.not_ranked)
     # Ranked best-first; the winner matches `recommended`.
     assert rec.ranked[0].cloud == rec.recommended
     assert all(
@@ -70,7 +78,12 @@ def test_api_recommend_flow(rvtools_path):
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["recommended"] in list_targets()
-    assert len(body["ranked"]) == len(list_targets())
+    from iactranslate.targets import get_target
+    from iactranslate.targets.base import CAP_PRICED
+    priced = [n for n in list_targets() if CAP_PRICED in get_target(n).capabilities]
+    assert len(body["ranked"]) == len(priced)
+    # And the API carries the unranked destinations through, with their reason.
+    assert {n["target"] for n in body["not_ranked"]} == set(list_targets()) - set(priced)
 
 
 # -- the weighting must be inspectable (ADR 0037) ---------------------------
@@ -124,3 +137,43 @@ def test_margin_names_the_cloud_it_is_measured_against(rvtools_path):
     assert rec.margin == pytest.approx(
         rec.ranked[0].weighted_score - rec.ranked[1].weighted_score, abs=1e-4
     )
+
+
+def test_recommendation_ranks_on_the_bill_the_customer_pays(rvtools_path):
+    """Not on compute alone.
+
+    Every other surface — report, README, main.tf, CLI, API, budget policy —
+    quotes the itemized total (ADR 0039). Ranking on compute meant the
+    recommendation argued from a number the customer would never see, and the
+    gap is not a constant: it ranges from ~12% on DigitalOcean to ~79% on OCI,
+    because storage and Windows licensing scale differently per cloud.
+    """
+    from iactranslate.agents import build_migration_plan
+    from iactranslate.costing import estimate_costs
+    from iactranslate.normalize import normalize
+    from iactranslate.recommend import recommend
+    from iactranslate.sources import resolve_source
+    from iactranslate.targets import get_target
+
+    vms = normalize(resolve_source(rvtools_path, "auto").parse(rvtools_path))
+    rec = recommend(vms)
+
+    for score in rec.ranked:
+        plan = build_migration_plan(vms, "check", get_target(score.cloud))
+        costs = estimate_costs(plan)
+        assert score.total_monthly_cost_usd == pytest.approx(costs.total, abs=0.01)
+        assert score.compute_monthly_cost_usd == pytest.approx(costs.compute, abs=0.01)
+        assert score.total_monthly_cost_usd > score.compute_monthly_cost_usd, (
+            f"{score.cloud}: the full bill must exceed compute alone"
+        )
+
+
+def test_annual_cost_follows_the_itemized_total(rvtools_path):
+    """A 12x multiple of the wrong number is still the wrong number."""
+    from iactranslate.normalize import normalize
+    from iactranslate.recommend import recommend
+    from iactranslate.sources import resolve_source
+
+    vms = normalize(resolve_source(rvtools_path, "auto").parse(rvtools_path))
+    for score in recommend(vms).ranked:
+        assert score.annual_cost_usd == pytest.approx(score.total_monthly_cost_usd * 12, abs=0.01)

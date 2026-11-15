@@ -8,10 +8,8 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional
 
-import pandas as pd
-
 from .._columns import cell, find_column
-from ..base import RawRecord, any_header_contains, headers, is_csv
+from ..base import RawRecord, any_header_contains, headers, is_csv, read_csv_bounded
 
 _BYTES_PER_MIB = 1024 * 1024
 
@@ -32,7 +30,7 @@ class HypervSource:
         return 0.0
 
     def parse(self, path: str, column_map: Optional[Dict[str, str]] = None) -> List[RawRecord]:
-        df = pd.read_csv(path)
+        df = read_csv_bounded(path)
         if df.empty:
             return []
 

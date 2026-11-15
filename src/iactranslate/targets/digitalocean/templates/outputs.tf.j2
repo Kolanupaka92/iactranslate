@@ -8,7 +8,7 @@ output "droplet_ids" {
   description = "Map of source VM name to migrated Droplet ID."
   value = {
 {% for c in compute %}
-    "{{ c.vm_name }}" = digitalocean_droplet.{{ c.resource_name }}.id
+    "{{ c.vm_name }}" = digitalocean_droplet.{{ instance_addr[c.vm_name] }}.id
 {% endfor %}
   }
 }
@@ -17,7 +17,7 @@ output "droplet_public_ips" {
   description = "Map of source VM name to public IPv4."
   value = {
 {% for c in compute %}
-    "{{ c.vm_name }}" = digitalocean_droplet.{{ c.resource_name }}.ipv4_address
+    "{{ c.vm_name }}" = digitalocean_droplet.{{ instance_addr[c.vm_name] }}.ipv4_address
 {% endfor %}
   }
 }
@@ -26,7 +26,7 @@ output "droplet_private_ips" {
   description = "Map of source VM name to VPC-internal IPv4."
   value = {
 {% for c in compute %}
-    "{{ c.vm_name }}" = digitalocean_droplet.{{ c.resource_name }}.ipv4_address_private
+    "{{ c.vm_name }}" = digitalocean_droplet.{{ instance_addr[c.vm_name] }}.ipv4_address_private
 {% endfor %}
   }
 }

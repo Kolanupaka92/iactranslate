@@ -5,6 +5,10 @@ resource "aws_ebs_volume" "{{ v.resource_name }}" {
   availability_zone = aws_instance.{{ v.instance_resource }}.availability_zone
   size              = {{ v.size }}
   type              = "gp3"
+  encrypted         = true
+{% if kms_key_id %}
+  kms_key_id        = "{{ kms_key_id }}"
+{% endif %}
 
   tags = {
     Name     = "{{ v.vm_name }}-data"

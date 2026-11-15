@@ -14,6 +14,8 @@ from .display import plural
 from .exec_report import build_executive_report
 from .gitops import gitops_files
 from .graph import build_graph
+from .identity import IdentityMode
+from .landing_zone import LandingZone
 from .models import MigrationPlan, NormalizedVM
 from .renderers import render
 from .replatform import analyze_replatforming
@@ -142,22 +144,27 @@ def build_project(
     vms: Optional[List[NormalizedVM]] = None,
     renderer: str = "terraform",
     gitops: bool = False,
+    ci: str = "github",
     policy_result=None,
     state_backend: Optional[StateBackend] = None,
+    zone: Optional[LandingZone] = None,
+    identity: Optional[IdentityMode] = None,
+    hybrid=None,
 ) -> Path:
     """Write the full project tree to `out_dir` and return its path.
 
     `renderer` selects the IaC output ('terraform' | 'pulumi'). `gitops` adds a
-    CI/CD workflow (plan on PR, apply on merge) + .gitignore. When `vms` is
+    CI/CD pipeline (plan on PR, apply on merge) + .gitignore, for the CI system
+    named by `ci` (github | gitlab | azure-devops | jenkins). When `vms` is
     supplied, a pre-migration assessment is written alongside (assessment.json +
     documentation/assessment.html).
     """
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
 
-    files: Dict[str, str] = render(renderer, plan, target, state_backend)
+    files: Dict[str, str] = render(renderer, plan, target, state_backend, zone, identity, hybrid)
     if gitops:
-        files.update(gitops_files(plan, renderer))
+        files.update(gitops_files(plan, renderer, ci))
     for filename, content in files.items():
         dest = out / filename
         dest.parent.mkdir(parents=True, exist_ok=True)

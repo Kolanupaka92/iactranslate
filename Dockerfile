@@ -1,14 +1,31 @@
 # syntax=docker/dockerfile:1
 # Multi-stage build for the IaCTranslate API. Produces a small, non-root image.
 
-FROM python:3.12-slim AS builder
+FROM python:3.15-slim AS builder
 WORKDIR /build
 COPY pyproject.toml README.md ./
 COPY src ./src
 RUN pip install --no-cache-dir --upgrade pip build \
     && pip wheel --no-cache-dir --wheel-dir /wheels .
 
-FROM python:3.12-slim AS runtime
+FROM python:3.15-slim AS runtime
+
+# Apply outstanding OS security updates. The base image is rebuilt on its own
+# schedule and lags Debian's security archive — CI's Trivy gate caught three
+# fixed HIGH CVEs this way, including CVE-2026-14456 in libssl3t64, where the
+# patched package was already published and simply not yet in the base.
+#
+# Upgrading at build time rather than pinning individual packages keeps this
+# from becoming a list someone has to maintain by hand.
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    # Pango/Cairo back WeasyPrint, so the API can return a PDF without a
+    # browser in the loop. Installed here rather than made a Python dependency:
+    # a bare `pip install iactranslate` should not need a compiler toolchain.
+    && apt-get install -y --no-install-recommends \
+        libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz0b libffi8 \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 # Run as a non-root user.
 RUN useradd --create-home --uid 10001 appuser
@@ -16,15 +33,43 @@ WORKDIR /app
 
 # Install only the built wheel + its runtime deps (no build toolchain).
 COPY --from=builder /wheels /wheels
-RUN pip install --no-cache-dir /wheels/*.whl \
-    && rm -rf /wheels
+# `psycopg[binary]` ships wheels, so this still needs no compiler in the
+# runtime stage. Installed unconditionally because the image is the artifact a
+# hosted deployment runs, and that deployment is the case that needs PostgreSQL
+# (ADR 0063) — a SQLite-only image would make the store an image choice rather
+# than a configuration one.
+# `cryptography` is what makes encryption at rest actually available. It is an
+# optional extra for the library — a bare `pip install iactranslate` should not
+# need it — but this image is what a hosted deployment runs, and there
+# IACTRANSLATE_ENCRYPTION_KEY is set. Without the package the API fails closed
+# and refuses every upload (ADR 0043), which is the correct behaviour and a
+# useless deployment. Both ship wheels, so the runtime stage still needs no
+# compiler.
+#
+# pip is removed once it has installed everything. The service never runs it,
+# and pip vendors its own copies of msgpack, urllib3 and setuptools, which the
+# image scan reports as this image's vulnerabilities (msgpack CVE-2026-114613,
+# setuptools CVE-2025-47273 among them) whenever pip's bundled versions lag a
+# fix. Leaving an installer nobody uses in a production image is attack surface
+# with no upside.
+RUN pip install --no-cache-dir /wheels/*.whl weasyprint \
+        "psycopg[binary,pool]>=3.1" "cryptography>=42.0" \
+    && rm -rf /wheels \
+    && python -m pip uninstall --yes pip
 
 USER appuser
 EXPOSE 8000
 
 # Bounds are env-overridable (see iactranslate/config.py).
+#
+# MAX_VMS matches the code default rather than pinning an older, lower value:
+# this line silently capped the hosted API at 5,000 after the limit had been
+# raised to 20,000 on measurement (50,000 workloads = 357 MB), and the live
+# service rejected estates the docs said it accepted. Now that readers are
+# bounded at the read (sources/base.py), the cap governs plan size, not the
+# cost of a hostile upload — 20,000 is comfortably inside a 1 GiB instance.
 ENV IACTRANSLATE_MAX_UPLOAD_MB=25 \
-    IACTRANSLATE_MAX_VMS=5000 \
+    IACTRANSLATE_MAX_VMS=20000 \
     IACTRANSLATE_MAX_PROJECTS=200
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \

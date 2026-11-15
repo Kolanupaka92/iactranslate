@@ -52,7 +52,7 @@ def test_reset_token_is_stored_hashed(tmp_path):
     user = store.create_user("a@example.com", PASSWORD)
     token = store.create_reset_token(user.id)
 
-    rows = store._conn.execute("SELECT token_hash FROM password_resets").fetchall()
+    rows = store._db.query("SELECT token_hash FROM password_resets")
     assert rows and token not in [r[0] for r in rows]
 
 
@@ -72,7 +72,7 @@ def test_expired_reset_token_is_refused_and_burned(tmp_path):
 
     assert store.consume_reset_token(token) is None
     # Burned even though it was expired — it can never come back.
-    assert store._conn.execute("SELECT COUNT(*) FROM password_resets").fetchone()[0] == 0
+    assert store._db.query_one("SELECT COUNT(*) FROM password_resets")[0] == 0
 
 
 def test_requesting_a_new_token_invalidates_the_previous_one(tmp_path):
@@ -218,3 +218,51 @@ def test_delivery_failure_never_leaks_account_existence(api, monkeypatch):
 def test_reset_url_uses_the_app_origin(monkeypatch):
     monkeypatch.setenv("IACTRANSLATE_APP_URL", "https://app.example.com/")
     assert delivery.reset_url("abc123") == "https://app.example.com/reset-password?token=abc123"
+
+
+# --- the token must not land in the log by default --------------------------
+
+def test_the_default_backend_does_not_log_the_reset_token(caplog, monkeypatch):
+    """A reset token in a log is a credential in a log. On a hosted deployment
+    anyone with log-viewer access could take over any account that asked for
+    a reset — the class of finding a security review fails a pilot on."""
+    import logging
+
+    from iactranslate.api import delivery
+
+    monkeypatch.delenv(delivery.ENV_LINK_TO_LOG, raising=False)
+    delivery.set_link_delivery(None)  # the default
+    # The API's configure_logging() sets propagate=False on the package
+    # logger once imported, so caplog's root handler never sees these records
+    # when this runs after an API test. Attach to the logger directly.
+    log = logging.getLogger("iactranslate.api.delivery")
+    log.addHandler(caplog.handler)
+    try:
+        with caplog.at_level(logging.WARNING, logger="iactranslate.api.delivery"):
+            delivery.deliver_reset_link("person@acme.test", "SECRET-TOKEN-abc123")
+    finally:
+        log.removeHandler(caplog.handler)
+    joined = "\n".join(r.getMessage() for r in caplog.records)
+    assert "SECRET-TOKEN-abc123" not in joined
+    assert "reset-password?token=" not in joined
+    # But the *request* is still visible, so an operator learns delivery is unconfigured.
+    assert "person@acme.test" in joined
+    assert "NOT delivered" in joined
+
+
+def test_logging_the_link_is_an_explicit_opt_in(caplog, monkeypatch):
+    """The single-operator convenience is real and is one env var away."""
+    import logging
+
+    from iactranslate.api import delivery
+
+    monkeypatch.setenv(delivery.ENV_LINK_TO_LOG, "1")
+    delivery.set_link_delivery(None)
+    log = logging.getLogger("iactranslate.api.delivery")
+    log.addHandler(caplog.handler)
+    try:
+        with caplog.at_level(logging.WARNING, logger="iactranslate.api.delivery"):
+            delivery.deliver_reset_link("person@acme.test", "SECRET-TOKEN-abc123")
+    finally:
+        log.removeHandler(caplog.handler)
+    assert "SECRET-TOKEN-abc123" in "\n".join(r.getMessage() for r in caplog.records)

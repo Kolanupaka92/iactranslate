@@ -8,7 +8,9 @@ from .azure import AzureTarget
 from .base import InstanceSpec, Target, smallest_fit  # noqa: F401
 from .digitalocean import DigitalOceanTarget
 from .gcp import GcpTarget
+from .nutanix import NutanixTarget
 from .oci import OciTarget
+from .proxmox import ProxmoxTarget
 
 _REGISTRY: Dict[str, Target] = {
     AwsTarget.name: AwsTarget(),
@@ -16,6 +18,8 @@ _REGISTRY: Dict[str, Target] = {
     GcpTarget.name: GcpTarget(),
     OciTarget.name: OciTarget(),
     DigitalOceanTarget.name: DigitalOceanTarget(),
+    NutanixTarget.name: NutanixTarget(),
+    ProxmoxTarget.name: ProxmoxTarget(),
 }
 
 

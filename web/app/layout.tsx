@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { headers } from "next/headers";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -12,23 +13,53 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+/**
+ * Positioning note, because this string is the first thing anyone reads.
+ *
+ * This used to say "Convert VMware discovery reports into production-ready
+ * Terraform for AWS, Azure, and GCP" — which describes a VMware-to-Terraform
+ * converter, and lands on two of the three framings the product direction
+ * explicitly rules out. It was also just wrong on the facts: five sources, five
+ * clouds, six IaC formats, and the translation is the last stage of a pipeline
+ * that assesses, recommends, prices and governs first.
+ */
 export const metadata: Metadata = {
-  title: "IaCTranslate",
+  metadataBase: new URL("https://iactranslate.com"),
+  title: {
+    default: "IaCTranslate — Enterprise Cloud Migration Intelligence",
+    template: "%s · IaCTranslate",
+  },
   description:
-    "Convert VMware discovery reports into production-ready Terraform for AWS, Azure, and GCP.",
+    "Assess an estate, compare clouds on real cost, and ship provider-validated " +
+    "infrastructure code. Works from an inventory export you already have — " +
+    "no agents, no access to your environment.",
+  openGraph: {
+    title: "IaCTranslate — Enterprise Cloud Migration Intelligence",
+    description:
+      "Assess an estate, compare clouds on real cost, and ship provider-validated " +
+      "infrastructure code from an inventory export you already have.",
+    type: "website",
+  },
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Reading a request header is what makes Next stamp the per-request nonce
+  // (set in proxy.ts) onto its own inline scripts — and it opts every route
+  // into dynamic rendering, which is the point: a statically prerendered page
+  // bakes its scripts without a nonce, and the strict CSP then blocks all 20
+  // of them. That is exactly what the first preview deploy did. The value is
+  // not used here; the read is the signal.
+  await headers();
   return (
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col font-sans">{children}</body>
     </html>
   );
 }

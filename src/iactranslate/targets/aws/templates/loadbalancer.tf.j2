@@ -35,7 +35,7 @@ resource "aws_lb_target_group" "{{ lb.resource_name }}_{{ listener.listener_port
 {% if c.vm_name in lb.targets %}
 resource "aws_lb_target_group_attachment" "{{ lb.resource_name }}_{{ listener.listener_port }}_{{ c.resource_name }}" {
   target_group_arn = aws_lb_target_group.{{ lb.resource_name }}_{{ listener.listener_port }}.arn
-  target_id        = aws_instance.{{ c.resource_name }}.id
+  target_id        = aws_instance.{{ instance_addr[c.vm_name] }}.id
   port             = {{ listener.target_port }}
 }
 

@@ -114,6 +114,10 @@ def _render(md_path: Path, prefix: str, base_dir: str) -> str:
     return _mermaidify(body)
 
 
+# Shared print rules, so the docs site saves to PDF as a real document.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'src'))
+from iactranslate.print_style import PRINT_CSS as _PRINT_CSS  # noqa: E402
+
 _STYLE = """
 :root{color-scheme:light dark;
   --bg:#fbfbfa; --panel:#ffffff; --ink:#1a1c1b; --muted:#5c6360; --faint:#8a938f;
@@ -186,7 +190,7 @@ def build() -> str:
     nav.append('<a href="#doc-adr">ADRs</a>')
 
     parts = [
-        "<style>" + _STYLE + "</style>",
+        "<style>" + _STYLE + _PRINT_CSS + "</style>",
         '<nav class="topnav">' + "".join(nav) + "</nav>",
         '<div class="wrap">',
         '<div class="intro"><h1>IaCTranslate — Documentation</h1>'

@@ -50,7 +50,14 @@ def test_api_source_target_matrix(source, target):
     assert body["status"] == "completed"
     assert body["source"] == source
     assert body["result"]["vm_count"] == 7
-    assert body["result"]["estimated_monthly_cost_usd"] > 0
+    from iactranslate.targets import get_target
+    from iactranslate.targets.base import CAP_PRICED
+    if CAP_PRICED in get_target(target).capabilities:
+        assert body["result"]["estimated_monthly_cost_usd"] > 0
+    else:
+        # An on-premises target has no price an inventory can produce; anything
+        # other than exactly zero here would be a fabricated number.
+        assert body["result"]["estimated_monthly_cost_usd"] == 0
 
     dl = client.get(f"/projects/{pid}/download")
     assert dl.status_code == 200
@@ -91,8 +98,13 @@ _ENABLED = os.getenv("IACTRANSLATE_E2E_TOFU") == "1" and _TOFU is not None
 _CACHE = Path(os.getenv("TF_PLUGIN_CACHE_DIR", "/tmp/iactranslate_tf_plugin_cache"))
 
 
+# Every target. This list is the source of truth for "provider-validated" —
+# maturity.py derives its claim from it and test_maturity.py checks the two agree.
+PROVIDER_VALIDATED_TARGETS = ["aws", "azure", "gcp", "oci", "digitalocean", "nutanix", "proxmox"]
+
+
 @pytest.mark.skipif(not _ENABLED, reason="set IACTRANSLATE_E2E_TOFU=1 and install tofu/terraform")
-@pytest.mark.parametrize("target", ["aws", "azure", "gcp", "oci", "digitalocean"])
+@pytest.mark.parametrize("target", PROVIDER_VALIDATED_TARGETS)
 def test_generated_terraform_validates(target, rvtools_path, tmp_path):
     out = tmp_path / target
     run_pipeline(input_path=rvtools_path, project_name="tofu", out_dir=str(out), target=target)
@@ -110,3 +122,132 @@ def test_generated_terraform_validates(target, rvtools_path, tmp_path):
     )
     assert val.returncode == 0, val.stdout + val.stderr
     assert "configuration is valid" in val.stdout.lower()
+
+
+@pytest.mark.skipif(not _ENABLED, reason="set IACTRANSLATE_E2E_TOFU=1 and install tofu/terraform")
+@pytest.mark.parametrize("target", PROVIDER_VALIDATED_TARGETS)
+def test_foreach_layout_validates(target, tmp_path):
+    """The opt-in for_each layout, migration file included, passes the real
+    provider. `validate` checks every `moved` block lands on a declared
+    for_each instance of the right type."""
+    out = tmp_path / target
+    run_pipeline(input_path=str(FIXTURES / "rvtools_realistic.xlsx"), project_name="tofu",
+                 out_dir=str(out), target=target, renderer="terraform-foreach")
+    assert (out / "migrate-from-classic.tf").exists()
+
+    _CACHE.mkdir(parents=True, exist_ok=True)
+    env = {**os.environ, "TF_PLUGIN_CACHE_DIR": str(_CACHE), "TF_IN_AUTOMATION": "1"}
+    init = subprocess.run(
+        [_TOFU, "init", "-backend=false", "-no-color", "-input=false"],
+        cwd=out, env=env, capture_output=True, text=True, timeout=300,
+    )
+    assert init.returncode == 0, init.stderr
+    val = subprocess.run(
+        [_TOFU, "validate", "-no-color"],
+        cwd=out, env=env, capture_output=True, text=True, timeout=120,
+    )
+    assert val.returncode == 0, val.stdout + val.stderr
+
+
+@pytest.mark.skipif(not _ENABLED, reason="set IACTRANSLATE_E2E_TOFU=1 and install tofu/terraform")
+@pytest.mark.parametrize("target", PROVIDER_VALIDATED_TARGETS)
+def test_generated_moved_blocks_validate(target, tmp_path):
+    """`moved` blocks for a renamed machine, in the new config, pass the real
+    provider. `validate` rejects a block whose destination is undeclared or of
+    another resource type — exactly the mistakes address pairing could make."""
+    from iactranslate.agents import build_migration_plan
+    from iactranslate.generator.renderer import build_files
+    from iactranslate.moves import moved_blocks
+    from iactranslate.normalize import normalize
+    from iactranslate.parsers import parse
+    from iactranslate.targets import get_target
+
+    before = normalize(parse(str(FIXTURES / "rvtools_realistic.xlsx")))
+    after = [v.model_copy(update={"vm_name": "prod-web-renamed"}) if v.vm_name == "prod-web-01" else v
+             for v in before]
+    moved = moved_blocks(before, after, target=target)
+    assert moved.moves, f"{target}: a rename produced no moved blocks"
+
+    out = tmp_path / target
+    out.mkdir()
+    plan = build_migration_plan(after, project_name="moved", target=get_target(target))
+    for name, content in build_files(plan, get_target(target)).items():
+        (out / name).parent.mkdir(parents=True, exist_ok=True)
+        (out / name).write_text(content)
+    (out / "moved.tf").write_text(moved.to_hcl())
+
+    _CACHE.mkdir(parents=True, exist_ok=True)
+    env = {**os.environ, "TF_PLUGIN_CACHE_DIR": str(_CACHE), "TF_IN_AUTOMATION": "1"}
+    init = subprocess.run(
+        [_TOFU, "init", "-backend=false", "-no-color", "-input=false"],
+        cwd=out, env=env, capture_output=True, text=True, timeout=300,
+    )
+    assert init.returncode == 0, init.stderr
+    val = subprocess.run(
+        [_TOFU, "validate", "-no-color"],
+        cwd=out, env=env, capture_output=True, text=True, timeout=120,
+    )
+    assert val.returncode == 0, val.stdout + val.stderr
+
+
+# --- malformed uploads are the caller's problem, and say so ------------------
+
+def _api_client(tmp_path, monkeypatch):
+    import importlib
+
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setenv("IACTRANSLATE_WORKSPACE_ROOT", str(tmp_path))
+    from iactranslate.api import main as api_main
+    importlib.reload(api_main)
+    return TestClient(api_main.app), api_main
+
+
+def _run_bytes(client, name, payload):
+    pid = client.post("/v1/projects", json={"name": "malformed"}).json()["id"]
+    client.post(f"/v1/projects/{pid}/upload", files={"file": (name, payload)})
+    return client.post(f"/v1/projects/{pid}/run")
+
+
+def test_an_html_page_renamed_xlsx_is_a_400_not_a_500(tmp_path, monkeypatch):
+    """`zipfile.BadZipFile` is not a ValueError and used to escape the handler
+    as a generic 500. A broken upload is the caller's file, not our server,
+    and "internal server error" tells them nothing they can act on."""
+    client, api_main = _api_client(tmp_path, monkeypatch)
+    try:
+        r = _run_bytes(client, "inv.xlsx", b"<html><script>alert(1)</script></html>")
+        assert r.status_code == 400, r.text
+        assert "not a valid .xlsx" in r.text
+    finally:
+        import importlib
+        monkeypatch.undo()
+        importlib.reload(api_main)
+
+
+def test_error_messages_never_leak_the_server_path(tmp_path, monkeypatch):
+    """"No workloads found in /workspaces/iactranslate_x/.plain-abc.csv" told
+    an attacker the workspace root, the project directory and the naming scheme
+    of the decrypted temporary file. Name the problem, not the path."""
+    client, api_main = _api_client(tmp_path, monkeypatch)
+    try:
+        r = _run_bytes(client, "inv.csv", b"who,what\na,b\n")
+        assert r.status_code == 400
+        assert "/" not in r.json()["detail"], r.text
+        assert ".plain-" not in r.text
+        assert str(tmp_path) not in r.text
+    finally:
+        import importlib
+        monkeypatch.undo()
+        importlib.reload(api_main)
+
+
+def test_binary_junk_as_csv_is_a_400_with_a_usable_message(tmp_path, monkeypatch):
+    client, api_main = _api_client(tmp_path, monkeypatch)
+    try:
+        r = _run_bytes(client, "inv.csv", bytes([0, 255, 1, 254, 0x89, 0x50, 0x4E, 0x47]))
+        assert r.status_code == 400
+        assert "UTF-8" in r.text
+    finally:
+        import importlib
+        monkeypatch.undo()
+        importlib.reload(api_main)

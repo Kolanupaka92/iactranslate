@@ -6,9 +6,9 @@ resource "oci_core_vcn" "main" {
   # OCI dns_labels are alphanumeric, max 15 chars.
   dns_label      = substr("${replace(var.project_name, "-", "")}vcn", 0, 15)
 
-  freeform_tags = {
+  freeform_tags = merge(local.common_tags, {
     Project = var.project_name
-  }
+  })
 }
 
 {% if network.internet_gateway %}

@@ -226,7 +226,7 @@ def _resources_bicep(graph: InfrastructureGraph, plan: MigrationPlan, target: Ta
         pip_id = None
         # A fronted instance gets its public entry point via the load balancer,
         # not its own public IP — giving it one too would bypass the LB.
-        if inst.attributes["subnet_tier"] == "public" and not backend_pool_ref:
+        if inst.attributes["public_ip"]:
             pip_id = _id(f"pip-{c.resource_name}")
             lines += [
                 f"resource {pip_id} 'Microsoft.Network/publicIPAddresses@2023-05-01' = {{",

@@ -16,13 +16,15 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from .agents import build_migration_plan
 from .config import MAX_VMS
+from .costing import estimate_costs
 from .models import NormalizedVM
 from .sizing import effective_demand
 from .targets import get_target, list_targets
+from .targets.base import CAP_PRICED
 
 # Scoring weights (sum to 1.0). Cost dominates but sizing fit and OS affinity
 # meaningfully shift the recommendation for Windows- or Linux-heavy estates.
@@ -36,7 +38,13 @@ _AWS_OS_BASELINE = 0.6
 
 class CloudScore(BaseModel):
     cloud: str
-    total_monthly_cost_usd: float
+    total_monthly_cost_usd: float = Field(
+        description="Itemized monthly total — compute, storage, licensing, load balancers"
+    )
+    compute_monthly_cost_usd: float = Field(
+        default=0.0,
+        description="Instance cost alone, so the itemized total can be checked against it",
+    )
     annual_cost_usd: float = 0.0
     windows_vms: int
     linux_vms: int
@@ -55,6 +63,19 @@ class CloudScore(BaseModel):
     reasons: List[str] = Field(default_factory=list)
 
 
+class NotRanked(BaseModel):
+    """A destination the estate could move to, deliberately left out of ranking.
+
+    Distinct from `eligible=False`. An ineligible cloud *could* be priced but
+    cannot host the estate; a not-ranked target can host it but has no price an
+    inventory can produce. Conflating them would let an on-premises hypervisor
+    look like a $0 cloud, which is the most flattering possible lie.
+    """
+
+    target: str
+    reason: str
+
+
 class ScoringWeights(BaseModel):
     """The weights behind `weighted_score`, carried in the response.
 
@@ -66,9 +87,49 @@ class ScoringWeights(BaseModel):
     ranking checkable by hand.
     """
 
-    cost: float = Field(description="Weight applied to cost_score")
-    fit: float = Field(description="Weight applied to fit_score")
-    os: float = Field(description="Weight applied to os_score")
+    cost: float = Field(default=W_COST, ge=0, description="Weight applied to cost_score")
+    fit: float = Field(default=W_FIT, ge=0, description="Weight applied to fit_score")
+    os: float = Field(default=W_OS, ge=0, description="Weight applied to os_score")
+
+    @model_validator(mode="after")
+    def _normalize(self) -> "ScoringWeights":
+        """Scale to sum to 1, so `weighted_score` stays on a 0-1 scale.
+
+        Normalising instead of rejecting lets someone say what they mean —
+        `cost=1, fit=2, os=2` — and the response carries the scaled values, so
+        what was actually applied is never in doubt.
+        """
+        total = self.cost + self.fit + self.os
+        if total <= 0:
+            raise ValueError("at least one scoring weight must be greater than zero")
+        self.cost, self.fit, self.os = (round(w / total, 4) for w in (self.cost, self.fit, self.os))
+        return self
+
+    @property
+    def is_default(self) -> bool:
+        return (self.cost, self.fit, self.os) == (W_COST, W_FIT, W_OS)
+
+    @classmethod
+    def parse(cls, spec: str) -> "ScoringWeights":
+        """`cost=0.2,fit=0.4,os=0.4` -> weights. Unnamed weights keep their default."""
+        values: Dict[str, float] = {}
+        for part in filter(None, (p.strip() for p in spec.split(","))):
+            key, sep, raw = part.partition("=")
+            key = key.strip().lower()
+            if not sep or key not in ("cost", "fit", "os"):
+                raise ValueError(f"expected cost=, fit= or os=, got {part!r}")
+            try:
+                values[key] = float(raw)
+            except ValueError:
+                raise ValueError(f"{key} weight must be a number, got {raw.strip()!r}") from None
+        try:
+            return cls(**values)
+        except ValidationError as e:
+            # One readable line instead of pydantic's multi-line report.
+            err = e.errors()[0]
+            where = ".".join(str(p) for p in err["loc"])
+            msg = err["msg"].removeprefix("Value error, ")
+            raise ValueError(f"{where} weight: {msg}" if where else msg) from None
 
 
 class Recommendation(BaseModel):
@@ -82,8 +143,19 @@ class Recommendation(BaseModel):
     runner_up: Optional[str] = Field(
         default=None, description="Cloud ranked #2 — what `margin` is measured against"
     )
-    weights: ScoringWeights = Field(
-        default_factory=lambda: ScoringWeights(cost=W_COST, fit=W_FIT, os=W_OS)
+    not_ranked: List[NotRanked] = Field(
+        default_factory=list,
+        description="Destinations the estate can move to that cannot be cost-ranked "
+                    "from an inventory alone — on-premises hypervisors. Stated rather "
+                    "than omitted, so their absence from the table is not read as "
+                    "\"not an option\".",
+    )
+    weights: ScoringWeights = Field(default_factory=ScoringWeights)
+    custom_weights: bool = Field(
+        default=False,
+        description="True when the caller supplied weights. A ranking under custom "
+                    "weights answers a different question than the default one, and "
+                    "must not be presented as the tool's neutral recommendation.",
     )
     notes: List[str] = Field(default_factory=list)
 
@@ -141,10 +213,35 @@ def _unsupported_count(target, vms: List[NormalizedVM]) -> int:
     return count
 
 
-def recommend(vms: List[NormalizedVM], targets: Optional[List[str]] = None) -> Recommendation:
+def recommend(
+    vms: List[NormalizedVM],
+    targets: Optional[List[str]] = None,
+    weights: Optional[ScoringWeights] = None,
+) -> Recommendation:
+    w = weights or ScoringWeights()
+    custom = not w.is_default
     if len(vms) > MAX_VMS:
         raise ValueError(f"Inventory has {len(vms)} VMs, exceeding the limit of {MAX_VMS}")
-    names = targets or list_targets()
+    requested = targets or list_targets()
+    # Only targets with a published price can be cost-ranked from an inventory.
+    # The rest are still real destinations — a Nutanix cluster is a perfectly
+    # good place to move an estate — but their cost is hardware, licensing and
+    # facilities, which no export contains. Scoring them would either invent a
+    # number or, at $0, make them "cheapest" and crush every real cloud's cost
+    # score against a zero baseline.
+    names = [n for n in requested if CAP_PRICED in get_target(n).capabilities]
+    not_ranked = [
+        NotRanked(
+            target=n,
+            reason=(
+                f"{n} has no published per-instance price: its cost is hardware, "
+                "licensing and facilities, which an inventory cannot supply. It "
+                "can still be generated as a destination; compare cost by "
+                "providing your current on-premises spend."
+            ),
+        )
+        for n in requested if CAP_PRICED not in get_target(n).capabilities
+    ]
     total = len(vms)
     windows = sum(1 for v in vms if _is_windows(v))
     linux = total - windows
@@ -155,8 +252,17 @@ def recommend(vms: List[NormalizedVM], targets: Optional[List[str]] = None) -> R
     for name in names:
         target = get_target(name)
         plan = build_migration_plan(vms, project_name="recommendation", target=target)
+        # The itemized total, not `plan.total_estimated_monthly_cost_usd`, which
+        # is compute only (ADR 0039). Ranking on compute while every other
+        # surface quoted the full bill left the recommendation arguing from a
+        # number the customer would never see — and the gap between the two is
+        # not a constant: it ranges from 12% on DigitalOcean to 79% on OCI,
+        # because storage and Windows licensing scale differently per cloud.
+        costs = estimate_costs(plan)
         raw[name] = {
-            "cost": plan.total_estimated_monthly_cost_usd,
+            "cost": costs.total,
+            "compute": costs.compute,
+            "breakdown": costs,
             "fit": _fit(vms, plan.compute),
             "os": _os_affinity(name, windows_fraction),
             "unsupported": _unsupported_count(target, vms),
@@ -182,7 +288,7 @@ def recommend(vms: List[NormalizedVM], targets: Optional[List[str]] = None) -> R
         os_score = r["os"]
         unsupported = r["unsupported"]
         eligible = unsupported == 0
-        weighted = round(W_COST * cost_score + W_FIT * fit_score + W_OS * os_score, 4)
+        weighted = round(w.cost * cost_score + w.fit * fit_score + w.os * os_score, 4)
         if not eligible:
             # A disqualified cloud scores zero, not "well but excluded". Leaving
             # it a competitive number produced a table whose ranking contradicted
@@ -235,6 +341,7 @@ def recommend(vms: List[NormalizedVM], targets: Optional[List[str]] = None) -> R
             CloudScore(
                 cloud=name,
                 total_monthly_cost_usd=r["cost"],
+                compute_monthly_cost_usd=r["compute"],
                 annual_cost_usd=round(r["cost"] * 12, 2),
                 windows_vms=windows,
                 linux_vms=linux,
@@ -300,6 +407,12 @@ def recommend(vms: List[NormalizedVM], targets: Optional[List[str]] = None) -> R
             "Close call — the top two clouds are within the scoring noise; "
             "adjusting the cost/fit/OS weights could flip the recommendation."
         )
+    if custom:
+        notes.insert(0,
+            f"Ranked under custom weights (cost {w.cost}, fit {w.fit}, OS {w.os}) "
+            f"instead of the defaults (cost {W_COST}, fit {W_FIT}, OS {W_OS}). "
+            "This answers the question those weights ask, not the neutral one."
+        )
 
     os_note = (
         f"{windows}/{total} Windows"
@@ -311,12 +424,14 @@ def recommend(vms: List[NormalizedVM], targets: Optional[List[str]] = None) -> R
         f"{decisiveness} lead of {margin:.2f} over #{2 if len(scores) > 1 else 1}). "
         f"Estate is {os_note}; cheapest option is {lowest_cost_cloud.upper()} at "
         f"${cheapest_cost:.2f}/mo (${cheapest_cost * 12:,.0f}/yr). "
-        f"Weights — cost {W_COST}, fit {W_FIT}, OS {W_OS}."
+        f"{'Custom weights' if custom else 'Weights'} — cost {w.cost}, fit {w.fit}, OS {w.os}."
     )
     return Recommendation(
         recommended=winner.cloud, summary=summary, ranked=scores,
         decisiveness=decisiveness, margin=margin,
         runner_up=contenders[1].cloud if len(contenders) > 1 else None,
-        weights=ScoringWeights(cost=W_COST, fit=W_FIT, os=W_OS),
+        weights=w,
+        custom_weights=custom,
         notes=notes,
+        not_ranked=not_ranked,
     )

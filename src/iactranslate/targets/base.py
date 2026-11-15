@@ -23,6 +23,13 @@ CAP_PULUMI = "pulumi"
 CAP_GITOPS = "gitops"
 CAP_LIVE_PRICING = "live_pricing"
 CAP_BROWNFIELD_IMPORT = "brownfield_import"  # emit IaC `import` blocks to adopt an existing fleet
+#: The target has a published per-instance price, so its cost can be computed
+#: from an inventory alone. Public clouds have this. An on-premises hypervisor
+#: does not: its cost is hardware amortisation, licensing and facilities, none
+#: of which an inventory contains. A target without this capability is left
+#: out of cost ranking entirely rather than scored — a $0 cost would make it
+#: "cheapest" by construction and collapse every real cloud's score against it.
+CAP_PRICED = "priced"
 
 
 @dataclass(frozen=True)
@@ -129,9 +136,14 @@ TEMPLATE_MAP: Dict[str, str] = {
     "versions.tf.j2": "versions.tf",
     "provider.tf.j2": "provider.tf",
     "variables.tf.j2": "variables.tf",
+    "locals.tf.j2": "locals.tf",
     "terraform.tfvars.j2": "terraform.tfvars",
     "networking.tf.j2": "networking.tf",
     "security.tf.j2": "security.tf",
+    "identity.tf.j2": "identity.tf",
+    # Renders empty unless observed flows show the estate depends on networks
+    # that are not migrating; the renderer drops empty files.
+    "hybrid.tf.j2": "hybrid.tf",
     "loadbalancer.tf.j2": "loadbalancer.tf",
     "compute.tf.j2": "compute.tf",
     "storage.tf.j2": "storage.tf",
