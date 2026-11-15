@@ -207,13 +207,10 @@ backends and integrations that plug into them, via the
   templates, Pulumi, Bicep). It now lives once in the graph; all renderer output is
   byte-identical. Moving the rest of Terraform/Pulumi onto the graph fixes nothing
   and is not planned (see [ADR 0074](adr/0074-shared-decisions-not-a-shared-renderer.md))
-- ◻ **PostgreSQL store / job queue / grants** — deliberately *not* built yet.
-  SQLite already removes the actual defect (data loss on restart) and the
-  `create_store` / `create_job_queue` / `create_membership` seams make Postgres a
-  mechanical addition. It buys multi-*replica*, which is a scaling property with
-  no load to scale for; writing it speculatively would be several hundred lines
-  verifiable only through CI round-trips. Build it when a deployment needs a
-  second replica, not before.
+- ✅ **PostgreSQL store / job queue / grants** — once deferred here, since built:
+  every durable component runs on SQLite or PostgreSQL through one implementation
+  per component, and CI's `postgres-integration` job exercises it against a real
+  server (see [ADR 0063](adr/0063-one-sql-layer-for-sqlite-and-postgresql.md))
 
 **Considered, deliberately deferred** (tracked so the reasoning is explicit):
 
