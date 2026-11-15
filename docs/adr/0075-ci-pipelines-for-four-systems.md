@@ -32,9 +32,16 @@ Building it surfaced two defects in what already shipped:
   group mapped into `env:` explicitly (secret variables are not otherwise
   visible to scripts), and Jenkins `credentials('X')`. The four providers that
   authenticate through Terraform variables receive `TF_VAR_*`.
-- **OCI's API key is a file.** GitHub, GitLab and Azure DevOps write it from a
-  secret to a `600` file before plan. In Jenkins a "Secret file" credential
-  already yields a path, so `credentials('OCI_PRIVATE_KEY')` is the path.
+- **OCI's API key is a file**, supplied through each system's own job-private
+  mechanism: GitHub writes it to the job's `runner.temp` (mode `600`), GitLab
+  takes a File-type variable (whose value is already a path), Azure DevOps
+  downloads it from Secure Files, and Jenkins binds a "Secret file" credential
+  (which yields a path). The first version wrote it to a fixed
+  `/tmp/oci_api_key.pem`. Bandit rejected that in CI, and rightly: on a shared
+  self-hosted runner, which is what the on-premises targets need, another job
+  could read or race a predictable path. Azure DevOps' Terraform download moved
+  out of `/tmp` for the same reason, since a swapped archive there would be
+  someone else's binary on the PATH.
 - **Nutanix and Proxmox** pipelines say they need a runner inside the
   customer's network (GitHub's uses `runs-on: self-hosted`), because a
   cloud-hosted runner cannot reach Prism Central or a Proxmox endpoint.

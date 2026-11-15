@@ -35,8 +35,11 @@ GITOPS_RENDERERS = ("terraform", "terraform-foreach", "pulumi")
 #: runner cannot reach Prism Central or a Proxmox endpoint.
 _ON_PREMISES = ("nutanix", "proxmox")
 
-#: Where OCI's API key is written for the provider's `private_key_path`.
-_OCI_KEY_PATH = "/tmp/oci_api_key.pem"
+#: OCI's API key, a file the provider reads from `private_key_path`. Each CI
+#: system supplies secret files its own way, all of them private to the job —
+#: never a fixed path under /tmp, which on a shared self-hosted runner (exactly
+#: what the on-premises targets need) another job could read or race.
+_OCI_KEY_FILE = "oci_api_key.pem"
 
 
 @dataclass(frozen=True)
@@ -44,7 +47,7 @@ class Credential:
     env: str                    # the variable the provider reads
     secret: Optional[str]       # the CI secret it comes from; None = a plain value
     value: str = ""             # the plain value, when `secret` is None
-    file: Optional[str] = None  # write the secret to this path; `env` gets the path
+    file: bool = False          # the secret is a file; `env` gets its path
 
 
 _CREDENTIALS: Dict[str, List[Credential]] = {
@@ -58,7 +61,7 @@ _CREDENTIALS: Dict[str, List[Credential]] = {
     "oci": [Credential("TF_VAR_tenancy_ocid", "OCI_TENANCY_OCID"),
             Credential("TF_VAR_user_ocid", "OCI_USER_OCID"),
             Credential("TF_VAR_fingerprint", "OCI_FINGERPRINT"),
-            Credential("TF_VAR_private_key_path", "OCI_PRIVATE_KEY", file=_OCI_KEY_PATH)],
+            Credential("TF_VAR_private_key_path", "OCI_PRIVATE_KEY", file=True)],
     "digitalocean": [Credential("TF_VAR_do_token", "DIGITALOCEAN_TOKEN")],
     "nutanix": [Credential("TF_VAR_nutanix_username", "NUTANIX_USERNAME"),
                 Credential("TF_VAR_nutanix_password", "NUTANIX_PASSWORD")],
@@ -119,7 +122,7 @@ def _github_env(creds: List[Credential]) -> str:
     lines = []
     for c in creds:
         if c.file:
-            lines.append(f"          {c.env}: {c.file}\n")
+            lines.append(f"          {c.env}: ${{{{ runner.temp }}}}/{_OCI_KEY_FILE}\n")
         elif c.secret:
             lines.append(f"          {c.env}: ${{{{ secrets.{c.secret} }}}}\n")
         else:
@@ -130,7 +133,8 @@ def _github_env(creds: List[Credential]) -> str:
 def _github_key_steps(creds: List[Credential]) -> str:
     return "".join(
         f"      - name: Write {c.secret}\n"
-        f"        run: printf '%s' \"${c.secret}\" > {c.file} && chmod 600 {c.file}\n"
+        f"        run: printf '%s' \"${c.secret}\" > \"$RUNNER_TEMP/{_OCI_KEY_FILE}\" "
+        f"&& chmod 600 \"$RUNNER_TEMP/{_OCI_KEY_FILE}\"\n"
         f"        env:\n"
         f"          {c.secret}: ${{{{ secrets.{c.secret} }}}}\n\n"
         for c in _key_files(creds)
@@ -238,8 +242,9 @@ def _gitlab_header(plan: MigrationPlan, creds: List[Credential], tool: str) -> s
         "# Protected:",
         f"#   {', '.join(secrets)}" if secrets else "#   (none)",
     ]
-    if any(c.file for c in creds):
-        lines.append("# OCI_PRIVATE_KEY is the API key's PEM contents; it is written to a file.")
+    for c in _key_files(creds):
+        lines.append(f"# {c.secret} must be a *File*-type variable holding the key: GitLab writes it")
+        lines.append("# to a file private to the job and puts the path in the variable.")
     if plan.target in _ON_PREMISES:
         lines.append(f"# {_ON_PREM_NOTE} Add `tags:` naming such a runner.")
     return "\n".join(lines) + "\n"
@@ -251,7 +256,7 @@ def _gitlab_variables(creds: List[Credential]) -> str:
     rows = []
     for c in creds:
         if c.file:
-            rows.append(f"  {c.env}: {c.file}")
+            rows.append(f"  {c.env}: ${c.secret}")
         elif c.secret and c.secret != c.env:
             rows.append(f"  {c.env}: ${c.secret}")
         elif not c.secret:
@@ -261,10 +266,6 @@ def _gitlab_variables(creds: List[Credential]) -> str:
 
 def _gitlab_terraform(plan: MigrationPlan) -> str:
     creds = _credentials(plan)
-    key_lines = "".join(
-        f"    - printf '%s' \"${c.secret}\" > {c.file} && chmod 600 {c.file}\n"
-        for c in _key_files(creds)
-    )
     return f"""{_gitlab_header(plan, creds, "Terraform")}
 stages: [validate, plan, apply]
 
@@ -273,7 +274,7 @@ stages: [validate, plan, apply]
     name: hashicorp/terraform:1.9
     entrypoint: [""]
   before_script:
-{key_lines}    - terraform init -input=false
+    - terraform init -input=false
 
 validate:
   extends: .terraform
@@ -356,7 +357,7 @@ def _azdo_env(creds: List[Credential]) -> str:
     rows = []
     for c in creds:
         if c.file:
-            rows.append(f"      {c.env}: {c.file}")
+            rows.append(f"      {c.env}: $({c.secret}.secureFilePath)")
         elif c.secret:
             rows.append(f"      {c.env}: $({c.secret})")
         else:
@@ -365,7 +366,7 @@ def _azdo_env(creds: List[Credential]) -> str:
 
 
 def _azdo_header(plan: MigrationPlan, creds: List[Credential], tool: str) -> str:
-    secrets = _secret_names(creds)
+    secrets = [c.secret for c in creds if c.secret and not c.file]
     lines = [
         f"# Generated by IaCTranslate — Azure DevOps pipeline for {tool}: plan on pull",
         "# requests, apply on main.",
@@ -373,6 +374,9 @@ def _azdo_header(plan: MigrationPlan, creds: List[Credential], tool: str) -> str
         "# these as secret variables, and authorize this pipeline to use it:",
         f"#   {', '.join(secrets)}" if secrets else "#   (none)",
     ]
+    if _key_files(creds):
+        lines.append(f"# Upload the API key as a Secure File named {_OCI_KEY_FILE} (Pipelines > Library >")
+        lines.append("# Secure files); the pipeline downloads it into the job's temp directory.")
     if plan.target in _ON_PREMISES:
         lines.append(f"# {_ON_PREM_NOTE} Set `pool` to a self-hosted agent pool.")
     return "\n".join(lines) + "\n"
@@ -388,10 +392,11 @@ def _azdo_terraform(plan: MigrationPlan) -> str:
     creds = _credentials(plan)
     env = _azdo_env(creds)
     key_steps = "".join(
-        f"  - script: printf '%s' \"$KEY\" > {c.file} && chmod 600 {c.file}\n"
-        f"    displayName: Write {c.secret}\n"
-        f"    env:\n"
-        f"      KEY: $({c.secret})\n\n"
+        f"  - task: DownloadSecureFile@1\n"
+        f"    name: {c.secret}\n"
+        f"    displayName: Download {c.secret}\n"
+        f"    inputs:\n"
+        f"      secureFile: {_OCI_KEY_FILE}\n\n"
         for c in _key_files(creds)
     )
     return f"""{_azdo_header(plan, creds, "Terraform")}
@@ -408,8 +413,9 @@ variables:
 
 steps:
   - script: |
-      curl -fsSL -o /tmp/terraform.zip https://releases.hashicorp.com/terraform/{_TERRAFORM_VERSION}/terraform_{_TERRAFORM_VERSION}_linux_amd64.zip
-      sudo unzip -o /tmp/terraform.zip -d /usr/local/bin
+      curl -fsSL -o "$(Agent.TempDirectory)/terraform.zip" \\
+        https://releases.hashicorp.com/terraform/{_TERRAFORM_VERSION}/terraform_{_TERRAFORM_VERSION}_linux_amd64.zip
+      sudo unzip -o "$(Agent.TempDirectory)/terraform.zip" -d /usr/local/bin
     displayName: Install Terraform {_TERRAFORM_VERSION}
 
   - script: terraform init -input=false

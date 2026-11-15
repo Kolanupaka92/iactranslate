@@ -114,13 +114,35 @@ def test_secrets_are_referenced_never_inlined(plans):
     assert "ARM_CLIENT_SECRET = credentials('ARM_CLIENT_SECRET')" in jk
 
 
-@pytest.mark.parametrize("ci", ["github", "gitlab", "azure-devops"])
-def test_oci_writes_its_api_key_to_a_file_before_plan(plans, ci):
-    text, _ = _pipeline(plans, "oci", ci)
-    write = text.index("/tmp/oci_api_key.pem && chmod 600")
-    assert "TF_VAR_private_key_path" in text
-    if ci != "gitlab":  # GitLab writes it in before_script, ahead of every job
-        assert write < text.index("terraform plan")
+@pytest.mark.parametrize("ci", CI_SYSTEMS)
+def test_the_oci_key_never_lands_at_a_shared_path(plans, ci):
+    # A fixed /tmp path on a shared self-hosted runner is readable and raceable
+    # by other jobs; every system has a job-private way to supply a secret file.
+    for cloud in list_targets():
+        assert "/tmp/" not in _pipeline(plans, cloud, ci)[0], f"{cloud}/{ci}"
+
+
+def test_github_writes_the_oci_key_to_the_job_temp_dir_before_plan(plans):
+    text, _ = _pipeline(plans, "oci", "github")
+    write = text.index('> "$RUNNER_TEMP/oci_api_key.pem" && chmod 600')
+    assert write < text.index("terraform plan")
+    assert "TF_VAR_private_key_path: ${{ runner.temp }}/oci_api_key.pem" in text
+
+
+def test_gitlab_takes_the_oci_key_as_a_file_type_variable(plans):
+    text, _ = _pipeline(plans, "oci", "gitlab")
+    doc = yaml.safe_load(text)
+    assert doc["variables"]["TF_VAR_private_key_path"] == "$OCI_PRIVATE_KEY"
+    assert "*File*-type variable" in text
+
+
+def test_azure_devops_downloads_the_oci_key_as_a_secure_file(plans):
+    doc = yaml.safe_load(_pipeline(plans, "oci", "azure-devops")[0])
+    download = next(s for s in doc["steps"] if s.get("task") == "DownloadSecureFile@1")
+    assert download["inputs"]["secureFile"] == "oci_api_key.pem"
+    plan = next(s for s in doc["steps"] if s.get("displayName") == "Plan")
+    assert plan["env"]["TF_VAR_private_key_path"] == f"$({download['name']}.secureFilePath)"
+    assert doc["steps"].index(download) < doc["steps"].index(plan)
 
 
 def test_jenkins_takes_the_oci_key_as_a_secret_file(plans):
