@@ -20,6 +20,23 @@ updates:
     groups:
       npm-minor-patch:
         update-types: [minor, patch]
+    # Majors held back on purpose, each until its condition changes. Without
+    # these, the closed PRs come back every week and train people to ignore
+    # Dependabot, which is the failure the grouping above exists to prevent.
+    ignore:
+      # Type definitions must match the Node runtime major (CI and the
+      # deployment run Node 20); newer ones type-check calls to APIs that do
+      # not exist at runtime. Bump together with the runtime.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      # typescript-eslint (via eslint-config-next) supports TypeScript
+      # >=4.8.4 <6.1.0. Revisit when it supports 7.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      # eslint-config-next bundles eslint-plugin-react, -import and -jsx-a11y,
+      # which stop at ESLint 9. Revisit when eslint-config-next supports 10.
+      - dependency-name: "eslint"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /
