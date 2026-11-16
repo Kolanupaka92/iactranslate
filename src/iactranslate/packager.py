@@ -237,7 +237,8 @@ def build_project(
     for name, content in backlog_files(plan, waves, backlog_assessment).items():
         dest = out / name
         dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_text(content, encoding="utf-8", newline="")
+        with dest.open("w", encoding="utf-8", newline="") as fh:  # write_text(newline=) is 3.10+
+            fh.write(content)
 
     # Architecture diagram — SVG (portable) + Mermaid (renders in GitHub/markdown).
     (docs / "architecture.svg").write_text(architecture_svg(plan))

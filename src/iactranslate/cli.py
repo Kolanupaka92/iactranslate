@@ -481,7 +481,8 @@ def _cmd_backlog(args: argparse.Namespace) -> int:
     for name, content in files.items():
         dest = out / name.removeprefix("backlog/")
         dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_text(content, encoding="utf-8", newline="")
+        with dest.open("w", encoding="utf-8", newline="") as fh:  # write_text(newline=) is 3.10+
+            fh.write(content)
     print(f"Wrote {len(files)} files to {out}/ (Jira, Azure DevOps, ServiceNow + README).")
     print("Nothing was sent to any tracker; review, then import. See README.md for each tool.")
     return 0
