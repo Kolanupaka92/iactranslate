@@ -22,7 +22,7 @@ SOURCE_REPO="ghcr.io/kolanupaka92/iactranslate"
 TARGET_REPO="${REGION}-docker.pkg.dev/${PROJECT}/iactranslate/api"
 GCLOUD="$(command -v gcloud || echo "$HOME/.local/bin/gcloud")"
 
-SHA="${1:-$(git rev-parse HEAD)}"
+SHA="$(git rev-parse --verify "${1:-HEAD}^{commit}")"  # images are tagged by full SHA
 if ! git branch -r --contains "$SHA" 2>/dev/null | grep -q "origin/main"; then
   echo "Commit $SHA is not on origin/main; CI only publishes images for main." >&2
   exit 1
