@@ -83,5 +83,6 @@ Format: [Michael Nygard's ADR template](https://cognitect.com/blog/2011/11/15/do
 | [0073](0073-for-each-layout.md) | Opt-in `terraform-foreach` renderer (every target): one resource per kind over per-machine maps keyed by the classic labels, shipped with `moved` blocks from the classic layout; default output unchanged | Accepted |
 | [0074](0074-shared-decisions-not-a-shared-renderer.md) | Decisions renderers would otherwise re-derive (which machines get a public address) live once in the graph; the wholesale Terraform/Pulumi graph migration is not done, since it would fix nothing | Accepted |
 | [0075](0075-ci-pipelines-for-four-systems.md) | GitOps pipelines for GitHub Actions, GitLab CI, Azure DevOps and Jenkins from one credentials table per cloud; OCI/DigitalOcean/Nutanix/Proxmox gain credentials, and renderers with their own tooling are refused | Accepted |
+| [0076](0076-migration-backlog-as-import-files.md) | The assessment and wave plan as Jira, Azure DevOps and ServiceNow import files, in each tool's documented format — files, not API calls | Accepted |
 
 See also the [Architecture & Design](../architecture.md) overview.

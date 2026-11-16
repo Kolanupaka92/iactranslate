@@ -47,6 +47,10 @@ CI proves the output is valid against the real cloud providers (`tofu validate`)
   `depends_on` chains, rollback strategy, and validation checks per wave
   (`waves.json`) — honest about not discovering cross-application dependencies
   it has no signal for.
+- **A migration backlog, ready to import.** Every package carries `backlog/`:
+  Jira, Azure DevOps and ServiceNow import files with a remediation epic from
+  the assessment, an epic per wave and an item per workload. Import files, not
+  API calls — nothing is sent to a tracker (`iactranslate backlog` for just this).
 - **Hybrid connectivity from observed flows.** Point `--flows` at a network-flow
   export (vRNI, Cisco Secure Workload, NetFlow, `ss`/`netstat`) and traffic to
   addresses absent from the inventory identifies systems that are *not*

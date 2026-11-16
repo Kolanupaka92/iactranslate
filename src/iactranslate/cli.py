@@ -13,6 +13,7 @@ from typing import Dict, Optional
 from .agents import build_migration_plan
 from .agents.providers import get_provider
 from .assessment import assess, to_html, to_json
+from .backlog import ADO_PROCESSES, backlog_files
 from .confidence import score_plan
 from .costing import estimate_costs
 from .dependencies import DependencyError, analyze_dependencies, parse_flows
@@ -457,6 +458,35 @@ def _cmd_depends(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_backlog(args: argparse.Namespace) -> int:
+    """Tracker import files: remediation from the assessment, epics per wave."""
+    try:
+        vms = _load_inventory(args.input, args.source, args.map)
+        target = get_target(args.target)
+    except (UnknownSourceError, UnknownTargetError) as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+    except FileNotFoundError:
+        print(f"error: input file not found: {args.input}", file=sys.stderr)
+        return 2
+    if not vms:
+        print(f"error: no workloads found in {args.input}", file=sys.stderr)
+        return 2
+    project_name = args.name or Path(args.input).stem
+    plan = build_migration_plan(vms, project_name=project_name, target=target, region=args.region)
+    files = backlog_files(plan, plan_waves(plan),
+                          assess(vms, project_name=project_name, source_platform=plan.source_platform),
+                          ado_process=args.ado_process)
+    out = Path(args.out)
+    for name, content in files.items():
+        dest = out / name.removeprefix("backlog/")
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(content, encoding="utf-8", newline="")
+    print(f"Wrote {len(files)} files to {out}/ (Jira, Azure DevOps, ServiceNow + README).")
+    print("Nothing was sent to any tracker; review, then import. See README.md for each tool.")
+    return 0
+
+
 def _cmd_diff(args: argparse.Namespace) -> int:
     try:
         before = _load_inventory(args.before, args.source, args.map)
@@ -671,6 +701,20 @@ def build_parser() -> argparse.ArgumentParser:
     dep.add_argument("--limit", type=int, default=20, help="Rows to print per section.")
     dep.add_argument("--json", action="store_true", help="Emit the full report as JSON.")
     dep.set_defaults(func=_cmd_depends)
+
+    bl = sub.add_parser("backlog", help="Write tracker import files (Jira, Azure DevOps, ServiceNow) "
+                                        "from the assessment and wave plan.")
+    bl.add_argument("input", help="Path to an inventory export (.xlsx/.csv).")
+    bl.add_argument("--target", default="aws", help=f"Target cloud ({', '.join(list_targets())}).")
+    bl.add_argument("--source", default="auto", help=src_help)
+    bl.add_argument("--map", default=None, help=map_help)
+    bl.add_argument("--name", default=None, help="Project name (defaults to input filename).")
+    bl.add_argument("--region", default=None, help="Target region/location (defaults per cloud).")
+    bl.add_argument("--ado-process", default="agile", choices=list(ADO_PROCESSES),
+                    help="Azure DevOps process template, which sets the child work item type "
+                         "(default agile → User Story).")
+    bl.add_argument("--out", default="backlog", help="Output directory.")
+    bl.set_defaults(func=_cmd_backlog)
 
     d = sub.add_parser("diff", help="Compare two inventory snapshots (drift detection).")
     d.add_argument("before", help="Earlier inventory export (.xlsx/.csv).")

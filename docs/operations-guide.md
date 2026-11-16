@@ -330,6 +330,9 @@ iactranslate diff old.csv new.csv --json
 # blocks so the renamed resources are moved in state, not destroyed and recreated.
 # Use the target/region the Terraform was generated for (ADR 0072).
 iactranslate diff old.xlsx new.xlsx --moved-tf moved.tf --target aws
+
+# The migration as tracker import files (also in every package under backlog/)
+iactranslate backlog rvtools.xlsx --target aws --out ./backlog     # --ado-process scrum|cmmi|basic
 ```
 
 ### 6.3d Policy enforcement

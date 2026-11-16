@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from .assessment import assess, to_html, to_json
+from .backlog import backlog_files
 from .confidence import score_plan
 from .costing import estimate_costs
 from .diagram import architecture_mermaid, architecture_svg
@@ -224,9 +225,19 @@ def build_project(
     # Migration wave plan — deterministic sequencing by environment + tier
     # dependency depth (see waves.py). Advisory: informs execution order, does
     # not change what's rendered.
-    (out / "waves.json").write_text(
-        json.dumps(plan_waves(plan).model_dump(mode="json"), indent=2)
+    waves = plan_waves(plan)
+    (out / "waves.json").write_text(json.dumps(waves.model_dump(mode="json"), indent=2))
+
+    # The same plan as tracker import files: a remediation epic from the
+    # assessment, an epic per wave, an item per workload (see backlog.py).
+    # Import files only — nothing is sent to any tracker.
+    backlog_assessment = (
+        assess(vms, project_name=plan.project_name, source_platform=plan.source_platform) if vms else None
     )
+    for name, content in backlog_files(plan, waves, backlog_assessment).items():
+        dest = out / name
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(content, encoding="utf-8", newline="")
 
     # Architecture diagram — SVG (portable) + Mermaid (renders in GitHub/markdown).
     (docs / "architecture.svg").write_text(architecture_svg(plan))
