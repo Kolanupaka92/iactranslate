@@ -179,7 +179,7 @@ def test_no_cell_can_start_a_spreadsheet_formula():
             continue
         for row in _rows(text):
             for cell in row:
-                assert not cell[:1] in ("=", "+", "-", "@"), f"{name}: {cell[:30]!r}"
+                assert cell[:1] not in ("=", "+", "-", "@"), f"{name}: {cell[:30]!r}"
 
 
 # --- surfaces ---------------------------------------------------------------------------------
