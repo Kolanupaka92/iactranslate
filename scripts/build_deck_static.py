@@ -62,7 +62,7 @@ def build() -> str:
         ".topbar{position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:20px;"
         "padding:12px clamp(20px,5vw,64px);background:rgba(7,11,10,.88);backdrop-filter:blur(8px);"
         "border-bottom:1px solid var(--line);font-family:var(--mono);font-size:13px;}"
-        ".topbar a{color:var(--muted);text-decoration:none;}"
+        ".topbar a{color:var(--muted);text-decoration:none;white-space:nowrap;}"
         ".topbar a:hover{color:var(--ink);text-decoration:underline;}"
         ".topbar .home{color:var(--ink);font-weight:600;display:flex;align-items:center;gap:9px;}"
         ".topbar .home .dot{width:8px;height:8px;border-radius:2px;background:var(--accent);}"
