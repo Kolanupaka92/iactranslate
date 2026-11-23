@@ -337,7 +337,7 @@ def test_a_response_works_once(api, idp):
     response = _response(assertion_xml=_assertion_xml(request_id=rid), keypair=idp)
     assert _post(client, response).headers["location"] == f"{APP}/console"
     replay = _browser(api)
-    replay.cookies.set(saml.REQUEST_COOKIE, rid, domain="testserver")
+    replay.cookies.set(saml.REQUEST_COOKIE, rid)
     assert _refused(_post(replay, response), replay)
 
 

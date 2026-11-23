@@ -171,7 +171,7 @@ iactranslate.com runs as three pieces, deployed separately:
   owner's Gmail address, which is also `IACTRANSLATE_RESET_EMAIL_FROM`. Sends
   reset, verification and invitation emails. Notification email is off (no
   `IACTRANSLATE_NOTIFY_EMAIL_TO`); notifications go to Slack.
-- **Off on purpose:** SAML and OIDC (no customer IdP yet), and
+- **Off on purpose:** SAML and OIDC (no customer IdP yet; both are in the image), and
   `IACTRANSLATE_REQUIRE_VERIFIED_EMAIL` (the verification banner is a nudge).
 
 A deploy changes only the image, so all of the above carries over.
@@ -233,7 +233,21 @@ commit.
 **Slack webhook:** make a new one in the Slack app's Incoming Webhooks page,
 then rotate `iactranslate-slack-webhook` with steps 1 and 3.
 
-### MOP 5 — Turn on SAML for a customer
+### MOP 5 — Turn on single sign-on for a customer
+
+**OIDC** (Okta, Entra ID, Google Workspace, Auth0…):
+
+1. Register an app at the provider with redirect URI
+   `https://iactranslate.com/api/v1/auth/sso/callback` (authorization-code
+   flow, `openid email profile`).
+2. Store the client secret (MOP 4) as `IACTRANSLATE_OIDC_CLIENT_SECRET`, and set
+   `IACTRANSLATE_OIDC_ISSUER` and `IACTRANSLATE_OIDC_CLIENT_ID` with
+   `--update-env-vars`.
+3. Check `GET /api/v1/auth/methods` reports `"oidc": true`, then have someone
+   sign in once. Refusals are logged as `sso callback rejected` with the reason.
+
+**SAML:**
+
 
 1. Get from the customer's IdP admin: the IdP entity ID, its HTTP-Redirect
    sign-in URL, its signing certificate (PEM), and the email domains it vouches

@@ -85,7 +85,8 @@ CI proves the output is valid against the real cloud providers (`tofu validate`)
   provider's assertion also counts as proof. An SSO sign-in reclaims an
   unverified account someone registered first. Operators can require
   verification before projects are created.
-- **SAML single sign-on.** For identity providers that speak SAML rather than
+- **Single sign-on, OIDC or SAML.** OIDC uses PKCE and a state cookie bound
+  to the browser. SAML serves identity providers that speak SAML rather than
   OIDC. The IdP's certificate is pinned, and identity is read only from the
   signed part of the response, which defeats signature wrapping. Each response
   is bound to the browser that asked for it, and the IdP is trusted only for

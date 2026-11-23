@@ -172,13 +172,18 @@ def _sso(api, monkeypatch, email_verified=True):
     claims = {"sub": "subject-1", "email": "pat@example.com", "email_verified": email_verified}
     monkeypatch.setattr(oidc, "verify_id_token", lambda cfg, tok, nonce: claims)
     monkeypatch.setattr(oidc, "identity_from_claims", lambda cfg, c: ("subject-1", "pat@example.com"))
-    return TestClient(api.app).get("/auth/sso/callback?code=c&state=s")
+    # A real browser carries the state cookie set when it started the login.
+    browser = TestClient(api.app, base_url="https://testserver")
+    browser.cookies.set(oidc.STATE_COOKIE, "s")
+    r = browser.get("/auth/sso/callback?code=c&state=s", follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"].endswith("/console"), r.headers.get("location")
+    return r
 
 
 def test_sso_takes_an_unverified_account_back_from_a_squatter(api, links, monkeypatch):
     squatter = TestClient(api.app)
     _register(squatter)  # someone else registered the address first
-    assert _sso(api, monkeypatch).status_code == 200
+    assert _sso(api, monkeypatch).status_code == 303
     # The squatter's session and password no longer work.
     assert squatter.get("/auth/me").status_code == 401
     r = TestClient(api.app).post("/auth/login", json={"email": "pat@example.com", "password": PASSWORD})
@@ -190,7 +195,7 @@ def test_sso_leaves_a_verified_account_alone(api, links, monkeypatch):
     owner = TestClient(api.app)
     _register(owner)
     owner.post("/auth/verify-email", json={"token": _token(links["verify"][0][1])})
-    assert _sso(api, monkeypatch).status_code == 200
+    assert _sso(api, monkeypatch).status_code == 303
     assert owner.get("/auth/me").status_code == 200
     r = TestClient(api.app).post("/auth/login", json={"email": "pat@example.com", "password": PASSWORD})
     assert r.status_code == 200
@@ -201,7 +206,7 @@ def test_an_unasserted_sso_email_proves_nothing(api, links, monkeypatch):
     provider didn't vouch for. That neither verifies nor revokes anything."""
     squatter = TestClient(api.app)
     _register(squatter)
-    assert _sso(api, monkeypatch, email_verified=False).status_code == 200
+    assert _sso(api, monkeypatch, email_verified=False).status_code == 303
     assert squatter.get("/auth/me").status_code == 200
     assert api.accounts.get_user_by_email("pat@example.com").email_verified is False
 

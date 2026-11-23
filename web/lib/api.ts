@@ -503,5 +503,6 @@ export function authMethods(): Promise<AuthMethods> {
   return request("/auth/methods");
 }
 
-/** A full-page navigation, not a fetch: the IdP sign-in is a browser flow. */
+/** Full-page navigations, not fetches: IdP sign-in is a browser flow. */
 export const samlLoginUrl = `${API_BASE}/auth/saml/login`;
+export const oidcLoginUrl = `${API_BASE}/auth/sso/login`;

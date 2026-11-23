@@ -3,7 +3,16 @@
 import { useEffect, useState } from "react";
 
 import HomeLink from "@/components/HomeLink";
-import { ApiError, authMethods, forgotPassword, login, register, samlLoginUrl } from "@/lib/api";
+import {
+  ApiError,
+  authMethods,
+  forgotPassword,
+  login,
+  oidcLoginUrl,
+  register,
+  samlLoginUrl,
+  type AuthMethods,
+} from "@/lib/api";
 
 type Mode = "login" | "register" | "forgot";
 
@@ -24,12 +33,12 @@ export default function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resetSent, setResetSent] = useState(false);
-  const [sso, setSso] = useState(false);
+  const [methods, setMethods] = useState<AuthMethods | null>(null);
 
   useEffect(() => {
     void authMethods()
-      .then((m) => setSso(m.saml))
-      .catch(() => setSso(false));
+      .then(setMethods)
+      .catch(() => setMethods(null));
     // The SAML endpoint sends a refused sign-in back here with ?sso=failed.
     // The reason is in the server log; the page says only that it failed.
     const params = new URLSearchParams(window.location.search);
@@ -79,14 +88,24 @@ export default function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
           : "Your projects and inventory are private to your account."}
       </p>
 
-      {sso && mode === "login" && (
+      {(methods?.saml || methods?.oidc) && mode === "login" && (
         <>
-          <a
-            href={samlLoginUrl}
-            className="mt-5 block rounded border border-slate-300 px-3 py-2 text-center text-sm font-medium text-slate-800 hover:border-slate-900"
-          >
-            Continue with single sign-on
-          </a>
+          {/* One button per configured method; labelled only when both
+              exist, since "single sign-on" is all a user needs otherwise. */}
+          {[
+            methods.oidc && { href: oidcLoginUrl, label: "OIDC" },
+            methods.saml && { href: samlLoginUrl, label: "SAML" },
+          ]
+            .filter((b): b is { href: string; label: string } => Boolean(b))
+            .map((b, _i, all) => (
+              <a
+                key={b.label}
+                href={b.href}
+                className="mt-3 block rounded border border-slate-300 px-3 py-2 text-center text-sm font-medium text-slate-800 hover:border-slate-900 first:mt-5"
+              >
+                Continue with single sign-on{all.length > 1 ? ` (${b.label})` : ""}
+              </a>
+            ))}
           <p className="mt-4 text-center text-xs text-slate-400">or with email and password</p>
         </>
       )}

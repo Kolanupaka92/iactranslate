@@ -147,7 +147,8 @@ orgs = create_org_store()
 
 # SSO. `None` unless IACTRANSLATE_OIDC_ISSUER is set (ADR 0054).
 sso_config = _oidc.config_from_env()
-sso_logins = _oidc.LoginStore()
+# In the database when there is one, so any instance can finish a login.
+sso_logins = _oidc.create_login_store()
 # SAML. `None` unless IACTRANSLATE_SAML_IDP_ENTITY_ID is set (ADR 0081).
 saml_config = _saml.config_from_env()
 saml_requests = _saml.create_request_store() if saml_config is not None else None
@@ -1827,47 +1828,54 @@ def sso_login(request: Request) -> Response:
         logger.error("sso login could not start", exc_info=True)
         raise HTTPException(502, f"identity provider unavailable: {e}") from e
     # 302 rather than a JSON body: this is a browser flow, and the caller is a
-    # browser following a link.
-    return Response(status_code=302, headers={"Location": url})
+    # browser following a link. The state cookie ties the callback to this
+    # browser (login CSRF); Lax suffices for the provider's top-level GET back.
+    response = Response(status_code=302, headers={"Location": url})
+    response.set_cookie(_oidc.STATE_COOKIE, login.state, max_age=int(_oidc.STATE_TTL_SECONDS),
+                        httponly=True, secure=True, samesite="lax", path="/")
+    return response
 
 
 @router.get("/auth/sso/callback", dependencies=[Depends(limit_auth)])
-def sso_callback(request: Request, code: str = "", state: str = "",
-                 error: str = "") -> JSONResponse:
-    """Complete the flow: validate the ID token and establish a session."""
+def sso_callback(request: Request, code: str = "", state: str = "", error: str = "") -> Response:
+    """Complete the flow: validate the ID token, sign in, return to the console.
+
+    Any failure sends the browser to `/console?sso=failed` with a generic
+    message. The reason is logged: it can name issuers, audiences and claim
+    contents, which helps the operator and would help someone probing.
+    """
     if sso_config is None:
         raise HTTPException(404, "single sign-on is not configured on this deployment")
     accts = _require_accounts()
-    if error:
-        # The provider's own error, echoed back to the browser. Not trusted as
-        # markup — it lands in a JSON body, never in HTML.
-        raise HTTPException(400, f"identity provider returned an error: {error[:200]}")
-    if not code or not state:
-        raise HTTPException(400, "callback is missing code or state")
-
+    expected_state = request.cookies.get(_oidc.STATE_COOKIE, "")
     try:
+        if error:
+            raise _oidc.OidcError(f"identity provider returned an error: {error[:200]}")
+        if not code or not state:
+            raise _oidc.OidcError("callback is missing code or state")
+        # This browser must be the one that started this login (login CSRF).
+        if not expected_state or not secrets.compare_digest(expected_state, state):
+            raise _oidc.OidcError("state does not match this browser's login")
         login = sso_logins.consume(state)
         tokens = _oidc.exchange_code(sso_config, code, login.verifier)
-        id_token = tokens.get("id_token")
+        id_token = tokens.get("id_token") if isinstance(tokens, dict) else None
         if not id_token:
             raise _oidc.OidcError("token response carried no id_token")
         claims = _oidc.verify_id_token(sso_config, id_token, login.nonce)
         subject, email = _oidc.identity_from_claims(sso_config, claims)
     except _oidc.OidcError as e:
-        # Logged with detail, returned without: the message can name issuers,
-        # audiences and claim contents, which is diagnostic for us and
-        # reconnaissance for anyone probing the endpoint.
-        logger.warning("sso callback rejected", exc_info=True, extra={"reason": str(e)})
-        raise HTTPException(401, "single sign-on failed") from e
+        logger.warning("sso callback rejected", extra={"reason": str(e)})
+        failed = Response(status_code=303, headers={"Location": _app_url("/console?sso=failed")})
+        failed.delete_cookie(_oidc.STATE_COOKIE, path="/")
+        return failed
 
     user = _federated_user(accts, email, proven=claims.get("email_verified") is True)
-
-    response = JSONResponse(
-        status_code=200, content={"id": user.id, "email": user.email, "via": "sso"}
-    )
+    response = Response(status_code=303, headers={"Location": _app_url("/console")})
+    response.delete_cookie(_oidc.STATE_COOKIE, path="/")
     _set_session_cookie(response, accts.create_session(user.id))
     logger.info("sso login", extra={"user_id": user.id, "subject": subject})
     return response
+
 
 # --------------------------------------------------------------------------- #
 # Mounting

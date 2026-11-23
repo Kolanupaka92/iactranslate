@@ -50,6 +50,7 @@ import json
 import os
 import secrets
 import time
+import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
@@ -191,6 +192,77 @@ class LoginStore:
                 del self._pending[state]
 
 
+#: Holds the login's `state` in the browser that started it. The callback must
+#: carry the same value, so a callback link made for someone else's login
+#: can't sign this browser in (login CSRF). SameSite=Lax is enough: the
+#: provider returns the browser with a top-level GET.
+STATE_COOKIE = "iactranslate_oidc_state"
+
+
+class SqlLoginStore(LoginStore):
+    """The same single-use, expiring logins, in the database.
+
+    The in-memory store only works on one instance: on a deployment with
+    several, the provider's callback can reach an instance that never saw the
+    login and fail it. Keyed by a hash of `state`; the PKCE verifier and nonce
+    live here for at most `STATE_TTL_SECONDS`.
+    """
+
+    _SCHEMA = """
+        CREATE TABLE IF NOT EXISTS oidc_logins (
+            state_hash TEXT PRIMARY KEY,
+            nonce TEXT NOT NULL,
+            verifier TEXT NOT NULL,
+            created_at {REAL} NOT NULL,
+            redirect_to TEXT
+        )
+    """
+
+    def __init__(self, db, ttl: float = STATE_TTL_SECONDS) -> None:
+        super().__init__(ttl)
+        self._db = db
+        self._db.execute(self._db.schema(self._SCHEMA))
+
+    @staticmethod
+    def _hash(state: str) -> str:
+        return hashlib.sha256(state.encode()).hexdigest()
+
+    def begin(self, redirect_to: Optional[str] = None) -> PendingLogin:
+        login = PendingLogin(state=secrets.token_urlsafe(32), nonce=secrets.token_urlsafe(32),
+                             verifier=pkce_pair()[0], created_at=time.time(), redirect_to=redirect_to)
+        self._db.execute("DELETE FROM oidc_logins WHERE created_at < ?", (time.time() - self._ttl,))
+        self._db.execute(
+            "INSERT INTO oidc_logins (state_hash, nonce, verifier, created_at, redirect_to) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (self._hash(login.state), login.nonce, login.verifier, login.created_at, redirect_to),
+        )
+        return login
+
+    def consume(self, state: str) -> PendingLogin:
+        key = self._hash(state or "")
+        with self._db.transaction() as tx:
+            row = tx.query_one(
+                "SELECT nonce, verifier, created_at, redirect_to FROM oidc_logins WHERE state_hash = ?",
+                (key,),
+            )
+            if row is not None:
+                tx.execute("DELETE FROM oidc_logins WHERE state_hash = ?", (key,))
+        if row is None:
+            raise OidcError("unknown or already-used state — restart the login")
+        if time.time() - row[2] > self._ttl:
+            raise OidcError("login attempt expired — restart the login")
+        return PendingLogin(state=state, nonce=row[0], verifier=row[1], created_at=row[2], redirect_to=row[3])
+
+
+def create_login_store() -> LoginStore:
+    """Database-backed whenever the deployment has a database."""
+    from .sql import backend, create_database
+
+    if backend() in {"sqlite", "postgres"}:
+        return SqlLoginStore(create_database())
+    return LoginStore()
+
+
 def authorization_url(config: OidcConfig, login: PendingLogin) -> str:
     """Where to send the browser to authenticate."""
     import urllib.parse
@@ -234,8 +306,15 @@ def exchange_code(config: OidcConfig, code: str, verifier: str) -> Dict[str, Any
     request = urllib.request.Request(
         endpoint, data=body, headers={"Content-Type": "application/x-www-form-urlencoded"}
     )
-    with urllib.request.urlopen(request, timeout=_HTTP_TIMEOUT) as resp:  # noqa: S310  # nosec B310
-        return json.loads(resp.read())
+    try:
+        with urllib.request.urlopen(request, timeout=_HTTP_TIMEOUT) as resp:  # noqa: S310  # nosec B310
+            return json.loads(resp.read())
+    except urllib.error.HTTPError as exc:
+        # A refused code (expired, reused, wrong verifier) is the provider's
+        # answer, not a crash: the browser goes back to sign-in.
+        raise OidcError(f"token endpoint refused the code: HTTP {exc.code}") from None
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        raise OidcError(f"token endpoint unreachable or returned invalid JSON: {exc}") from None
 
 
 def verify_id_token(
@@ -322,8 +401,7 @@ def config_from_env() -> Optional[OidcConfig]:
         return None
     missing = [
         name for name in ("IACTRANSLATE_OIDC_CLIENT_ID",
-                          "IACTRANSLATE_OIDC_CLIENT_SECRET",
-                          "IACTRANSLATE_OIDC_REDIRECT_URI")
+                          "IACTRANSLATE_OIDC_CLIENT_SECRET")
         if not os.getenv(name, "").strip()
     ]
     if missing:
@@ -349,7 +427,11 @@ def config_from_env() -> Optional[OidcConfig]:
         issuer=issuer,
         client_id=os.environ["IACTRANSLATE_OIDC_CLIENT_ID"],
         client_secret=os.environ["IACTRANSLATE_OIDC_CLIENT_SECRET"],
-        redirect_uri=os.environ["IACTRANSLATE_OIDC_REDIRECT_URI"],
+        # Through the console's /api rewrite by default, so the session cookie
+        # set by the callback belongs to the site the user is on.
+        redirect_uri=os.getenv("IACTRANSLATE_OIDC_REDIRECT_URI", "").strip() or (
+            os.getenv("IACTRANSLATE_APP_URL", "http://localhost:3000").rstrip("/")
+            + "/api/v1/auth/sso/callback"),
         scopes=tuple(scopes),
         trust_unverified_email=os.getenv(
             "IACTRANSLATE_OIDC_TRUST_UNVERIFIED_EMAIL", "0"

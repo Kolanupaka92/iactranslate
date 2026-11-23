@@ -53,7 +53,7 @@ COPY --from=builder /wheels /wheels
 # fix. Leaving an installer nobody uses in a production image is attack surface
 # with no upside.
 RUN pip install --no-cache-dir /wheels/*.whl weasyprint \
-        "psycopg[binary,pool]>=3.1" "cryptography>=42.0" "signxml>=5.3" \
+        "psycopg[binary,pool]>=3.1" "cryptography>=42.0" "signxml>=5.3" "pyjwt[crypto]>=2.8" \
     && rm -rf /wheels \
     && python -m pip uninstall --yes pip
 
