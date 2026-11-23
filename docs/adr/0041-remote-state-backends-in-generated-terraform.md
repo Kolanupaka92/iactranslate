@@ -1,6 +1,7 @@
 # 0041. Remote state backends in generated Terraform
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 **Date:** 2026-08-27
 
 ## Context

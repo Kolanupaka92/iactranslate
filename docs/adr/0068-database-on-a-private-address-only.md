@@ -1,6 +1,7 @@
 # 0068. The database has no public address
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 **Date:** 2026-09-15
 
 ## Context

@@ -1,6 +1,7 @@
 # 0058. De-identify inventory before it reaches a remote model
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 **Date:** 2026-08-29
 
 ## Context

@@ -1,4 +1,4 @@
-Copyright (c) 2026 <COPYRIGHT HOLDER — replace with your legal entity name>
+Copyright (c) 2026 Sai Kolanupaka
 
 All Rights Reserved.
 
@@ -22,7 +22,7 @@ SOFTWARE.
 
 ---
 
-NOTE: This file was drafted as a starting point to match the "Proprietary"
-declaration in pyproject.toml. It is not legal advice. Have counsel review it
-before you rely on it commercially, and replace the copyright holder above with
-your actual legal entity.
+Owner and author: Sai Kolanupaka. This notice was drafted to match the "Proprietary"
+declaration in pyproject.toml. It is not legal advice; have counsel review it
+before relying on it commercially, and update the holder above if ownership
+moves to a company.

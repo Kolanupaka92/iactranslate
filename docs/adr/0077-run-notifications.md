@@ -1,6 +1,7 @@
 # 0077. Run notifications to Slack, Teams and email
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 **Date:** 2026-11-22
 
 ## Context

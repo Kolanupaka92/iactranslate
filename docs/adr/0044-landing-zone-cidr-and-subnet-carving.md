@@ -1,6 +1,7 @@
 # 0044. Landing-zone CIDRs, and carving subnets from them
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 **Date:** 2026-08-27
 
 ## Context

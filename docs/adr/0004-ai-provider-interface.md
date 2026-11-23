@@ -1,6 +1,7 @@
 # 0004 — AI behind a provider interface with a rule-engine default
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 
 ## Context
 

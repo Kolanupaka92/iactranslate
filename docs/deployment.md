@@ -1,17 +1,19 @@
 # IaCTranslate — Deployment & Execution
 
-Two things live here: **how a run actually executes today** (the execution model,
-which is real and shipped), and a **reference architecture** for running
-IaCTranslate at organization scale (which is a target, not yet built — labeled as
-such so nobody mistakes the diagram for the current system).
+*Author and owner: Sai Kolanupaka*
+
+Three things live here: **how a run executes** (the execution model), **how the
+hosted service is deployed and operated**, as step-by-step procedures (MOPs),
+and the **scale-out target**, with what of it is built and what isn't.
 
 **Contents**
 1. [Execution model (shipped)](#execution-model)
 2. [Pipeline stages & trace (shipped)](#pipeline-stages)
 3. [Project state machine (shipped)](#state-machine)
 4. [Single-node deployment (shipped)](#single-node)
-5. [Reference architecture for scale (not yet built)](#reference-architecture)
-6. [Multi-tenant model (not yet built)](#multi-tenant)
+5. [The hosted deployment and its procedures (MOPs)](#the-hosted-deployment)
+6. [Scale-out architecture (mostly built)](#reference-architecture)
+7. [Multi-tenant model (built)](#multi-tenant)
 
 ---
 
@@ -128,69 +130,172 @@ docker run -p 8000:8000 iactranslate
 Good for a team, a demo, or CI. State is in-memory and workspaces are
 temporary — restart loses projects (by design at this tier).
 
-### The hosted deployment
+## The hosted deployment
 
-The hosted service is three pieces, deployed separately:
+iactranslate.com runs as three pieces, deployed separately:
 
-| Piece | Where | How |
+| Piece | Where | Deployed with |
 |---|---|---|
-| API | Cloud Run `iactranslate-api` (us-central1) | `scripts/deploy_api.sh [COMMIT]` |
-| Console | Vercel project `iactranslate` → iactranslate.com | `vercel deploy --prod` from `web/` |
+| API | Cloud Run service `iactranslate-api`, us-central1 | `scripts/deploy_api.sh <commit>` (MOP 1) |
+| Console | Vercel project `iactranslate` → iactranslate.com | preview, check, promote (MOP 2) |
 | Docs | Vercel project `iactranslate-docs` | automatic on every push to `main` |
 
-`deploy_api.sh` never rebuilds. It promotes the image CI already built, scanned
-and signed for that commit (`ghcr.io/kolanupaka92/iactranslate:<commit>`, which
-exists only if every CI job passed) into Artifact Registry, then changes only the
-service's image, so its environment, secrets, VPC egress and service account are
-untouched. It verifies `/health` and prints the exact rollback command if the new
-revision is unhealthy.
+### How the API is configured
 
-**Deploy the API before the console.** The console calls API features (for
-example custom scoring weights) that an older API silently ignores.
+- **Scale:** up to 4 instances, 80 concurrent requests each, 1 vCPU and 1 GiB.
+  CPU is allocated only while a request is being handled, so background work
+  (notifications, emails) normally completes within the request that triggers
+  it but can be delayed until the next request (ADR 0077).
+- **Database:** Cloud SQL PostgreSQL 16 (`iactranslate-db`, db-f1-micro),
+  reached on a private address only (ADR 0068). It allows 25 connections, 3 of
+  them reserved. Each instance shares one pool of `IACTRANSLATE_DB_POOL_SIZE`
+  (default 4), so 4 instances plus one starting during a deploy use at most
+  20. Before that fix, five pools per instance could exhaust the database and
+  stop new revisions from starting.
+- **Files:** project workspaces live in a Cloud Storage bucket mounted at
+  `/workspaces` (`IACTRANSLATE_WORKSPACE_ROOT`), so downloads survive restarts.
+- **Accounts:** multi-tenant (`IACTRANSLATE_AUTH=session`); the console calls
+  the API through Vercel's `/api` rewrite, so cookies are first-party
+  (`IACTRANSLATE_COOKIE_SAMESITE=lax`).
+- **Secrets,** each in Secret Manager and readable only by the service
+  account `iactranslate-api@…`:
+
+  | Secret | Becomes | Used for |
+  |---|---|---|
+  | `iactranslate-database-url` | `IACTRANSLATE_DATABASE_URL` | PostgreSQL |
+  | `iactranslate-encryption-key` | `IACTRANSLATE_ENCRYPTION_KEY` | uploads encrypted at rest (ADR 0043) |
+  | `iactranslate-slack-webhook` | `IACTRANSLATE_NOTIFY_SLACK_WEBHOOK` | run notifications (ADR 0077) |
+  | `iactranslate-smtp-password` | `IACTRANSLATE_SMTP_PASSWORD` | Gmail App Password for account email (ADR 0078) |
+
+- **Mail:** Gmail over STARTTLS (`smtp.gmail.com:587`), signed in as the
+  owner's Gmail address, which is also `IACTRANSLATE_RESET_EMAIL_FROM`. Sends
+  reset, verification and invitation emails. Notification email is off (no
+  `IACTRANSLATE_NOTIFY_EMAIL_TO`); notifications go to Slack.
+- **Off on purpose:** SAML and OIDC (no customer IdP yet), and
+  `IACTRANSLATE_REQUIRE_VERIFIED_EMAIL` (the verification banner is a nudge).
+
+A deploy changes only the image, so all of the above carries over.
+
+### MOP 1 — Deploy the API
+
+1. Push to `main` and wait for CI to pass. The image exists only if every job
+   passed: `ghcr.io/kolanupaka92/iactranslate:<commit>`, scanned and signed.
+2. Run `scripts/deploy_api.sh <commit>`; a short SHA is fine. It copies that
+   image into Artifact Registry, deploys it as a new revision, checks
+   `/health`, and prints the previous revision for rollback.
+3. Check the new revision logged no errors:
+   `gcloud logging read 'resource.labels.revision_name="<revision>" AND severity>=ERROR' --freshness 15m`.
+4. If the release adds a migration (a new table or column), it runs on
+   startup; CI's PostgreSQL job has already run it against a real database.
+
+**Deploy the API before the console.** The console calls endpoints an older
+API doesn't have.
+
+### MOP 2 — Deploy the console
+
+1. From `web/`: delete `web/.env.local` if `vercel link` wrote a
+   `VERCEL_OIDC_TOKEN` into it, then run `vercel deploy --yes`. That makes a
+   preview, not production.
+2. Check the preview: the console loads, and the API calls the release depends
+   on answer through `<preview>/api/v1/…`.
+3. `vercel promote <preview-url> --yes`, then check iactranslate.com.
+
+### MOP 3 — Roll back
+
+- **API:** `gcloud run services update-traffic iactranslate-api --region us-central1 --to-revisions <previous>=100`.
+  `deploy_api.sh` prints `<previous>`.
+- **Console:** `vercel promote <previous deployment URL> --yes`, or roll back
+  from the Vercel dashboard.
+- A database migration is additive (new tables or columns only), so an older
+  revision runs against a newer schema.
+
+### MOP 4 — Add or rotate a secret
+
+Secret values are handled by the owner only, never pasted into chat or a
+commit.
+
+1. Owner, in their own terminal (the value isn't echoed or kept in history):
+   `read -rs V && printf '%s' "$V" | gcloud secrets create <name> --data-file=-; unset V`.
+   To rotate an existing secret, use `gcloud secrets versions add <name>`
+   instead of `create`.
+2. Once, for a new secret: let the service account read it, with
+   `gcloud secrets add-iam-policy-binding <name> --member=serviceAccount:iactranslate-api@<project>.iam.gserviceaccount.com --role=roles/secretmanager.secretAccessor`.
+3. Point the service at it:
+   `gcloud run services update iactranslate-api --region us-central1 --update-secrets <ENV_VAR>=<name>:latest`.
+   A rotation also needs this step (or any new revision), because a revision
+   reads `latest` when it starts.
+4. Check the startup log (e.g. `notifications enabled: slack`) and exercise the
+   feature once.
+
+**Gmail App Password:** create it at myaccount.google.com/apppasswords
+(2-Step Verification must be on), strip its spaces, then rotate
+`iactranslate-smtp-password` with steps 1 and 3.
+**Slack webhook:** make a new one in the Slack app's Incoming Webhooks page,
+then rotate `iactranslate-slack-webhook` with steps 1 and 3.
+
+### MOP 5 — Turn on SAML for a customer
+
+1. Get from the customer's IdP admin: the IdP entity ID, its HTTP-Redirect
+   sign-in URL, its signing certificate (PEM), and the email domains it vouches
+   for.
+2. Give them this service's metadata:
+   `https://iactranslate.com/api/v1/auth/saml/metadata` (entity ID and ACS URL).
+3. Set `IACTRANSLATE_SAML_IDP_ENTITY_ID`, `_IDP_SSO_URL` and `_EMAIL_DOMAINS`
+   with `--update-env-vars`, and the certificate as `IACTRANSLATE_SAML_IDP_CERT`.
+   A certificate is public, so it can be an env var; Secret Manager works too.
+4. Check `GET /api/v1/auth/methods` reports `"saml": true` and the sign-in
+   screen shows "Continue with single sign-on". Then have someone from the
+   customer sign in once. A refusal sends them back with a generic message,
+   and the reason is in the log as `saml response rejected`.
+5. During the IdP's key rotation, list both certificates in
+   `IACTRANSLATE_SAML_IDP_CERT`.
+
+### MOP 6 — Health and logs
+
+- Liveness: `GET https://iactranslate-api-…run.app/health`. Counters:
+  `GET /metrics` (Prometheus).
+- Errors: `gcloud logging read 'resource.labels.service_name="iactranslate-api" AND severity>=ERROR' --freshness 1h`.
+- Useful log lines: `notification to slack failed`,
+  `password reset email to … failed`, `saml response rejected`,
+  `sso claimed an unverified account`, `org invitation accepted`.
+- Out of database connections ("remaining connection slots are reserved")
+  means too many instances or too large a pool. Keep
+  (max instances + 1) × `IACTRANSLATE_DB_POOL_SIZE` under 22, or move to a
+  larger Cloud SQL tier.
 
 ## Reference architecture
 
-> **Not yet built.** This is the target topology for multi-user, large-estate
-> operation — what the current single-node design would grow into. It is included
-> so the docs answer "how would this run for 500 users?", not to imply it exists.
+How IaCTranslate runs with many users and large estates, and how much of it is
+built:
 
 ```mermaid
 flowchart TD
-  LB[Load balancer] --> API1[API pod] & API2[API pod]
-  API1 & API2 --> Q[(Redis / queue)]
-  API1 & API2 --> PG[(Postgres: projects, orgs, policies, audit)]
-  Q --> W1[Worker] & W2[Worker]
-  W1 & W2 --> OBJ[(Object storage: artifacts + ZIPs)]
-  W1 & W2 --> PG
+  LB[Load balancer] --> API1[API instance] & API2[API instance]
+  API1 & API2 --> PG[(PostgreSQL: projects, accounts, orgs, grants, jobs, audit)]
+  API1 & API2 --> OBJ[(Object storage: workspaces and ZIPs)]
+  API1 & API2 -. optional .-> R[(Redis: shared rate limits)]
 ```
 
-- **API pods** stay stateless (they already are — no session state); horizontal
-  scaling is adding pods behind the LB.
-- **Queue + workers** run the pipeline asynchronously so long jobs and very large
-  estates don't block request threads. Each stage checkpoints to Postgres →
-  resumable runs.
-- **Postgres** replaces the in-memory `ProjectStore` (the store interface is the
-  seam) and holds orgs/projects/policies/audit.
-- **Object storage** is the durable **artifact store** for every produced file
-  (`graph.json`, Terraform/Pulumi, reports, ZIPs) — reproducible and retained.
-
-What already lines up for this: the API is stateless; the `ProjectStore` is a
-single swappable interface; the pipeline is stage-structured with a trace; every
-output is a file. The gap is persistence + a queue — deliberately deferred until
-there's a multi-user driver (see [roadmap](roadmap.md)).
+- **Built:** stateless API instances behind a load balancer (Cloud Run); every
+  durable store on PostgreSQL (ADR 0063); a durable job queue on the same
+  database (ADR 0053); workspaces on object storage mounted as a file system
+  (ADR 0029); optional Redis for rate limits shared across instances (ADR 0046).
+- **Not built:** separate worker instances (the queue's workers run inside the
+  API processes), checkpointed and resumable stages, and native object-storage
+  APIs instead of a mounted bucket.
 
 ## Multi-tenant
 
-> **Not yet built.** The data model for SaaS multi-tenancy:
+Built (ADR 0027, 0050, 0080):
 
 ```
-Organization
-  ├─ Users            (authn/authz — not yet implemented)
-  ├─ Projects         (exists today, in-memory)
-  ├─ Policies         (policy engine exists; per-org scoping is the addition)
-  ├─ Artifacts        (per-run outputs → object storage)
-  └─ Audit            (per-action log → Postgres)
+Organisation          owner / admin / member; invitations need consent and a proven address
+  ├─ Users            password, OIDC or SAML sign-in; email verification
+  ├─ Projects         personal or in an org; per-project roles on top
+  ├─ Policies         policy engine, configured per project
+  ├─ Artifacts        per-run outputs in the project's workspace
+  └─ Audit            per-action log in PostgreSQL
 ```
 
-Authentication, per-org isolation, and audit are the work here; the policy engine
-and artifact set already exist and would be scoped per organization.
+Not built: teams within an organisation, per-org policy defaults, and per-org
+data residency.

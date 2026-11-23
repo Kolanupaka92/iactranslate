@@ -73,7 +73,7 @@ CI proves the output is valid against the real cloud providers (`tofu validate`)
 - **Multi-tenant.** Opt in with `IACTRANSLATE_AUTH=session` for user accounts,
   session-cookie login, and per-project ownership — one customer cannot see
   another's inventory, and a project owned by someone else returns 404 rather
-  than 403 so ids can't be enumerated. Username/password, not OIDC/SSO yet.
+  than 403 so ids can't be enumerated. Password, OIDC or SAML sign-in.
 - **Password change + reset.** Both evict every existing session, so a stolen
   cookie stops working the moment a password changes. Tokens are hashed,
   single-use, and expire in an hour. The link is emailed over the same SMTP
@@ -229,3 +229,8 @@ No shell or Terraform execution, no cloud credentials required to generate, no
 inventory modification, streamed upload caps, bounded temp workspaces, path-
 traversal protection, and no secrets embedded in output. Details in
 [Operations Guide § Security model](docs/operations-guide.md#15-security-model).
+
+## Author and owner
+
+IaCTranslate is written and owned by **Sai Kolanupaka**. It is proprietary software;
+see [LICENSE](LICENSE). Security reports go through [SECURITY.md](SECURITY.md).

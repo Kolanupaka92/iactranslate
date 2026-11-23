@@ -1,6 +1,7 @@
 # 0018 — Load balancer topology: model once, render six ways
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 
 ## Context
 

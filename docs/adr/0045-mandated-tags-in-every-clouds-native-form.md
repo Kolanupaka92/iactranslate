@@ -1,6 +1,7 @@
 # 0045. Mandated tags, in every cloud's native form
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 **Date:** 2026-08-27
 
 ## Context

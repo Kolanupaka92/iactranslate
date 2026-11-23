@@ -1,6 +1,7 @@
 # 0002 — `NormalizedVM` as the canonical inventory model
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 
 ## Context
 

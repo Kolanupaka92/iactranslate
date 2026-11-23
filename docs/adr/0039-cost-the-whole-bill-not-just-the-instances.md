@@ -1,6 +1,7 @@
 # 0039. Cost the whole bill, not just the instances
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 **Date:** 2026-08-20
 
 ## Context

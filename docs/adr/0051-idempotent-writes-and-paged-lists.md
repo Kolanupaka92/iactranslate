@@ -1,6 +1,7 @@
 # 0051. Idempotent writes, and paging that does not break the contract
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 **Date:** 2026-08-28
 
 ## Context

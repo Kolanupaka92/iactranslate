@@ -1,6 +1,7 @@
 # 0061. Renderer selection reaches the API and the console
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 **Date:** 2026-08-30
 
 ## Context

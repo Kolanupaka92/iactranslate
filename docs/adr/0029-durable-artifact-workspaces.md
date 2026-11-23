@@ -1,6 +1,7 @@
 # 0029 — Durable artifact workspaces
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 
 ## Context
 

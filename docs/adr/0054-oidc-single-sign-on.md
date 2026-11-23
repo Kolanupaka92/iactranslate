@@ -1,6 +1,7 @@
 # 0054. OIDC single sign-on
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 **Date:** 2026-08-28
 
 ## Context

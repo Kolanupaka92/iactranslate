@@ -9,7 +9,8 @@ description = "AI infrastructure migration translator: discovery reports -> prod
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "Proprietary" }
-authors = [{ name = "IaCTranslate" }]
+authors = [{ name = "Sai Kolanupaka" }]
+maintainers = [{ name = "Sai Kolanupaka" }]
 dependencies = [
     "pydantic>=2.5,<3",
     "pandas>=2.0",

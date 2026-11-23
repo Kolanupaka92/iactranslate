@@ -1,6 +1,7 @@
 # 0064. Decision evidence, and capability claims that cannot drift
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 **Date:** 2026-09-12
 
 ## Context

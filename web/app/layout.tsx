@@ -25,6 +25,9 @@ const geistMono = Geist_Mono({
  */
 export const metadata: Metadata = {
   metadataBase: new URL("https://iactranslate.com"),
+  authors: [{ name: "Sai Kolanupaka" }],
+  creator: "Sai Kolanupaka",
+  publisher: "Sai Kolanupaka",
   title: {
     default: "IaCTranslate — Enterprise Cloud Migration Intelligence",
     template: "%s · IaCTranslate",

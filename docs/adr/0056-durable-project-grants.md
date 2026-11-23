@@ -1,6 +1,7 @@
 # 0056. Grants that survive a restart
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 **Date:** 2026-08-28
 
 ## Context

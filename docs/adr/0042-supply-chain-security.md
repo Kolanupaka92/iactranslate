@@ -1,6 +1,7 @@
 # 0042. Supply-chain security for a publicly published image
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 **Date:** 2026-08-27
 
 ## Context

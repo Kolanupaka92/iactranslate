@@ -1,6 +1,7 @@
 # 0074. Share the decisions, not the renderer
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 **Date:** 2026-11-14
 
 ## Context

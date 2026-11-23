@@ -1,6 +1,7 @@
 # 0012 — Async jobs, an event bus, and an audit trail
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 
 ## Context
 

@@ -1,6 +1,7 @@
 # 0019 — Kubernetes as a discovery *source*: containers read as workloads
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 
 ## Context
 

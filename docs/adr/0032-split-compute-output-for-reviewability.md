@@ -1,6 +1,7 @@
 # 0032 — Split generated compute output so a human can actually review it
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 
 ## Context
 

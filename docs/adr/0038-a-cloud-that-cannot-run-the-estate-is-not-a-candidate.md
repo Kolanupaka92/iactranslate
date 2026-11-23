@@ -1,6 +1,7 @@
 # 0038. A cloud that cannot run the estate is not a candidate
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 **Date:** 2026-08-20
 
 ## Context

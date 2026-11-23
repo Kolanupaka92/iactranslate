@@ -1,6 +1,7 @@
 # 0010 — An Infrastructure Graph IR between plan and renderers
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 
 ## Context
 

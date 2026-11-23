@@ -1,5 +1,7 @@
 # Security Policy
 
+Maintained by Sai Kolanupaka, the project's owner.
+
 ## Reporting a vulnerability
 
 **Please do not open a public issue for a security problem.**
@@ -42,9 +44,9 @@ Particularly interested in:
   proxy, your object storage permissions).
 * Missing hardening headers on endpoints that serve no user-controlled content.
 * Automated scanner output with no demonstrated impact.
-* The absence of features already documented as not yet built — SSO, RBAC beyond
-  project ownership, encryption at rest, data residency. These are known gaps on
-  the roadmap, not vulnerabilities.
+* The absence of features already documented as not yet built — teams within an
+  organisation, SAML single logout and encrypted assertions, data residency.
+  These are known gaps on the roadmap, not vulnerabilities.
 
 ## Supply chain
 

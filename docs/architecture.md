@@ -1,5 +1,7 @@
 # IaCTranslate — Architecture & Design
 
+*Author and owner: Sai Kolanupaka*
+
 Why the system is shaped the way it is. Read this to understand *how to think
 about* IaCTranslate; read the [Operations Guide](operations-guide.md) for how to
 run and operate it, and the [ADRs](adr/) for the record of individual decisions.
@@ -293,21 +295,37 @@ platform services layered on top.
   project-touching endpoints with a bearer token — real, tested stopgaps for
   the in-memory-store and zero-auth gaps, not Postgres or OIDC/RBAC
   (see [ADR 0025](adr/0025-persistent-store-and-bearer-auth.md))
-- ✅ Password change + reset, both invalidating every session; delivery left
-  as a seam rather than unverified SMTP
-  (see [ADR 0030](adr/0030-password-change-and-reset.md))
+- ✅ Password change + reset, both invalidating every session; reset links are
+  emailed over SMTP off the request thread, so timing doesn't reveal accounts
+  (see [ADR 0030](adr/0030-password-change-and-reset.md),
+  [ADR 0078](adr/0078-password-reset-email.md))
 - ✅ Rate limiting (per-IP and, on auth, per-account) plus baseline security
   headers; limits are read live so they can be retuned without a restart
   (see [ADR 0028](adr/0028-rate-limiting-and-security-headers.md))
 - ✅ Multi-tenant accounts and session auth (`IACTRANSLATE_AUTH=session`):
   per-user projects, ownership enforced on every project endpoint, cross-tenant
-  reads *and deletes* rejected as 404. Not OIDC/SSO, and no orgs/teams
+  reads *and deletes* rejected as 404
   (see [ADR 0027](adr/0027-multi-tenancy-and-session-auth.md))
 - ✅ Restart-surviving audit trail (same `IACTRANSLATE_STORE=sqlite` switch) and
   Prometheus metrics at `GET /metrics` — both event-bus subscribers, so routes
   and the pipeline carry no instrumentation; counters are process-local by
   design, and this is not distributed tracing
   (see [ADR 0026](adr/0026-persistent-audit-and-metrics.md))
+- ✅ PostgreSQL for every durable store, one shared connection pool per process
+  (see [ADR 0063](adr/0063-one-sql-layer-for-sqlite-and-postgresql.md))
+- ✅ Single sign-on: OIDC with PKCE, and SAML 2.0 with a pinned IdP
+  certificate and signature-wrapping, replay and login-CSRF defences
+  (see [ADR 0054](adr/0054-oidc-single-sign-on.md),
+  [ADR 0081](adr/0081-saml-single-sign-on.md))
+- ✅ Email verification, which also lets SSO reclaim an address someone
+  registered first (see [ADR 0079](adr/0079-email-verification.md))
+- ✅ Organisations: owner/admin/member, org projects that follow org roles, and
+  invitations that need consent and a proven address
+  (see [ADR 0080](adr/0080-organisations.md))
+- ✅ Run notifications to Slack, Teams and email, sent off the request path
+  (see [ADR 0077](adr/0077-run-notifications.md))
+- ✅ The migration backlog as Jira, Azure DevOps and ServiceNow import files
+  (see [ADR 0076](adr/0076-migration-backlog-as-import-files.md))
 
 **Not yet supported**
 

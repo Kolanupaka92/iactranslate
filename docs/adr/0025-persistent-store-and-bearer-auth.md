@@ -1,6 +1,7 @@
 # 0025 — A real persistent store and real auth, scoped to what's buildable without Docker
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 
 ## Context
 

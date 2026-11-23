@@ -1,5 +1,7 @@
 # IaCTranslate — Roadmap
 
+*Author and owner: Sai Kolanupaka*
+
 What's shipped, and what's next. "Shipped" means implemented, tested, and green
 in CI on `main`.
 
@@ -74,9 +76,9 @@ in CI on `main`.
   [ADR 0029](adr/0029-durable-artifact-workspaces.md))
 - ✅ **Password change + reset** — both evict every existing session (a change
   that leaves a stolen cookie working is theatre); tokens hashed, single-use,
-  1h TTL, no account enumeration. Reset **delivery is not implemented** — the
-  seam ships a log backend rather than unverified SMTP
-  (see [ADR 0030](adr/0030-password-change-and-reset.md))
+  1h TTL, no account enumeration. Reset links are **emailed** over SMTP
+  (see [ADR 0030](adr/0030-password-change-and-reset.md),
+  [ADR 0078](adr/0078-password-reset-email.md))
 - ✅ **Untrusted-input sanitizing** — uploaded inventory is sanitized at the
   `normalize` waist, closing a proven template injection (a VM named
   `${file("/etc/passwd")}` was evaluated by Terraform) and fixing Azure, which

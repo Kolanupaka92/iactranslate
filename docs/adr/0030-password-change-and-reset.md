@@ -1,6 +1,7 @@
 # 0030 — Password change and reset, and where we stop
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 
 ## Context
 

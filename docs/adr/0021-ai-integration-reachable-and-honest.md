@@ -1,6 +1,7 @@
 # 0021 — AI made reachable end-to-end, and always honestly labeled
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 
 ## Context
 

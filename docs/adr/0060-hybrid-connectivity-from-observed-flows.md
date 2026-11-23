@@ -1,6 +1,7 @@
 # 0060. Hybrid connectivity, from observed flows
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 **Date:** 2026-08-29
 
 ## Context

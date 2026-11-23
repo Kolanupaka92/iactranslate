@@ -1,6 +1,7 @@
 # 0072. A machine renamed at the source is moved in state, not recreated
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 **Date:** 2026-11-13
 
 ## Context

@@ -1,6 +1,7 @@
 # 0043. Encryption at rest for uploaded inventory
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 **Date:** 2026-08-27
 
 ## Context

@@ -1,6 +1,7 @@
 # 0013 — CloudFormation renders from the Infrastructure Graph, and resolves AMIs via SSM
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 
 ## Context
 

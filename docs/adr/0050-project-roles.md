@@ -1,6 +1,7 @@
 # 0050. Project roles — separation of duties, not just ownership
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 **Date:** 2026-08-28
 
 ## Context

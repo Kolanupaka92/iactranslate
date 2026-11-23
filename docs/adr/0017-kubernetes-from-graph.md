@@ -1,6 +1,7 @@
 # 0017 — Kubernetes renders VMs as KubeVirt VirtualMachines, not fabricated Deployments
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 
 ## Context
 

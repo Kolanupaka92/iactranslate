@@ -1,6 +1,7 @@
 # 0070. A machine is its VM UUID, not its name
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 **Date:** 2026-10-25
 
 ## Context

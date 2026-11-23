@@ -1,6 +1,7 @@
 # 0003 — Clouds behind a target registry
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 
 ## Context
 

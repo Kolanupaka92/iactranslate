@@ -1,6 +1,7 @@
 # 0023 — DigitalOcean target: real platform gaps stated, not papered over
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 
 ## Context
 

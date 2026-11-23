@@ -1,6 +1,7 @@
 # 0024 — Migration wave planning: two honest dependency signals, not a fabricated one
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 
 ## Context
 

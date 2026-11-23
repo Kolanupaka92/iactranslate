@@ -1,6 +1,7 @@
 # 0049. Version the API before it has clients
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 **Date:** 2026-08-28
 
 ## Context

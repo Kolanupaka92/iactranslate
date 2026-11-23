@@ -1,6 +1,7 @@
 # 0071. Callers can set the scoring weights, and a custom ranking says so
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 **Date:** 2026-10-26
 
 ## Context

@@ -1,6 +1,7 @@
 # 0005 — Templates (Jinja2) emit IaC, not the model or the AI
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 
 ## Context
 

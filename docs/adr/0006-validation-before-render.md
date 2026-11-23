@@ -1,6 +1,7 @@
 # 0006 — Validation is a hard gate before rendering
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 
 ## Context
 

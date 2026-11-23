@@ -1,6 +1,7 @@
 # 0055. Application dependencies from observed network flows
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 **Date:** 2026-08-28
 
 ## Context

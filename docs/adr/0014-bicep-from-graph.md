@@ -1,6 +1,7 @@
 # 0014 — Bicep renders from the Infrastructure Graph, subscription-scope + module
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 
 ## Context
 

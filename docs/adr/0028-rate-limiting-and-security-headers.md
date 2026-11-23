@@ -1,6 +1,7 @@
 # 0028 — Per-route rate limiting and baseline security headers
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 
 ## Context
 

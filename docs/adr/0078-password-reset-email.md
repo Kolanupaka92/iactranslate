@@ -1,6 +1,7 @@
 # 0078. Password-reset links by email
 
 **Status:** Accepted (amends [ADR 0030](0030-password-change-and-reset.md) on delivery)
+**Author:** Sai Kolanupaka
 **Date:** 2026-11-23
 
 ## Context

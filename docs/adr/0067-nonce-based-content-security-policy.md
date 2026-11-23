@@ -1,6 +1,7 @@
 # 0067. A per-request nonce CSP instead of a static one
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 **Date:** 2026-09-15
 
 ## Context

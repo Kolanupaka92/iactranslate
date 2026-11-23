@@ -1,6 +1,7 @@
 # 0016 — Terraform/Pulumi get subnet placement from the graph; a real bug this surfaced
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 
 ## Context
 

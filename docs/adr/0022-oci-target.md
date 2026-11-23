@@ -1,6 +1,7 @@
 # 0022 — OCI target: Flex shapes need a synthetic catalog key, and capabilities stay honest
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 
 ## Context
 

@@ -1,6 +1,7 @@
 # 0027 — Multi-tenancy: user accounts, session auth, and per-project ownership
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 
 ## Context
 

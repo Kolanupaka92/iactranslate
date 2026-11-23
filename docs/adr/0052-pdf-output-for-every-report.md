@@ -1,6 +1,7 @@
 # 0052. PDF for every report, without making PDF a dependency
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 **Date:** 2026-08-28
 
 ## Context

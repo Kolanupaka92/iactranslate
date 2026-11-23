@@ -1,6 +1,7 @@
 # 0047. How long the data actually takes to move
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 **Date:** 2026-08-27
 
 ## Context

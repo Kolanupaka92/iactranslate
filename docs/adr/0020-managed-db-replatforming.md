@@ -1,6 +1,7 @@
 # 0020 — Managed-database re-platforming is advisory, not automated
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 
 ## Context
 

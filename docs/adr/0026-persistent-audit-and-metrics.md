@@ -1,6 +1,7 @@
 # 0026 — A persistent audit trail and Prometheus metrics, both off the event bus
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 
 ## Context
 

@@ -1,6 +1,7 @@
 # 0062. Encryption at rest in the infrastructure we generate
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 **Date:** 2026-08-30
 
 ## Context

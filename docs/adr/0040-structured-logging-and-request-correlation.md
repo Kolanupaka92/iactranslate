@@ -1,6 +1,7 @@
 # 0040. Structured logging and request correlation
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 **Date:** 2026-08-27
 
 ## Context

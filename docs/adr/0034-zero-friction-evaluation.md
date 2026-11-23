@@ -1,6 +1,7 @@
 # 0034 — Zero-friction evaluation: `demo`, compose, and a published image
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 
 ## Context
 

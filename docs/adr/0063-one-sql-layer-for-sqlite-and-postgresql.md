@@ -1,6 +1,7 @@
 # 0063. One SQL layer for SQLite and PostgreSQL
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 **Date:** 2026-08-30
 
 ## Context

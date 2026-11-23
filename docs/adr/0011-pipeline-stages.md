@@ -1,6 +1,7 @@
 # 0011 — The pipeline runs as named, timed stages
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 
 ## Context
 

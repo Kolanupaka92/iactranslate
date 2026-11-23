@@ -1,6 +1,7 @@
 # 0008 — A policy engine for organization-specific rules
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 
 ## Context
 

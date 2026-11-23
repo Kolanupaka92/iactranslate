@@ -1,6 +1,7 @@
 # 0036 — A project workspace, not a one-way scrolling wizard
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 
 ## Context
 

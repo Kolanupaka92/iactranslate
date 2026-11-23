@@ -1,6 +1,7 @@
 # 0015 — AWS CDK renders from the Infrastructure Graph via L1 constructs, reusing CloudFormation's AMI logic
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 
 ## Context
 

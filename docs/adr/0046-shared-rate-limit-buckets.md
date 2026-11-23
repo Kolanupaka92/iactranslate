@@ -1,6 +1,7 @@
 # 0046. Shared rate-limit buckets, so the limit survives a second replica
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 **Date:** 2026-08-27
 
 ## Context

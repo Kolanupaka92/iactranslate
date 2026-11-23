@@ -1,6 +1,7 @@
 # 0079. Email verification
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 **Date:** 2026-11-23
 
 ## Context

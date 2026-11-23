@@ -1,6 +1,7 @@
 # 0053. A job queue that survives a restart
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 **Date:** 2026-08-28
 
 ## Context

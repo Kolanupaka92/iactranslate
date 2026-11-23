@@ -1,6 +1,7 @@
 # 0065. On-premises destinations, and what it means to have no price
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 **Date:** 2026-09-15
 
 ## Context

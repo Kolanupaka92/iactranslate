@@ -1,6 +1,7 @@
 # 0048. Rank the recommendation on the bill the customer pays
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 **Date:** 2026-08-28
 
 ## Context

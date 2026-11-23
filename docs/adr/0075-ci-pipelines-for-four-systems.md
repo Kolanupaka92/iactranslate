@@ -1,6 +1,7 @@
 # 0075. CI/CD pipelines for four systems, from one credentials table
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 **Date:** 2026-11-14
 
 ## Context

@@ -1,6 +1,7 @@
 # 0037 — Publish the scoring weights
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 
 ## Context
 

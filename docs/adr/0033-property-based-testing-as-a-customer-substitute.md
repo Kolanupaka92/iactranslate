@@ -1,6 +1,7 @@
 # 0033 — Property-based testing as a substitute for customer data
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 
 ## Context
 

@@ -1,6 +1,7 @@
 # 0057. Workload identity, without permissions
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 **Date:** 2026-08-28
 
 ## Context

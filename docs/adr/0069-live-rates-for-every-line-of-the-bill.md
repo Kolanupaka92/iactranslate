@@ -1,6 +1,7 @@
 # 0069. Live rates for every line of the bill, not just compute
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 **Date:** 2026-10-21
 
 ## Context

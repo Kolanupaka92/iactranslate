@@ -1,6 +1,7 @@
 # 0073. An opt-in `for_each` layout, shipped with its own migration
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 **Date:** 2026-11-13
 
 ## Context

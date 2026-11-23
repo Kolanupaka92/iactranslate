@@ -1,11 +1,13 @@
 # docs/
 
+*Author and owner: Sai Kolanupaka*
+
 | File | What it is |
 |---|---|
 | [`operations-guide.md`](operations-guide.md) | **Operations reference** — running, extending, operating, troubleshooting; CLI/API/config; performance & security. The comprehensive source of truth. |
 | [`architecture.md`](architecture.md) | **Architecture & Design** — design principles, the canonical model, request-flow diagrams, scope, assumptions, "why not …". |
 | [`adr/`](adr/) | **Architecture Decision Records** — the *why* behind load-bearing decisions. |
-| [`deployment.md`](deployment.md) | **Deployment & Execution** — execution model, stages/state machine, single-node (shipped) + a reference architecture for scale. |
+| [`deployment.md`](deployment.md) | **Deployment & Execution** — execution model, the hosted deployment and its step-by-step procedures (MOPs: deploy, roll back, rotate secrets, enable SAML, logs), and the scale-out architecture. |
 | [`roadmap.md`](roadmap.md) | **Roadmap** — shipped vs planned. |
 
 The short entry point is the [repo README](../README.md).
@@ -20,8 +22,8 @@ no login, works for anyone (investors, prospects, partners):
 | **Documentation** (operations · architecture · deployment · roadmap · ADRs) | https://iactranslate-docs.vercel.app |
 | **Investor overview** | https://iactranslate-docs.vercel.app/overview |
 
-Redeploy after editing any doc or the deck: `bash scripts/deploy_public_site.sh`
-(needs the `vercel` CLI logged in). This is the recommended way to share
+The site redeploys automatically on every push to `main` (Vercel Git integration);
+`bash scripts/deploy_public_site.sh` deploys it by hand if ever needed. This is the recommended way to share
 externally — claude.ai Artifacts published via Claude Code can't be made fully
 public.
 

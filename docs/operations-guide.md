@@ -1,5 +1,7 @@
 # IaCTranslate — Operations Guide
 
+*Author and owner: Sai Kolanupaka*
+
 > The comprehensive reference for running, extending, operating, and
 > troubleshooting IaCTranslate. Read the **Summary** and **Architecture** first, then
 > jump to whichever How-To or Troubleshooting section you need. For the *why* behind

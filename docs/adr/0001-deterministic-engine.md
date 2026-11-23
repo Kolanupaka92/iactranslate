@@ -1,6 +1,7 @@
 # 0001 — A deterministic engine; AI is optional and gated
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 
 ## Context
 

@@ -1,6 +1,7 @@
 # 0066. A run lease, claimed in one statement, for concurrent runs
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 **Date:** 2026-09-15
 
 ## Context

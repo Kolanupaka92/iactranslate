@@ -1,6 +1,7 @@
 # 0031 — Sanitize untrusted inventory at the normalize boundary
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 
 ## Context
 

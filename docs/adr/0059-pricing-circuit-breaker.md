@@ -1,6 +1,7 @@
 # 0059. A circuit breaker on live pricing, and honest degradation
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 **Date:** 2026-08-29
 
 ## Context

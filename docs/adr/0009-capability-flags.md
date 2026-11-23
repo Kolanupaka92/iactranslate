@@ -1,6 +1,7 @@
 # 0009 — Targets advertise capability flags
 
 **Status:** Accepted
+**Author:** Sai Kolanupaka
 
 ## Context
 
