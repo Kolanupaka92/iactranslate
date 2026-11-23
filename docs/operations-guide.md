@@ -542,7 +542,9 @@ All env vars (see `src/iactranslate/config.py`):
 | `IACTRANSLATE_APP_URL` | `http://localhost:3000` | Public origin of the web app, used to build the password-reset link. The API's own origin is usually wrong here — the reset form lives in the frontend. |
 | `IACTRANSLATE_NOTIFY_SLACK_WEBHOOK` | (none) | Slack incoming-webhook URL. Each finished run posts there (ADR 0077). Must be `https://`. |
 | `IACTRANSLATE_NOTIFY_TEAMS_WEBHOOK` | (none) | Microsoft Teams Workflows URL ("When a Teams webhook request is received"); receives an Adaptive Card. Must be `https://`. |
-| `IACTRANSLATE_SMTP_HOST` / `_PORT` / `_USER` / `_PASSWORD` | — / 587 (465 with `ssl`) | Mail relay for email notifications. A user without a password is refused at startup. |
+| `IACTRANSLATE_SMTP_HOST` / `_PORT` / `_USER` / `_PASSWORD` | — / 587 (465 with `ssl`) | Mail relay, shared by email notifications and password-reset email. A user without a password is refused at startup. For Gmail: `smtp.gmail.com`, your address as user, and an App Password (needs 2-Step Verification). |
+| `IACTRANSLATE_RESET_EMAIL_FROM` | (none) | From address for password-reset email. Setting it, with the SMTP settings, turns reset email on (ADR 0078). A relay set up only for notifications doesn't start emailing users. Set without `SMTP_HOST`, the API refuses to start. |
+| `IACTRANSLATE_RESET_LINK_TO_LOG` | `0` | Without reset email, `1` writes the reset link to the log for a single operator to pass on. Off by default: a reset token in a log is a credential in a log. |
 | `IACTRANSLATE_SMTP_TLS` | `starttls` | `starttls`, `ssl` (implicit TLS) or `none`. `none` is allowed only to a relay on this machine without a login. |
 | `IACTRANSLATE_NOTIFY_EMAIL_FROM` / `_TO` | (none) | Sender, and comma-separated recipients, for email notifications. Both are required with `SMTP_HOST`. |
 | `IACTRANSLATE_NOTIFY_ON` | `completed,failed` | Which run outcomes notify. `failed` gives alerts only. |

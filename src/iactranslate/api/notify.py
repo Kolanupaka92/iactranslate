@@ -38,8 +38,6 @@ import json
 import logging
 import os
 import queue
-import smtplib
-import ssl
 import threading
 import time
 import urllib.error
@@ -50,6 +48,14 @@ from email.message import EmailMessage
 from typing import Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from .events import Event, EventBus, EventType
+from .mail import (
+    ENV_SMTP_HOST,
+    LOCAL_HOSTS,
+    DeliveryError,
+    MailConfigError,
+    SmtpTransport,
+    transport_from_env,
+)
 
 logger = logging.getLogger("iactranslate.notify")
 
@@ -57,11 +63,6 @@ ENV_SLACK = "IACTRANSLATE_NOTIFY_SLACK_WEBHOOK"
 ENV_TEAMS = "IACTRANSLATE_NOTIFY_TEAMS_WEBHOOK"
 ENV_EMAIL_TO = "IACTRANSLATE_NOTIFY_EMAIL_TO"
 ENV_EMAIL_FROM = "IACTRANSLATE_NOTIFY_EMAIL_FROM"
-ENV_SMTP_HOST = "IACTRANSLATE_SMTP_HOST"
-ENV_SMTP_PORT = "IACTRANSLATE_SMTP_PORT"
-ENV_SMTP_USER = "IACTRANSLATE_SMTP_USER"
-ENV_SMTP_PASSWORD = "IACTRANSLATE_SMTP_PASSWORD"  # nosec B105 — an env var name, not a password
-ENV_SMTP_TLS = "IACTRANSLATE_SMTP_TLS"
 ENV_ON = "IACTRANSLATE_NOTIFY_ON"
 ENV_DETAIL = "IACTRANSLATE_NOTIFY_DETAIL"
 
@@ -73,20 +74,11 @@ _QUEUE_SIZE = 200
 _ATTEMPTS = 3
 #: Error text included under IACTRANSLATE_NOTIFY_DETAIL is cut to this length.
 _ERROR_CHARS = 500
-_LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
+_LOCAL_HOSTS = LOCAL_HOSTS
 
 
-class NotifyConfigError(ValueError):
-    """The notification environment is set but cannot work as written."""
-
-
-class DeliveryError(RuntimeError):
-    """One channel failed to deliver one notification."""
-
-    def __init__(self, message: str, retryable: bool = False, retry_after: Optional[float] = None):
-        super().__init__(message)
-        self.retryable = retryable
-        self.retry_after = retry_after
+#: Kept under its own name for callers; the same error as a bad SMTP setting.
+NotifyConfigError = MailConfigError
 
 
 @dataclass
@@ -209,15 +201,12 @@ class EmailChannel:
     name = "email"
 
     def __init__(self, settings: SmtpSettings) -> None:
-        if settings.tls not in ("starttls", "ssl", "none"):
-            raise NotifyConfigError(f"{ENV_SMTP_TLS} must be starttls, ssl or none")
-        if settings.tls == "none" and (settings.user or settings.host not in _LOCAL_HOSTS):
-            raise NotifyConfigError(
-                f"{ENV_SMTP_TLS}=none sends mail (and any password) in clear text; it is only "
-                "allowed to a relay on this machine without a login")
         if not settings.recipients:
             raise NotifyConfigError(f"{ENV_EMAIL_TO} names no recipients")
         self.settings = settings
+        # Validates TLS and credentials the same way reset email does.
+        self.transport = SmtpTransport(host=settings.host, port=settings.port, user=settings.user,
+                                       password=settings.password, tls=settings.tls)
 
     def message(self, n: Notification) -> EmailMessage:
         msg = EmailMessage()
@@ -228,24 +217,7 @@ class EmailChannel:
         return msg
 
     def send(self, n: Notification) -> None:
-        s = self.settings
-        context = ssl.create_default_context()
-        try:
-            if s.tls == "ssl":
-                client = smtplib.SMTP_SSL(s.host, s.port, timeout=_HTTP_TIMEOUT, context=context)
-            else:
-                client = smtplib.SMTP(s.host, s.port, timeout=_HTTP_TIMEOUT)
-            with client:
-                if s.tls == "starttls":
-                    client.starttls(context=context)
-                if s.user:
-                    client.login(s.user, s.password or "")
-                client.send_message(self.message(n))
-        except smtplib.SMTPResponseException as e:
-            # 4xx is "try again later" in SMTP; 5xx is permanent.
-            raise DeliveryError(f"SMTP {e.smtp_code}", retryable=400 <= e.smtp_code < 500) from None
-        except (smtplib.SMTPException, OSError) as e:
-            raise DeliveryError(f"SMTP: {type(e).__name__}", retryable=True) from None
+        self.transport.send(self.message(n))
 
 
 def channels_from_env(env: Mapping[str, str] = os.environ) -> List[object]:
@@ -258,22 +230,20 @@ def channels_from_env(env: Mapping[str, str] = os.environ) -> List[object]:
         channels.append(SlackChannel(get(ENV_SLACK)))
     if get(ENV_TEAMS):
         channels.append(TeamsChannel(get(ENV_TEAMS)))
-    if get(ENV_EMAIL_TO) or get(ENV_SMTP_HOST):
-        if not (get(ENV_EMAIL_TO) and get(ENV_SMTP_HOST) and get(ENV_EMAIL_FROM)):
+    # SMTP alone does not enable notification email: the relay may be there
+    # only for password resets. Recipients are what turn this channel on.
+    if get(ENV_EMAIL_TO):
+        transport = transport_from_env(env)
+        if transport is None or not get(ENV_EMAIL_FROM):
             raise NotifyConfigError(
                 f"email notifications need {ENV_SMTP_HOST}, {ENV_EMAIL_FROM} and {ENV_EMAIL_TO}")
-        tls = (get(ENV_SMTP_TLS) or "starttls").lower()
-        try:
-            port = int(get(ENV_SMTP_PORT) or (465 if tls == "ssl" else 587))
-        except ValueError:
-            raise NotifyConfigError(f"{ENV_SMTP_PORT} must be a number") from None
-        if get(ENV_SMTP_USER) and not get(ENV_SMTP_PASSWORD):
-            raise NotifyConfigError(f"{ENV_SMTP_USER} is set without {ENV_SMTP_PASSWORD}")
         channels.append(EmailChannel(SmtpSettings(
-            host=get(ENV_SMTP_HOST), port=port, sender=get(ENV_EMAIL_FROM),
+            host=transport.host, port=transport.port, sender=get(ENV_EMAIL_FROM),
             recipients=[r.strip() for r in get(ENV_EMAIL_TO).split(",") if r.strip()],
-            user=get(ENV_SMTP_USER) or None, password=get(ENV_SMTP_PASSWORD) or None, tls=tls,
+            user=transport.user, password=transport.password, tls=transport.tls,
         )))
+    else:
+        transport_from_env(env)  # still refuse a broken SMTP setting at startup
     return channels
 
 

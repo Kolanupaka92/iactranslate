@@ -85,5 +85,6 @@ Format: [Michael Nygard's ADR template](https://cognitect.com/blog/2011/11/15/do
 | [0075](0075-ci-pipelines-for-four-systems.md) | GitOps pipelines for GitHub Actions, GitLab CI, Azure DevOps and Jenkins from one credentials table per cloud; OCI/DigitalOcean/Nutanix/Proxmox gain credentials, and renderers with their own tooling are refused | Accepted |
 | [0076](0076-migration-backlog-as-import-files.md) | The assessment and wave plan as Jira, Azure DevOps and ServiceNow import files, in each tool's documented format — files, not API calls | Accepted |
 | [0077](0077-run-notifications.md) | Slack, Teams and email when a run ends: operator-configured, off the request path, outcome figures by default and names only on opt-in | Accepted |
+| [0078](0078-password-reset-email.md) | Reset links emailed over the shared SMTP transport, off the request thread so timing doesn't reveal accounts, with forgot/reset pages in the console | Accepted |
 
 See also the [Architecture & Design](../architecture.md) overview.

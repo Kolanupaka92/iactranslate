@@ -6,7 +6,6 @@ What is not exercised here is a real vendor endpoint and a TLS handshake.
 """
 import json
 import socket
-import socketserver
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -67,53 +66,6 @@ def hook():
     h = _Hook()
     yield h
     h.close()
-
-
-class _Smtp(socketserver.ThreadingTCPServer):
-    """Just enough SMTP for smtplib.send_message: EHLO, MAIL, RCPT, DATA, QUIT."""
-
-    allow_reuse_address = True
-    daemon_threads = True
-
-    def __init__(self):
-        self.messages = []
-        server = self
-
-        class Handler(socketserver.StreamRequestHandler):
-            def handle(self):
-                self.wfile.write(b"220 localhost test\r\n")
-                envelope = {"rcpt": []}
-                while True:
-                    line = self.rfile.readline().decode()
-                    if not line:
-                        return
-                    verb = line[:4].upper()
-                    if verb in ("EHLO", "HELO"):
-                        self.wfile.write(b"250 localhost\r\n")
-                    elif verb == "MAIL":
-                        envelope["from"] = line
-                        self.wfile.write(b"250 ok\r\n")
-                    elif verb == "RCPT":
-                        envelope["rcpt"].append(line)
-                        self.wfile.write(b"250 ok\r\n")
-                    elif verb == "DATA":
-                        self.wfile.write(b"354 go\r\n")
-                        data = []
-                        while True:
-                            chunk = self.rfile.readline().decode()
-                            if chunk in (".\r\n", ""):
-                                break
-                            data.append(chunk)
-                        server.messages.append({"data": "".join(data), **envelope})
-                        self.wfile.write(b"250 queued\r\n")
-                    elif verb == "QUIT":
-                        self.wfile.write(b"221 bye\r\n")
-                        return
-                    else:
-                        self.wfile.write(b"502 no\r\n")
-
-        super().__init__(("127.0.0.1", 0), Handler)
-        threading.Thread(target=self.serve_forever, daemon=True).start()
 
 
 def _note(ok=True):
@@ -184,17 +136,12 @@ def test_an_unreachable_channel_reports_instead_of_raising():
     assert result["slack"].startswith("unreachable")
 
 
-def test_email_is_delivered_over_smtp():
-    server = _Smtp()
-    try:
-        channel = EmailChannel(SmtpSettings(host="127.0.0.1", port=server.server_address[1],
-                                            sender="iac@example.com", recipients=["ops@example.com", "b@example.com"],
-                                            tls="none"))
-        assert Notifier([channel]).send_now(_note()) == {"email": None}
-    finally:
-        server.shutdown()
-        server.server_close()
-    (msg,) = server.messages
+def test_email_is_delivered_over_smtp(smtp_server):
+    channel = EmailChannel(SmtpSettings(host="127.0.0.1", port=smtp_server.server_address[1],
+                                        sender="iac@example.com", recipients=["ops@example.com", "b@example.com"],
+                                        tls="none"))
+    assert Notifier([channel]).send_now(_note()) == {"email": None}
+    (msg,) = smtp_server.messages
     assert "Subject: [IaCTranslate] Translation completed: project p1" in msg["data"]
     assert "Workloads: 3" in msg["data"] and len(msg["rcpt"]) == 2
 

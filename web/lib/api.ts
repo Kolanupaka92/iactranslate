@@ -345,6 +345,23 @@ export function login(email: string, password: string): Promise<Identity> {
   });
 }
 
+/** Always resolves the same way whether or not the account exists. */
+export function forgotPassword(email: string): Promise<{ status: string }> {
+  return request("/auth/forgot-password", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+}
+
+export function resetPassword(token: string, password: string): Promise<void> {
+  return request("/auth/reset-password", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token, password }),
+  });
+}
+
 export function logout(): Promise<void> {
   return request("/auth/logout", { method: "POST" });
 }
