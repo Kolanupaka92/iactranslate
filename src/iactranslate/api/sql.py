@@ -47,6 +47,13 @@ from typing import Any, Iterator, List, Optional, Sequence, Tuple
 #: `postgres` reads `IACTRANSLATE_DATABASE_URL`.
 ENV_BACKEND = "IACTRANSLATE_STORE"
 ENV_DSN = "IACTRANSLATE_DATABASE_URL"
+#: Connections per process, shared by every store. Five stores each opening
+#: their own pool of 10 meant one instance could hold 50 connections, and a
+#: Cloud SQL db-f1-micro allows 25 (3 reserved). New revisions then could not
+#: start while old instances held theirs. Size it so
+#: (max instances + 1 during a rollout) x this stays under the server's limit.
+ENV_POOL_SIZE = "IACTRANSLATE_DB_POOL_SIZE"
+_DEFAULT_POOL_SIZE = 4
 
 _PLACEHOLDER = re.compile(r"\?")
 #: A table name may only ever be a plain SQL identifier. Table names cannot be
@@ -215,7 +222,7 @@ class Database:
 
     def close(self) -> None:
         if self.is_postgres:
-            self._pool.close()
+            _release_pool(self._dsn)
         else:
             self._conn.close()
 
@@ -244,7 +251,21 @@ class _Tx:
         return rows[0] if rows else None
 
 
+#: dsn -> [pool, users]. One pool per database per process.
+_POOLS: dict = {}
+_POOLS_LOCK = threading.Lock()
+
+
+def _pool_size() -> int:
+    try:
+        size = int(os.getenv(ENV_POOL_SIZE, str(_DEFAULT_POOL_SIZE)))
+    except ValueError:
+        return _DEFAULT_POOL_SIZE
+    return max(size, 1)
+
+
 def _postgres_pool(dsn: str):
+    """The process's shared pool for `dsn`, opened on first use."""
     try:
         from psycopg_pool import ConnectionPool
     except ImportError as exc:  # pragma: no cover - exercised by the message test
@@ -252,7 +273,26 @@ def _postgres_pool(dsn: str):
             f"{ENV_BACKEND}=postgres needs psycopg. Install the extra: "
             "pip install 'iactranslate[postgres]'"
         ) from exc
-    return ConnectionPool(dsn, min_size=1, max_size=10, open=True)
+    with _POOLS_LOCK:
+        entry = _POOLS.get(dsn)
+        if entry is None or entry[0].closed:
+            size = _pool_size()
+            entry = [ConnectionPool(dsn, min_size=1, max_size=size, open=True), 0]
+            _POOLS[dsn] = entry
+        entry[1] += 1
+        return entry[0]
+
+
+def _release_pool(dsn: str) -> None:
+    """Drop one user; the pool closes when the last store using it closes."""
+    with _POOLS_LOCK:
+        entry = _POOLS.get(dsn)
+        if entry is None:
+            return
+        entry[1] -= 1
+        if entry[1] <= 0:
+            entry[0].close()
+            del _POOLS[dsn]
 
 
 def backend() -> str:

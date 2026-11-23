@@ -530,6 +530,7 @@ All env vars (see `src/iactranslate/config.py`):
 | `IACTRANSLATE_MAX_VMS` | `20000` | Inventory size cap → `400`. |
 | `IACTRANSLATE_MAX_PROJECTS` | `200` | Store capacity cap; oldest evicted (temp dirs deleted). |
 | `IACTRANSLATE_STORE` | `memory` | `memory` (dies on restart, zero setup) or `sqlite` (persists project metadata **and the audit trail** to `IACTRANSLATE_DB_PATH`, surviving a restart — see ADR 0025, 0026). |
+| `IACTRANSLATE_DB_POOL_SIZE` | `4` | PostgreSQL connections per API process, shared by every store. Keep (max instances + 1) × this under the server's connection limit. A Cloud SQL db-f1-micro allows 25, 3 of them reserved. |
 | `IACTRANSLATE_DB_PATH` | `./iactranslate.db` | SQLite file path when `IACTRANSLATE_STORE=sqlite`. |
 | `IACTRANSLATE_API_KEY` | (none) | Set to require `Authorization: Bearer <key>` on every project-touching endpoint. Unset = no auth (today's default). Not OIDC/SSO — see ADR 0025. |
 | `IACTRANSLATE_AUTH` | `none` | `session` enables multi-tenant user accounts, login, and per-user project isolation (ADR 0027). Requires `IACTRANSLATE_STORE=sqlite`. |
