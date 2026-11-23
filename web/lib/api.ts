@@ -490,3 +490,18 @@ export function acceptInvitationLink(token: string): Promise<Org> {
 export function moveProject(projectId: string, orgId: string | null): Promise<ProjectSummary> {
   return request(`/projects/${projectId}/org`, { method: "PUT", ...json({ org_id: orgId }) });
 }
+
+// --- sign-in methods (ADR 0081) -------------------------------------------------
+
+export interface AuthMethods {
+  password: boolean;
+  saml: boolean;
+  oidc: boolean;
+}
+
+export function authMethods(): Promise<AuthMethods> {
+  return request("/auth/methods");
+}
+
+/** A full-page navigation, not a fetch: the IdP sign-in is a browser flow. */
+export const samlLoginUrl = `${API_BASE}/auth/saml/login`;

@@ -545,6 +545,11 @@ All env vars (see `src/iactranslate/config.py`):
 | `IACTRANSLATE_NOTIFY_TEAMS_WEBHOOK` | (none) | Microsoft Teams Workflows URL ("When a Teams webhook request is received"); receives an Adaptive Card. Must be `https://`. |
 | `IACTRANSLATE_SMTP_HOST` / `_PORT` / `_USER` / `_PASSWORD` | — / 587 (465 with `ssl`) | Mail relay, shared by email notifications and password-reset email. A user without a password is refused at startup. For Gmail: `smtp.gmail.com`, your address as user, and an App Password (needs 2-Step Verification). |
 | `IACTRANSLATE_RESET_EMAIL_FROM` | (none) | From address for account email: password resets (ADR 0078) and sign-up confirmation (ADR 0079). Setting it, with the SMTP settings, turns account email on. A relay set up only for notifications doesn't start emailing users. Set without `SMTP_HOST`, the API refuses to start. |
+| `IACTRANSLATE_SAML_IDP_ENTITY_ID` | (none) | Turns SAML sign-in on (ADR 0081); needs the rows below too, and `pip install 'iactranslate[saml]'` (in the image already). |
+| `IACTRANSLATE_SAML_IDP_SSO_URL` | (none) | The IdP's HTTP-Redirect sign-in URL. https only. |
+| `IACTRANSLATE_SAML_IDP_CERT` / `_CERT_FILE` | (none) | The IdP's signing certificate(s), PEM. Pinned: list both during a key rotation. An expired certificate fails sign-in. |
+| `IACTRANSLATE_SAML_EMAIL_DOMAINS` | (none) | Comma-separated domains the IdP may assert. Required. Any other address is refused, so the IdP can't sign in as, say, a personal Gmail account. |
+| `IACTRANSLATE_SAML_SP_ENTITY_ID` / `_ACS_URL` | `{APP_URL}/api/v1/auth/saml/metadata` / `…/acs` | This service's identity and where the IdP posts back. Register them from `GET /auth/saml/metadata`. |
 | `IACTRANSLATE_REQUIRE_VERIFIED_EMAIL` | `0` | `1` refuses to create projects (403) until the account's email is verified. Off by default, because accounts from before verification existed start unverified. Existing projects are unaffected (ADR 0079). |
 | `IACTRANSLATE_RESET_LINK_TO_LOG` | `0` | Without reset email, `1` writes the reset link to the log for a single operator to pass on. Off by default: a reset token in a log is a credential in a log. |
 | `IACTRANSLATE_SMTP_TLS` | `starttls` | `starttls`, `ssl` (implicit TLS) or `none`. `none` is allowed only to a relay on this machine without a login. |
@@ -591,6 +596,10 @@ All env vars (see `src/iactranslate/config.py`):
 | `POST` | `/invitations/accept` | `{token}` from the emailed link; must be signed in as the invited address. Also verifies it. |
 | `POST` | `/invitations/{id}/accept` · `/decline` | Respond in the app; accepting needs a verified address. |
 | `PUT` | `/projects/{id}/org` | `{org_id}` or `null`: move a project into an org you're in, or back to personal. Project owner only. |
+| `GET` | `/auth/methods` | Public: which sign-in methods this deployment offers (`password`, `saml`, `oidc`). |
+| `GET` | `/auth/saml/metadata` | This service provider's SAML metadata, to register with the IdP. |
+| `GET` | `/auth/saml/login` | Starts SAML sign-in: 302 to the IdP, with the request bound to this browser by a cookie. |
+| `POST` | `/auth/saml/acs` | The IdP posts the signed response here. 303 to the console, or to `/console?sso=failed` (reason in the log only). |
 
 Error contract: 4xx return `{"detail": "..."}` (422 validation returns `{"detail":{"message","issues"[]}}`);
 unexpected errors return a generic `500` (details are logged server-side, never leaked).

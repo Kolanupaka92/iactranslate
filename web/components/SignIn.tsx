@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
-import { ApiError, forgotPassword, login, register } from "@/lib/api";
+import { ApiError, authMethods, forgotPassword, login, register, samlLoginUrl } from "@/lib/api";
 
 type Mode = "login" | "register" | "forgot";
 
@@ -23,6 +23,23 @@ export default function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resetSent, setResetSent] = useState(false);
+  const [sso, setSso] = useState(false);
+
+  useEffect(() => {
+    void authMethods()
+      .then((m) => setSso(m.saml))
+      .catch(() => setSso(false));
+    // The SAML endpoint sends a refused sign-in back here with ?sso=failed.
+    // The reason is in the server log; the page says only that it failed.
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("sso") === "failed") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setError("Single sign-on didn't complete. Try again, or ask your administrator.");
+      params.delete("sso");
+      const rest = params.toString();
+      window.history.replaceState(null, "", window.location.pathname + (rest ? `?${rest}` : ""));
+    }
+  }, []);
 
   const switchTo = (next: Mode) => {
     setMode(next);
@@ -59,6 +76,18 @@ export default function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
           ? "Enter your account email and we'll send a link to choose a new password."
           : "Your projects and inventory are private to your account."}
       </p>
+
+      {sso && mode === "login" && (
+        <>
+          <a
+            href={samlLoginUrl}
+            className="mt-5 block rounded border border-slate-300 px-3 py-2 text-center text-sm font-medium text-slate-800 hover:border-slate-900"
+          >
+            Continue with single sign-on
+          </a>
+          <p className="mt-4 text-center text-xs text-slate-400">or with email and password</p>
+        </>
+      )}
 
       {mode === "forgot" && resetSent ? (
         <p role="status" className="mt-5 rounded bg-emerald-50 px-3 py-2 text-sm text-emerald-800">

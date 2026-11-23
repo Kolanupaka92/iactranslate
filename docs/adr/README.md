@@ -88,5 +88,6 @@ Format: [Michael Nygard's ADR template](https://cognitect.com/blog/2011/11/15/do
 | [0078](0078-password-reset-email.md) | Reset links emailed over the shared SMTP transport, off the request thread so timing doesn't reveal accounts, with forgot/reset pages in the console | Accepted |
 | [0079](0079-email-verification.md) | Email verification: single-use link at sign-up confirmed by a click, reset/SSO as proof, optional project gate, SSO reclaims squatted unverified accounts | Accepted |
 | [0080](0080-organisations.md) | Organisations: owner/admin/member, org projects follow org roles (highest role wins), consent-and-proof invitations, last-owner protection, project grants read from the database on every check | Accepted |
+| [0081](0081-saml-single-sign-on.md) | SAML 2.0 SP on signxml (not python3-saml/xmlsec): pinned cert, signed-copy-only reads, one assertion, no DTDs, browser-bound single-use requests, trusted email domains | Accepted |
 
 See also the [Architecture & Design](../architecture.md) overview.

@@ -27,7 +27,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from fastapi import APIRouter, Body, Depends, FastAPI, HTTPException, Response, UploadFile
+from fastapi import APIRouter, Body, Depends, FastAPI, Form, HTTPException, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 from pydantic import BaseModel, field_validator
@@ -61,6 +61,7 @@ from ..sources import list_sources, resolve_source
 from ..targets import get_target, list_targets
 from ..validation import PlanValidationError
 from . import oidc as _oidc
+from . import saml as _saml
 from .accounts import (
     SESSION_COOKIE,
     EmailTaken,
@@ -147,6 +148,9 @@ orgs = create_org_store()
 # SSO. `None` unless IACTRANSLATE_OIDC_ISSUER is set (ADR 0054).
 sso_config = _oidc.config_from_env()
 sso_logins = _oidc.LoginStore()
+# SAML. `None` unless IACTRANSLATE_SAML_IDP_ENTITY_ID is set (ADR 0081).
+saml_config = _saml.config_from_env()
+saml_requests = _saml.create_request_store() if saml_config is not None else None
 
 # Replay protection for retried writes (ADR 0051).
 idempotency = IdempotencyStore()
@@ -1714,6 +1718,102 @@ def move_project(pid: str, body: MoveProject, user: Optional[User] = Depends(cur
     return _summary(project)
 
 
+def _federated_user(accts, email: str, proven: bool) -> User:
+    """The account an identity provider signs in as, shared by OIDC and SAML."""
+    user = accts.get_user_by_email(email)
+    if user is None:
+        # Just-in-time provisioning. The password is random and never used —
+        # an SSO account must not also be reachable by password, or the identity
+        # provider stops being the only way in.
+        user = accts.create_user(email, secrets.token_urlsafe(32))
+        logger.info("provisioned user from sso", extra={"user_id": user.id})
+    elif proven and not user.email_verified:
+        # Pre-account takeover: anyone could have registered this address with
+        # a password before its real owner first signed in with SSO. Linking
+        # would hand the owner an account the squatter can still open. The
+        # provider has just proven ownership, so the unproven password and
+        # every session it made are revoked.
+        accts.set_password(user.id, secrets.token_urlsafe(32))
+        accts.delete_sessions_for_user(user.id)
+        logger.warning("sso claimed an unverified account; its password and sessions were revoked",
+                       extra={"user_id": user.id})
+    # Only the provider's assertion counts. With trust_unverified_email the
+    # operator accepted an unasserted address, which proves nothing.
+    if proven:
+        accts.mark_email_verified(user.id)
+    return accts.get_user(user.id)
+
+
+@router.get("/auth/methods")
+def auth_methods() -> dict:
+    """How to sign in here, for the sign-in screen. Public: it says which
+    buttons to draw, nothing about any account."""
+    return {"password": accounts is not None,
+            "saml": accounts is not None and saml_config is not None,
+            "oidc": accounts is not None and sso_config is not None}
+
+
+def _app_url(path: str) -> str:
+    return os.getenv("IACTRANSLATE_APP_URL", "http://localhost:3000").rstrip("/") + path
+
+
+def _require_saml():
+    if saml_config is None:
+        raise HTTPException(404, "SAML single sign-on is not configured on this deployment")
+    return saml_config
+
+
+@router.get("/auth/saml/metadata")
+def saml_metadata() -> Response:
+    """This service provider's metadata, for registering it with the IdP."""
+    return Response(_saml.sp_metadata(_require_saml()), media_type="application/samlmetadata+xml")
+
+
+@router.get("/auth/saml/login", dependencies=[Depends(limit_auth)])
+def saml_login() -> Response:
+    """Send the browser to the IdP with a fresh request.
+
+    The request id goes in a cookie as well as the database, so the response
+    is accepted only in the browser that asked for it (no login CSRF).
+    SameSite=None because the IdP's POST back is cross-site.
+    """
+    config = _require_saml()
+    _require_accounts()
+    request_id = saml_requests.begin()
+    response = Response(status_code=302, headers={"Location": _saml.redirect_url(config, request_id)})
+    response.set_cookie(_saml.REQUEST_COOKIE, request_id, max_age=_saml.REQUEST_TTL_SECONDS,
+                        httponly=True, secure=True, samesite="none", path="/")
+    return response
+
+
+@router.post("/auth/saml/acs", dependencies=[Depends(limit_auth)])
+def saml_acs(request: Request, SAMLResponse: str = Form(""), RelayState: str = Form("")) -> Response:  # noqa: N803 — SAML's field names
+    """The IdP posts the signed response here. Success sets the session and
+    returns the browser to the console. Failure returns it to sign-in with a
+    generic message; the reason goes to the log, where it helps the operator
+    without telling a prober which check they tripped."""
+    config = _require_saml()
+    accts = _require_accounts()
+    request_id = request.cookies.get(_saml.REQUEST_COOKIE, "")
+    try:
+        # Single use before anything else, so a replay can't race the original.
+        if not saml_requests.consume(request_id):
+            raise _saml.SamlError("no outstanding request for this browser (expired, replayed or unsolicited)")
+        name_id, email = _saml.validate_response(config, SAMLResponse, request_id)
+    except _saml.SamlError as e:
+        logger.warning("saml response rejected", extra={"reason": str(e)})
+        failed = Response(status_code=303, headers={"Location": _app_url("/console?sso=failed")})
+        failed.delete_cookie(_saml.REQUEST_COOKIE, path="/")
+        return failed
+
+    user = _federated_user(accts, email, proven=True)
+    response = Response(status_code=303, headers={"Location": _app_url("/console")})
+    response.delete_cookie(_saml.REQUEST_COOKIE, path="/")
+    _set_session_cookie(response, accts.create_session(user.id))
+    logger.info("saml login", extra={"user_id": user.id, "subject": name_id})
+    return response
+
+
 @router.get("/auth/sso/login", dependencies=[Depends(limit_auth)])
 def sso_login(request: Request) -> Response:
     """Start the authorization-code flow: redirect the browser to the provider."""
@@ -1760,28 +1860,7 @@ def sso_callback(request: Request, code: str = "", state: str = "",
         logger.warning("sso callback rejected", exc_info=True, extra={"reason": str(e)})
         raise HTTPException(401, "single sign-on failed") from e
 
-    proven = claims.get("email_verified") is True
-    user = accts.get_user_by_email(email)
-    if user is None:
-        # Just-in-time provisioning. The password is random and never used —
-        # an SSO account must not also be reachable by password, or the identity
-        # provider stops being the only way in.
-        user = accts.create_user(email, secrets.token_urlsafe(32))
-        logger.info("provisioned user from sso", extra={"user_id": user.id})
-    elif proven and not user.email_verified:
-        # Pre-account takeover: anyone could have registered this address with
-        # a password before its real owner first signed in with SSO. Linking
-        # would hand the owner an account the squatter can still open. The
-        # provider has just proven ownership, so the unproven password and
-        # every session it made are revoked.
-        accts.set_password(user.id, secrets.token_urlsafe(32))
-        accts.delete_sessions_for_user(user.id)
-        logger.warning("sso claimed an unverified account; its password and sessions were revoked",
-                       extra={"user_id": user.id})
-    # Only the provider's assertion counts. With trust_unverified_email the
-    # operator accepted an unasserted address, which proves nothing.
-    if proven:
-        accts.mark_email_verified(user.id)
+    user = _federated_user(accts, email, proven=claims.get("email_verified") is True)
 
     response = JSONResponse(
         status_code=200, content={"id": user.id, "email": user.email, "via": "sso"}
