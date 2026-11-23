@@ -4,5 +4,18 @@
   "installCommand": "python3 -m pip install --quiet --target .pydeps markdown",
   "buildCommand": "PYTHONPATH=.pydeps:src python3 scripts/build_public_site.py public",
   "outputDirectory": "public",
-  "cleanUrls": true
+  "cleanUrls": true,
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [
+        {
+          "type": "host",
+          "value": "iactranslate-docs.vercel.app"
+        }
+      ],
+      "destination": "https://docs.iactranslate.com/:path*",
+      "permanent": true
+    }
+  ]
 }

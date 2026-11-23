@@ -42,7 +42,11 @@ def main(out: Path) -> None:
     # site is the one visitors can open.
     deck = deck.replace("https://claude.ai/code/artifact/ecc2a04b-904e-431b-9ab0-7a8856963c20", "/")
     overview.write_text(deck)
-    (out / "vercel.json").write_text(json.dumps({"cleanUrls": True}) + "\n")
+    # The old vercel.app address forwards to the custom domain, so a link shared
+    # before the move lands on the current docs instead of a stale copy.
+    (out / "vercel.json").write_text(json.dumps({"cleanUrls": True, "redirects": [{
+        "source": "/:path*", "has": [{"type": "host", "value": "iactranslate-docs.vercel.app"}],
+        "destination": "https://docs.iactranslate.com/:path*", "permanent": True}]}) + "\n")
     print(f"built {index.name} and {overview.name} into {out} (home link: {HOME})")
 
 

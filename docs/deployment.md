@@ -250,15 +250,6 @@ then rotate `iactranslate-slack-webhook` with steps 1 and 3.
 5. During the IdP's key rotation, list both certificates in
    `IACTRANSLATE_SAML_IDP_CERT`.
 
-### MOP 7 — Check the docs site deployed
-
-Every push to `main` builds docs.iactranslate.com. Check that the newest
-production deployment of `iactranslate-docs` is READY and that
-`https://docs.iactranslate.com/` and `/overview` return 200. A 404 means the
-build produced no site; `bash scripts/deploy_public_site.sh` deploys it by hand
-while the build is fixed. Until this check existed, the site stayed on an
-August build for three months because pushes "deployed" the raw repository.
-
 ### MOP 6 — Health and logs
 
 - Liveness: `GET https://iactranslate-api-…run.app/health`. Counters:
@@ -271,6 +262,15 @@ August build for three months because pushes "deployed" the raw repository.
   means too many instances or too large a pool. Keep
   (max instances + 1) × `IACTRANSLATE_DB_POOL_SIZE` under 22, or move to a
   larger Cloud SQL tier.
+
+### MOP 7 — Check the docs site deployed
+
+Every push to `main` builds docs.iactranslate.com. Check that the newest
+production deployment of `iactranslate-docs` is READY and that
+`https://docs.iactranslate.com/` and `/overview` return 200. A 404 means the
+build produced no site; `bash scripts/deploy_public_site.sh` deploys it by hand
+while the build is fixed. Until this check existed, the site stayed on an
+August build for three months because pushes "deployed" the raw repository.
 
 ## Reference architecture
 
