@@ -26,8 +26,8 @@ export const CALL_SUBJECT = "IaCTranslate — migration conversation";
 export const bookACallHref =
   `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(CALL_SUBJECT)}`;
 
-export const DOCS_URL = "https://iactranslate-docs.vercel.app";
-export const OVERVIEW_URL = "https://iactranslate-docs.vercel.app/overview";
+export const DOCS_URL = "https://docs.iactranslate.com";
+export const OVERVIEW_URL = "https://docs.iactranslate.com/overview";
 export const REPO_URL = "https://github.com/Kolanupaka92/iactranslate";
 
 /** Measured in this repository on 2026-08-29. `pytest` and `.github/workflows/ci.yml`. */

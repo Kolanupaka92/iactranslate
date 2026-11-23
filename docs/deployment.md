@@ -138,7 +138,7 @@ iactranslate.com runs as three pieces, deployed separately:
 |---|---|---|
 | API | Cloud Run service `iactranslate-api`, us-central1 | `scripts/deploy_api.sh <commit>` (MOP 1) |
 | Console | Vercel project `iactranslate` → iactranslate.com | preview, check, promote (MOP 2) |
-| Docs | Vercel project `iactranslate-docs` | automatic on every push to `main` |
+| Docs and investor overview | Vercel project `iactranslate-docs` → docs.iactranslate.com | automatic on every push to `main`: the repo-root `vercel.json` runs `scripts/build_public_site.py` (MOP 7) |
 
 ### How the API is configured
 
@@ -249,6 +249,15 @@ then rotate `iactranslate-slack-webhook` with steps 1 and 3.
    and the reason is in the log as `saml response rejected`.
 5. During the IdP's key rotation, list both certificates in
    `IACTRANSLATE_SAML_IDP_CERT`.
+
+### MOP 7 — Check the docs site deployed
+
+Every push to `main` builds docs.iactranslate.com. Check that the newest
+production deployment of `iactranslate-docs` is READY and that
+`https://docs.iactranslate.com/` and `/overview` return 200. A 404 means the
+build produced no site; `bash scripts/deploy_public_site.sh` deploys it by hand
+while the build is fixed. Until this check existed, the site stayed on an
+August build for three months because pushes "deployed" the raw repository.
 
 ### MOP 6 — Health and logs
 

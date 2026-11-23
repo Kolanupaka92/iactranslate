@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
+import HomeLink from "@/components/HomeLink";
 import { ApiError, verifyEmail } from "@/lib/api";
 
 /**
@@ -42,6 +43,7 @@ export default function VerifyEmailPage() {
 
   return (
     <main className="mx-auto mt-24 w-full max-w-sm rounded-lg border border-slate-200 p-6">
+      <HomeLink className="mb-4 inline-block text-slate-500" />
       <h1 className="text-lg font-semibold text-slate-900">Confirm your email</h1>
 
       {token === undefined ? null : state === "done" ? (

@@ -1,0 +1,8 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "installCommand": "python3 -m pip install --quiet --target .pydeps markdown",
+  "buildCommand": "PYTHONPATH=.pydeps:src python3 scripts/build_public_site.py public",
+  "outputDirectory": "public",
+  "cleanUrls": true
+}

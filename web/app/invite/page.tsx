@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import SignIn from "@/components/SignIn";
+import HomeLink from "@/components/HomeLink";
 import { ApiError, acceptInvitationLink, logout, whoami, type Identity } from "@/lib/api";
 
 /**
@@ -57,6 +58,7 @@ export default function InvitePage() {
   if (!token) {
     return (
       <main className="mx-auto mt-24 w-full max-w-sm rounded-lg border border-slate-200 p-6">
+      <HomeLink className="mb-4 inline-block text-slate-500" />
         <h1 className="text-lg font-semibold text-slate-900">Join an organisation</h1>
         <p role="alert" className="mt-4 rounded bg-red-50 px-3 py-2 text-sm text-red-700">
           This page needs the link from your invitation email. Open it again, or ask for a new
@@ -80,6 +82,7 @@ export default function InvitePage() {
 
   return (
     <main className="mx-auto mt-24 w-full max-w-sm rounded-lg border border-slate-200 p-6">
+      <HomeLink className="mb-4 inline-block text-slate-500" />
       <h1 className="text-lg font-semibold text-slate-900">Join an organisation</h1>
       {state === "done" ? (
         <>

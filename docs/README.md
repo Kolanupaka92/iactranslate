@@ -19,8 +19,8 @@ no login, works for anyone (investors, prospects, partners):
 
 | Page | URL |
 |---|---|
-| **Documentation** (operations · architecture · deployment · roadmap · ADRs) | https://iactranslate-docs.vercel.app |
-| **Investor overview** | https://iactranslate-docs.vercel.app/overview |
+| **Documentation** (operations · architecture · deployment · roadmap · ADRs) | https://docs.iactranslate.com |
+| **Investor overview** | https://docs.iactranslate.com/overview |
 
 The site redeploys automatically on every push to `main` (Vercel Git integration);
 `bash scripts/deploy_public_site.sh` deploys it by hand if ever needed. This is the recommended way to share

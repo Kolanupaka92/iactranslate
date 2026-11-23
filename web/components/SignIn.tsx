@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+import HomeLink from "@/components/HomeLink";
 import { ApiError, authMethods, forgotPassword, login, register, samlLoginUrl } from "@/lib/api";
 
 type Mode = "login" | "register" | "forgot";
@@ -70,6 +71,7 @@ export default function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
 
   return (
     <div className="mx-auto mt-24 w-full max-w-sm rounded-lg border border-slate-200 p-6">
+      <HomeLink className="mb-4 inline-block text-slate-500" />
       <h1 className="text-lg font-semibold text-slate-900">{TITLES[mode]}</h1>
       <p className="mt-1 text-sm text-slate-500">
         {mode === "forgot"

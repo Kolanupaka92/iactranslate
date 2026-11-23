@@ -141,7 +141,9 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
 .topnav{position:sticky;top:0;z-index:10;background:var(--nav);backdrop-filter:blur(10px);
   border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;gap:4px 18px;align-items:center;
   padding:11px 24px;}
-.topnav .brand{font-weight:680;letter-spacing:-.01em;margin-right:8px;}
+.topnav .brand{font-weight:680;letter-spacing:-.01em;margin-right:4px;color:inherit;text-decoration:none;}
+.topnav .brand:hover{text-decoration:underline;}
+.topnav .brand-sub{opacity:.6;margin-right:8px;}
 .topnav a{color:var(--muted);text-decoration:none;font-size:.85rem;font-weight:520;}
 .topnav a:hover{color:var(--accent);}
 .wrap{max-width:820px;margin:0 auto;padding:8px 24px 120px;}
@@ -185,7 +187,8 @@ footer{max-width:820px;margin:0 auto;padding:0 24px 64px;color:var(--faint);
 """
 
 def build() -> str:
-    nav = ['<span class="brand">IaCTranslate — Docs</span>']
+    nav = ['<a class="brand" href="https://iactranslate.com" title="IaCTranslate home">IaCTranslate</a>'
+           '<span class="brand-sub">Docs</span>']
     nav += [f'<a href="#{sid}">{title}</a>' for _p, sid, _pre, title in PAGES]
     nav.append('<a href="#doc-adr">ADRs</a>')
 

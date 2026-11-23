@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 import AIToggle from "@/components/AIToggle";
@@ -435,7 +436,11 @@ export default function Home() {
     <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-10">
       <header className="mb-8 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold">IaCTranslate</h1>
+          <h1 className="text-2xl font-bold">
+            <Link href="/" className="hover:underline" title="IaCTranslate home">
+              IaCTranslate
+            </Link>
+          </h1>
           {/* This read "Convert any infrastructure inventory ... into
               production-ready Terraform", which is the converter framing the
               product direction rules out, and it named Terraform four times

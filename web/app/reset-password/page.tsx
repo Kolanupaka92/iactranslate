@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
+import HomeLink from "@/components/HomeLink";
 import { ApiError, resetPassword } from "@/lib/api";
 
 /**
@@ -51,6 +52,7 @@ export default function ResetPasswordPage() {
 
   return (
     <main className="mx-auto mt-24 w-full max-w-sm rounded-lg border border-slate-200 p-6">
+      <HomeLink className="mb-4 inline-block text-slate-500" />
       <h1 className="text-lg font-semibold text-slate-900">Choose a new password</h1>
 
       {token === undefined ? null : done ? (

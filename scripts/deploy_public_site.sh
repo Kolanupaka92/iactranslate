@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Build the docs site + investor overview into one static site and deploy it
-# publicly to Vercel (project: iactranslate-docs → https://iactranslate-docs.vercel.app).
+# publicly to Vercel (project: iactranslate-docs → https://docs.iactranslate.com).
+# Normally unnecessary: the project builds the same thing on every push to main
+# (repo-root vercel.json). This is the manual fallback.
 #
 # Prereqs: `vercel` CLI logged in (`vercel login`), and Python deps (`pip install -e .[dev]`).
 # The Vercel project has deployment protection (SSO) disabled so the pages are
@@ -21,25 +23,10 @@ else
 fi
 
 BUILD="${1:-/tmp/iactranslate-site}"
-ALIAS="${2:-iactranslate-docs.vercel.app}"
+ALIAS="${2:-docs.iactranslate.com}"
 rm -rf "$BUILD"; mkdir -p "$BUILD"
 
-"$PY" scripts/build_docs_site.py "$BUILD/index.html"
-"$PY" scripts/build_deck_static.py "$BUILD/overview.html"
-
-# Cross-link the two pages within the deployed site.
-"$PY" - "$BUILD" <<'PY'
-import sys, pathlib
-b = pathlib.Path(sys.argv[1])
-idx, ov = b / "index.html", b / "overview.html"
-idx.write_text(idx.read_text().replace(
-    '<a href="#doc-adr">ADRs</a></nav>',
-    '<a href="#doc-adr">ADRs</a>'
-    '<a href="/overview" style="margin-left:auto;color:var(--accent)">Investor overview →</a></nav>'))
-ov.write_text(ov.read_text().replace(
-    "https://claude.ai/code/artifact/ecc2a04b-904e-431b-9ab0-7a8856963c20", "/"))
-PY
-printf '{"cleanUrls": true}\n' > "$BUILD/vercel.json"
+"$PY" scripts/build_public_site.py "$BUILD"
 
 cd "$BUILD"
 # $BUILD is normally under /tmp, which doesn't survive reboots — re-link to the
