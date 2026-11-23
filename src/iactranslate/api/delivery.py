@@ -31,7 +31,7 @@ import time
 from email.message import EmailMessage
 from typing import Callable, Mapping, Optional
 
-from .accounts import _RESET_TTL_SECONDS
+from .accounts import _RESET_TTL_SECONDS, _VERIFY_TTL_SECONDS
 from .mail import DeliveryError, MailConfigError, SmtpTransport, transport_from_env
 
 logger = logging.getLogger("iactranslate.api.delivery")
@@ -112,6 +112,31 @@ def reset_message(email: str, reset_url: str, sender: str) -> EmailMessage:
     return msg
 
 
+def verification_message(email: str, verify_url: str, sender: str) -> EmailMessage:
+    hours = _VERIFY_TTL_SECONDS // 3600
+    msg = EmailMessage()
+    msg["Subject"] = "Confirm your email for IaCTranslate"
+    msg["From"] = sender
+    msg["To"] = email
+    msg.set_content(
+        f"Confirm that {email} is your address for IaCTranslate by opening this link "
+        f"within {hours} hours:\n"
+        "\n"
+        f"{verify_url}\n"
+        "\n"
+        "If you didn't create an IaCTranslate account, ignore this email. Nothing "
+        "happens unless the link is opened.\n"
+    )
+    return msg
+
+
+#: kind -> (message builder, what the log calls it)
+_KINDS = {
+    "reset": (reset_message, "password reset email"),
+    "verify": (verification_message, "verification email"),
+}
+
+
 class EmailLinkDelivery:
     """Sends reset links by email, off the request thread.
 
@@ -128,16 +153,16 @@ class EmailLinkDelivery:
         self._worker: Optional[threading.Thread] = None
         self._lock = threading.Lock()
 
-    def __call__(self, email: str, reset_url: str) -> None:
+    def __call__(self, email: str, reset_url: str, kind: str = "reset") -> None:
         with self._lock:
             if self._worker is None or not self._worker.is_alive():
                 self._worker = threading.Thread(target=self._run, name="iactranslate-reset-mail",
                                                 daemon=True)
                 self._worker.start()
         try:
-            self._queue.put_nowait((email, reset_url))
+            self._queue.put_nowait((email, reset_url, kind))
         except queue.Full:
-            logger.error("password reset email queue full; not sent to %s", email)
+            logger.error("%s queue full; not sent to %s", _KINDS[kind][1], email)
 
     def flush(self, timeout: float = 10.0) -> bool:
         deadline = time.monotonic() + timeout
@@ -147,29 +172,30 @@ class EmailLinkDelivery:
             time.sleep(0.01)
         return True
 
-    def send_now(self, email: str, reset_url: str) -> Optional[str]:
-        """Deliver on this thread: None, or why it failed."""
-        msg = reset_message(email, reset_url, self.sender)
+    def send_now(self, email: str, link: str, kind: str = "reset") -> Optional[str]:
+        """Deliver on this thread: None, or why it failed. Never logs the link."""
+        build, label = _KINDS[kind]
+        msg = build(email, link, self.sender)
         for attempt in range(1, _ATTEMPTS + 1):
             try:
                 self.transport.send(msg)
-                logger.info("password reset email sent to %s", email)
+                logger.info("%s sent to %s", label, email)
                 return None
             except DeliveryError as e:
                 if not e.retryable or attempt == _ATTEMPTS:
-                    logger.error("password reset email to %s failed: %s", email, e)
+                    logger.error("%s to %s failed: %s", label, email, e)
                     return str(e)
                 self._sleep(2 ** attempt)
             except Exception as e:  # noqa: BLE001 — never kill the worker
-                logger.error("password reset email to %s failed: %s", email, type(e).__name__)
+                logger.error("%s to %s failed: %s", label, email, type(e).__name__)
                 return type(e).__name__
         return "not attempted"  # pragma: no cover
 
     def _run(self) -> None:
         while True:
-            email, url = self._queue.get()
+            email, url, kind = self._queue.get()
             try:
-                self.send_now(email, url)
+                self.send_now(email, url, kind)
             finally:
                 self._queue.task_done()
 
@@ -191,9 +217,50 @@ def email_delivery_from_env(env: Mapping[str, str] = os.environ) -> Optional[Ema
     return EmailLinkDelivery(transport, sender)
 
 
+#: The email backend, or None. Shared by reset and verification links.
+_email: Optional[EmailLinkDelivery] = email_delivery_from_env()
 #: What `set_link_delivery(None)` restores: email when configured, else the log.
-_configured: LinkDelivery = email_delivery_from_env() or _log_delivery
+_configured: LinkDelivery = _email or _log_delivery
 _delivery: LinkDelivery = _configured
+
+
+def email_enabled() -> bool:
+    """Whether links actually go out by email (the UI says "we sent a link" only then)."""
+    return _email is not None
+
+
+def _log_verification(email: str, url: str) -> None:
+    """Without a mailer: the request is visible, the link only on opt-in."""
+    if _link_to_log_allowed():
+        logger.warning("email verification for %s — no email backend, deliver manually: %s", email, url)
+        return
+    logger.warning("email verification for %s — no email backend is configured, so the link "
+                   "was NOT delivered", email)
+
+
+_verify_configured: LinkDelivery = (
+    (lambda email, url: _email(email, url, "verify")) if _email is not None else _log_verification
+)
+_verify_delivery: LinkDelivery = _verify_configured
+
+
+def set_verification_delivery(fn: Optional[LinkDelivery]) -> None:
+    """Install a verification-link sender (or restore the configured default with None)."""
+    global _verify_delivery
+    _verify_delivery = fn or _verify_configured
+
+
+def verify_url(token: str) -> str:
+    base = os.getenv("IACTRANSLATE_APP_URL", "http://localhost:3000").rstrip("/")
+    return f"{base}/verify-email?token={token}"
+
+
+def deliver_verification_link(email: str, token: str) -> None:
+    """Like `deliver_reset_link`: never raises into the request."""
+    try:
+        _verify_delivery(email, verify_url(token))
+    except Exception:  # noqa: BLE001
+        logger.exception("verification delivery failed for %s", email)
 
 
 def set_link_delivery(fn: Optional[LinkDelivery]) -> None:

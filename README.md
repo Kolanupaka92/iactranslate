@@ -80,6 +80,11 @@ CI proves the output is valid against the real cloud providers (`tofu validate`)
   transport as notifications (STARTTLS/TLS, sent off the request thread so the
   response time doesn't reveal whether an account exists). Without a mailer,
   the request is logged but the link is not.
+- **Verified addresses.** Sign-up emails a confirmation link (one click, so
+  mail scanners can't confirm for you). A password reset or an identity
+  provider's assertion also counts as proof. An SSO sign-in reclaims an
+  unverified account someone registered first. Operators can require
+  verification before projects are created.
 - **Rate limited.** Token buckets per route class, with login throttled by
   source address *and* by target account — per-IP alone does nothing against
   credential stuffing. Limits retune at runtime without a restart; per-process,

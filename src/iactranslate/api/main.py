@@ -70,7 +70,7 @@ from .accounts import (
 )
 from .audit import create_audit_log
 from .auth import require_api_key
-from .delivery import deliver_reset_link
+from .delivery import deliver_reset_link, deliver_verification_link, email_enabled
 from .events import Event, EventBus, EventType
 from .idempotency import (
     BodyMismatch,
@@ -557,7 +557,10 @@ def register(body: Credentials, request: Request) -> JSONResponse:
         raise HTTPException(400, "could not create that account") from None
     except ValueError as e:
         raise HTTPException(400, str(e)) from None
-    response = JSONResponse(status_code=201, content={"id": user.id, "email": user.email})
+    # Queued, so registration takes the same time with or without a mailer.
+    deliver_verification_link(user.email, accts.create_verification_token(user.id))
+    response = JSONResponse(status_code=201, content={"id": user.id, "email": user.email,
+                                                      "email_verified": False})
     _set_session_cookie(response, accts.create_session(user.id))
     logger.info("registered user %s", user.id)
     return response
@@ -574,7 +577,8 @@ def login(body: Credentials, request: Request) -> JSONResponse:
         user = accts.authenticate(body.email, body.password)
     except InvalidCredentials:
         raise HTTPException(401, "invalid email or password") from None
-    response = JSONResponse(content={"id": user.id, "email": user.email})
+    response = JSONResponse(content={"id": user.id, "email": user.email,
+                                     "email_verified": user.email_verified})
     _set_session_cookie(response, accts.create_session(user.id))
     return response
 
@@ -650,10 +654,49 @@ def reset_password(body: ResetPassword, request: Request) -> Response:
     # A reset is how someone recovers a *compromised* account, so every existing
     # session must die — including the attacker's.
     accts.delete_sessions_for_user(user_id)
+    # The link arrived at the address, which is the proof verification asks for.
+    accts.mark_email_verified(user_id)
     logger.info("password reset completed for user %s", user_id)
     response = Response(status_code=204)
     response.delete_cookie(SESSION_COOKIE, path="/")
     return response
+
+
+class VerifyEmail(BaseModel):
+    token: str
+
+
+#: Off by default: accounts created before verification existed would
+#: otherwise lose the ability to start projects on deploy.
+ENV_REQUIRE_VERIFIED = "IACTRANSLATE_REQUIRE_VERIFIED_EMAIL"
+
+
+def _verification_required() -> bool:
+    return (os.getenv(ENV_REQUIRE_VERIFIED) or "").strip().lower() in {"1", "true", "yes"}
+
+
+@router.post("/auth/verify-email", status_code=204)
+def verify_email(body: VerifyEmail, request: Request) -> Response:
+    """Redeem the emailed link. No session needed: it is often opened on
+    another device from the one that registered."""
+    limit_auth(request)
+    accts = _require_accounts()
+    user_id = accts.consume_verification_token(body.token)
+    if user_id is None:
+        raise HTTPException(400, "this verification link is invalid or has expired")
+    logger.info("email verified for user %s", user_id)
+    return Response(status_code=204)
+
+
+@router.post("/auth/verify-email/resend", status_code=202)
+def resend_verification(request: Request, user: Optional[User] = Depends(current_user)) -> dict:
+    if user is None:
+        raise HTTPException(401, "sign in first")
+    limit_auth(request, user.email)
+    accts = _require_accounts()
+    if not user.email_verified:
+        deliver_verification_link(user.email, accts.create_verification_token(user.id))
+    return {"status": "if the address is unverified, a new link has been sent"}
 
 
 @router.post("/auth/change-password", status_code=204)
@@ -740,7 +783,11 @@ def delete_account(
 def whoami(user: Optional[User] = Depends(current_user)) -> dict:
     if user is None:
         return {"authenticated": False, "multi_tenant": False}
-    return {"authenticated": True, "multi_tenant": True, "id": user.id, "email": user.email}
+    return {"authenticated": True, "multi_tenant": True, "id": user.id, "email": user.email,
+            "email_verified": user.email_verified,
+            # Whether a "we sent you a link" promise would be true.
+            "verification_email": email_enabled(),
+            "verification_required": _verification_required()}
 
 
 #: Page size when the caller asks for one. The default is `MAX_PROJECTS` — the
@@ -815,6 +862,8 @@ def list_projects(
 
 @router.post("/projects", status_code=201, dependencies=[Depends(require_api_key), Depends(limit_writes)])
 def create_project(body: CreateProject, user: Optional[User] = Depends(current_user)) -> dict:
+    if user is not None and not user.email_verified and _verification_required():
+        raise HTTPException(403, "confirm your email address before creating projects")
     if body.target not in list_targets():
         raise HTTPException(400, f"target '{body.target}' not supported (available: {', '.join(list_targets())})")
     if body.source not in ("auto", *list_sources()):
@@ -1385,6 +1434,7 @@ def sso_callback(request: Request, code: str = "", state: str = "",
         logger.warning("sso callback rejected", exc_info=True, extra={"reason": str(e)})
         raise HTTPException(401, "single sign-on failed") from e
 
+    proven = claims.get("email_verified") is True
     user = accts.get_user_by_email(email)
     if user is None:
         # Just-in-time provisioning. The password is random and never used —
@@ -1392,6 +1442,20 @@ def sso_callback(request: Request, code: str = "", state: str = "",
         # provider stops being the only way in.
         user = accts.create_user(email, secrets.token_urlsafe(32))
         logger.info("provisioned user from sso", extra={"user_id": user.id})
+    elif proven and not user.email_verified:
+        # Pre-account takeover: anyone could have registered this address with
+        # a password before its real owner first signed in with SSO. Linking
+        # would hand the owner an account the squatter can still open. The
+        # provider has just proven ownership, so the unproven password and
+        # every session it made are revoked.
+        accts.set_password(user.id, secrets.token_urlsafe(32))
+        accts.delete_sessions_for_user(user.id)
+        logger.warning("sso claimed an unverified account; its password and sessions were revoked",
+                       extra={"user_id": user.id})
+    # Only the provider's assertion counts. With trust_unverified_email the
+    # operator accepted an unasserted address, which proves nothing.
+    if proven:
+        accts.mark_email_verified(user.id)
 
     response = JSONResponse(
         status_code=200, content={"id": user.id, "email": user.email, "via": "sso"}

@@ -64,8 +64,8 @@ def test_forgot_password_emails_a_link_that_resets_the_password(mailing_api):
     assert r.status_code == 202
     assert delivery._configured.flush(10)
 
-    (raw,) = relay.messages
-    msg = _decoded(raw["data"])
+    (msg,) = [m for m in map(_decoded, (r["data"] for r in relay.messages))
+              if m["Subject"] == "Reset your IaCTranslate password"]
     assert msg["Subject"] == "Reset your IaCTranslate password"
     assert msg["To"] == "pat@example.com"
     body = msg.get_content()

@@ -42,6 +42,9 @@ _SESSION_TTL_SECONDS = 14 * 24 * 3600  # 14 days
 # Short on purpose: a reset link sits in an inbox, which is a less trustworthy
 # place than a cookie jar. Long enough to act on, short enough to age out.
 _RESET_TTL_SECONDS = 3600  # 1 hour
+# Longer than a reset: a verification link proves the address, it doesn't
+# grant access, and a sign-up email is often opened the next day.
+_VERIFY_TTL_SECONDS = 24 * 3600
 SESSION_COOKIE = "iactranslate_session"
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -53,6 +56,10 @@ class User:
     id: str
     email: str
     created_at: float
+    #: The owner of the address has shown they receive its mail (ADR 0079):
+    #: a verification link, a password reset, or an identity provider that
+    #: asserted it. Accounts created before this existed read as unverified.
+    email_verified: bool = False
 
 
 class InvalidCredentials(Exception):
@@ -136,12 +143,33 @@ class AccountStore:
         )
     """
 
+    _SCHEMA_VERIFICATIONS = """
+        CREATE TABLE IF NOT EXISTS email_verifications (
+            token_hash TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            created_at {REAL} NOT NULL,
+            expires_at {REAL} NOT NULL
+        )
+    """
+
+    #: Every user read selects these, in this order.
+    _USER_COLUMNS = "id, email, created_at, email_verified_at"
+
     def __init__(self, db: "Database | str") -> None:
         # A path string opens SQLite, which is how this was always constructed.
         self._db = db if isinstance(db, Database) else Database("sqlite", db)
-        for ddl in (self._SCHEMA_USERS, self._SCHEMA_SESSIONS, self._SCHEMA_RESETS):
+        for ddl in (self._SCHEMA_USERS, self._SCHEMA_SESSIONS, self._SCHEMA_RESETS,
+                    self._SCHEMA_VERIFICATIONS):
             self._db.execute(self._db.schema(ddl))
         self._db.execute("CREATE INDEX IF NOT EXISTS sessions_user ON sessions (user_id)")
+        # Additive: an account from before verification existed comes back
+        # unverified (NULL), not rewritten.
+        if "email_verified_at" not in self._db.columns("users"):
+            self._db.execute(self._db.schema("ALTER TABLE users ADD COLUMN email_verified_at {REAL}"))
+
+    @staticmethod
+    def _user(row) -> User:
+        return User(id=row[0], email=row[1], created_at=row[2], email_verified=row[3] is not None)
 
     # -- users ---------------------------------------------------------------
 
@@ -169,7 +197,8 @@ class AccountStore:
         except ValueError:
             email = ""
         row = self._db.query_one(
-            "SELECT id, email, password_hash, created_at FROM users WHERE email = ?", (email,)
+            "SELECT id, email, password_hash, created_at, email_verified_at FROM users WHERE email = ?",
+            (email,),
         )
         if row is None:
             # Burn equivalent work against a dummy hash before failing.
@@ -177,13 +206,13 @@ class AccountStore:
             raise InvalidCredentials()
         if not verify_password(password, row[2]):
             raise InvalidCredentials()
-        return User(id=row[0], email=row[1], created_at=row[3])
+        return User(id=row[0], email=row[1], created_at=row[3], email_verified=row[4] is not None)
 
     def get_user(self, user_id: str) -> Optional[User]:
         row = self._db.query_one(
-            "SELECT id, email, created_at FROM users WHERE id = ?", (user_id,)
+            f"SELECT {self._USER_COLUMNS} FROM users WHERE id = ?", (user_id,)  # nosec B608 — constant
         )
-        return User(id=row[0], email=row[1], created_at=row[2]) if row else None
+        return self._user(row) if row else None
 
     # -- sessions ------------------------------------------------------------
 
@@ -235,9 +264,9 @@ class AccountStore:
         except ValueError:
             return None
         row = self._db.query_one(
-            "SELECT id, email, created_at FROM users WHERE email = ?", (email,)
+            f"SELECT {self._USER_COLUMNS} FROM users WHERE email = ?", (email,)  # nosec B608 — constant
         )
-        return User(id=row[0], email=row[1], created_at=row[2]) if row else None
+        return self._user(row) if row else None
 
     def delete_user(self, user_id: str) -> bool:
         """Remove an account and everything that authenticates as it.
@@ -254,6 +283,7 @@ class AccountStore:
         with self._db.transaction() as tx:
             tx.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
             tx.execute("DELETE FROM password_resets WHERE user_id = ?", (user_id,))
+            tx.execute("DELETE FROM email_verifications WHERE user_id = ?", (user_id,))
             removed = tx.execute("DELETE FROM users WHERE id = ?", (user_id,))
         return removed > 0
 
@@ -299,6 +329,48 @@ class AccountStore:
                 tx.execute("DELETE FROM password_resets WHERE token_hash = ?", (token_hash,))
         if row is None or row[1] < time.time():
             return None
+        return row[0]
+
+
+    # -- email verification -----------------------------------------------------
+
+    def mark_email_verified(self, user_id: str) -> None:
+        """Record proof of the address. Idempotent: the first proof's time stays."""
+        self._db.execute(
+            "UPDATE users SET email_verified_at = ? WHERE id = ? AND email_verified_at IS NULL",
+            (time.time(), user_id),
+        )
+
+    def create_verification_token(self, user_id: str, ttl_seconds: int = _VERIFY_TTL_SECONDS) -> str:
+        """Issue a single-use verification token; the newest link replaces older ones."""
+        token = secrets.token_urlsafe(32)
+        now = time.time()
+        with self._db.transaction() as tx:
+            tx.execute("DELETE FROM email_verifications WHERE user_id = ?", (user_id,))
+            tx.execute(
+                "INSERT INTO email_verifications (token_hash, user_id, created_at, expires_at) "
+                "VALUES (?, ?, ?, ?)",
+                (_hash_token(token), user_id, now, now + ttl_seconds),
+            )
+        return token
+
+    def consume_verification_token(self, token: str) -> Optional[str]:
+        """Redeem a verification link: mark the address verified and return the
+        user id, or None for an unknown or expired token. Single use, read and
+        deleted in one transaction, like a reset token."""
+        if not token:
+            return None
+        token_hash = _hash_token(token)
+        with self._db.transaction() as tx:
+            row = tx.query_one(
+                "SELECT user_id, expires_at FROM email_verifications WHERE token_hash = ?",
+                (token_hash,),
+            )
+            if row is not None:
+                tx.execute("DELETE FROM email_verifications WHERE token_hash = ?", (token_hash,))
+        if row is None or row[1] < time.time():
+            return None
+        self.mark_email_verified(row[0])
         return row[0]
 
 

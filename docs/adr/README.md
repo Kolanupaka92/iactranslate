@@ -86,5 +86,6 @@ Format: [Michael Nygard's ADR template](https://cognitect.com/blog/2011/11/15/do
 | [0076](0076-migration-backlog-as-import-files.md) | The assessment and wave plan as Jira, Azure DevOps and ServiceNow import files, in each tool's documented format — files, not API calls | Accepted |
 | [0077](0077-run-notifications.md) | Slack, Teams and email when a run ends: operator-configured, off the request path, outcome figures by default and names only on opt-in | Accepted |
 | [0078](0078-password-reset-email.md) | Reset links emailed over the shared SMTP transport, off the request thread so timing doesn't reveal accounts, with forgot/reset pages in the console | Accepted |
+| [0079](0079-email-verification.md) | Email verification: single-use link at sign-up confirmed by a click, reset/SSO as proof, optional project gate, SSO reclaims squatted unverified accounts | Accepted |
 
 See also the [Architecture & Design](../architecture.md) overview.

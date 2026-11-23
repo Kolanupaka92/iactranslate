@@ -14,6 +14,7 @@ import SourcePicker from "@/components/SourcePicker";
 import RendererPicker, { RENDERER_LABELS } from "@/components/RendererPicker";
 import TargetPicker from "@/components/TargetPicker";
 import UploadDropzone from "@/components/UploadDropzone";
+import VerifyEmailBanner from "@/components/VerifyEmailBanner";
 import {
   ApiError,
   assessEstate,
@@ -450,6 +451,10 @@ export default function Home() {
           </p>
         )}
       </header>
+
+      {identity.authenticated && identity.multi_tenant && identity.email_verified === false && (
+        <VerifyEmailBanner identity={identity} />
+      )}
 
       {error && (
         <div

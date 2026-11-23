@@ -321,6 +321,24 @@ export interface Identity {
   multi_tenant: boolean;
   id?: string;
   email?: string;
+  /** The owner has proven they receive mail at `email`. */
+  email_verified?: boolean;
+  /** The server can email links. Without it, never claim one was sent. */
+  verification_email?: boolean;
+  /** Project creation is refused until the address is verified. */
+  verification_required?: boolean;
+}
+
+export function verifyEmail(token: string): Promise<void> {
+  return request("/auth/verify-email", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token }),
+  });
+}
+
+export function resendVerification(): Promise<{ status: string }> {
+  return request("/auth/verify-email/resend", { method: "POST" });
 }
 
 /** Who the caller is. `multi_tenant: false` means the deployment runs
