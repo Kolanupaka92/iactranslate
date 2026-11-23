@@ -488,6 +488,27 @@ def _cmd_backlog(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_notify_test(args: argparse.Namespace) -> int:
+    """Send one test message to every channel the environment configures."""
+    import os
+
+    from .api.notify import Notifier, NotifyConfigError, channels_from_env, sample_notification
+    try:
+        channels = channels_from_env()
+    except NotifyConfigError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+    if not channels:
+        print("error: no notification channel is configured. Set IACTRANSLATE_NOTIFY_SLACK_WEBHOOK, "
+              "IACTRANSLATE_NOTIFY_TEAMS_WEBHOOK, or the SMTP variables (see the operations guide).",
+              file=sys.stderr)
+        return 2
+    results = Notifier(channels).send_now(sample_notification(os.getenv("IACTRANSLATE_APP_URL")))
+    for name, error in results.items():
+        print(f"  {name}: {'sent' if error is None else 'FAILED (' + error + ')'}")
+    return 0 if all(e is None for e in results.values()) else 1
+
+
 def _cmd_diff(args: argparse.Namespace) -> int:
     try:
         before = _load_inventory(args.before, args.source, args.map)
@@ -716,6 +737,10 @@ def build_parser() -> argparse.ArgumentParser:
                          "(default agile → User Story).")
     bl.add_argument("--out", default="backlog", help="Output directory.")
     bl.set_defaults(func=_cmd_backlog)
+
+    nt = sub.add_parser("notify-test", help="Send a test message to the configured Slack, Teams "
+                                            "and email channels.")
+    nt.set_defaults(func=_cmd_notify_test)
 
     d = sub.add_parser("diff", help="Compare two inventory snapshots (drift detection).")
     d.add_argument("before", help="Earlier inventory export (.xlsx/.csv).")

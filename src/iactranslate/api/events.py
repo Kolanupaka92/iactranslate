@@ -33,6 +33,12 @@ class EventType(str, Enum):
     JOB_STARTED = "job.started"
     JOB_COMPLETED = "job.completed"
     JOB_FAILED = "job.failed"
+    #: A pipeline run ended, by either the synchronous or the queued path.
+    #: Detail carries outcome figures only (target, counts, cost, duration,
+    #: failure kind), never the project name or error text: every subscriber,
+    #: the audit trail included, sees it.
+    RUN_COMPLETED = "run.completed"
+    RUN_FAILED = "run.failed"
 
 
 @dataclass

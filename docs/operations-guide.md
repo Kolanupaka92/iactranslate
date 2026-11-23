@@ -331,6 +331,9 @@ iactranslate diff old.csv new.csv --json
 # Use the target/region the Terraform was generated for (ADR 0072).
 iactranslate diff old.xlsx new.xlsx --moved-tf moved.tf --target aws
 
+# Check the notification channels the environment configures (sends one test message each)
+iactranslate notify-test
+
 # The migration as tracker import files (also in every package under backlog/)
 iactranslate backlog rvtools.xlsx --target aws --out ./backlog     # --ado-process scrum|cmmi|basic
 ```
@@ -537,6 +540,13 @@ All env vars (see `src/iactranslate/config.py`):
 | `IACTRANSLATE_TRUST_PROXY` | `0` | Set `1` **only** behind a proxy you control, to read the client IP from `X-Forwarded-For`. Any client can forge that header, so trusting it without a proxy lets attackers bypass every limit. |
 | `IACTRANSLATE_WORKSPACE_ROOT` | (system temp) | Directory for project workspaces (uploads + generated output). Point it at a mounted volume so artifacts survive a container recycle; `/tmp` does not. |
 | `IACTRANSLATE_APP_URL` | `http://localhost:3000` | Public origin of the web app, used to build the password-reset link. The API's own origin is usually wrong here — the reset form lives in the frontend. |
+| `IACTRANSLATE_NOTIFY_SLACK_WEBHOOK` | (none) | Slack incoming-webhook URL. Each finished run posts there (ADR 0077). Must be `https://`. |
+| `IACTRANSLATE_NOTIFY_TEAMS_WEBHOOK` | (none) | Microsoft Teams Workflows URL ("When a Teams webhook request is received"); receives an Adaptive Card. Must be `https://`. |
+| `IACTRANSLATE_SMTP_HOST` / `_PORT` / `_USER` / `_PASSWORD` | — / 587 (465 with `ssl`) | Mail relay for email notifications. A user without a password is refused at startup. |
+| `IACTRANSLATE_SMTP_TLS` | `starttls` | `starttls`, `ssl` (implicit TLS) or `none`. `none` is allowed only to a relay on this machine without a login. |
+| `IACTRANSLATE_NOTIFY_EMAIL_FROM` / `_TO` | (none) | Sender, and comma-separated recipients, for email notifications. Both are required with `SMTP_HOST`. |
+| `IACTRANSLATE_NOTIFY_ON` | `completed,failed` | Which run outcomes notify. `failed` gives alerts only. |
+| `IACTRANSLATE_NOTIFY_DETAIL` | `0` | `1` adds the project name and the first 500 characters of the error. It's off by default because on a multi-tenant deployment it sends every tenant's project names to the operator's channel. A half-configured channel stops the API at startup; check with `iactranslate notify-test`. |
 | `IACTRANSLATE_SPLIT_COMPUTE_ABOVE` | `50` | Workload count above which compute output is split into `compute-<env>-<tier>.tf` files for reviewability. `0` keeps a single `compute.tf`. Purely organizational — no state impact. |
 | `IACTRANSLATE_TARGET_UTILIZATION` | `0.65` | When a source carries utilization, size instances so they run at ~this utilization (right-sizing). |
 | `IACTRANSLATE_PRICING` | `static` | `static` (curated catalog rates, offline) or `live` (real market prices, cached, falls back to static). A cloud whose billing endpoint fails 3 times in a row is skipped for 5 minutes rather than retried per SKU; the run summary reports `pricing_source` (`live`/`degraded`/`static`) and `pricing_source_degraded` (ADR 0059). Storage, Windows-licensing and load-balancer rates are fetched live too (AWS, Azure, GCP), each falling back to catalog on its own; `cost_breakdown.rate_sources` and `pricing_basis` say which lines are live (ADR 0069). |

@@ -87,6 +87,12 @@ CI proves the output is valid against the real cloud providers (`tofu validate`)
   in-flight gauge. Both are event-bus subscribers, so routes and the pipeline
   stay free of instrumentation — it's counters and durable history, not
   distributed tracing.
+- **Notifies when a run ends.** Slack, Microsoft Teams (Workflows webhook,
+  Adaptive Card) and email (SMTP over TLS), set by the operator in the
+  environment and sent off the request path. By default a message carries the
+  outcome and figures, not the project name or error text, so a multi-tenant
+  deployment doesn't leak tenants into the ops channel. `iactranslate
+  notify-test` checks the setup.
 - **A full migration-platform layer.** Pre-migration **assessment** (readiness +
   risks), **confidence** scoring, an **executive report**, **architecture
   diagrams**, **infrastructure diff**, **brownfield** adoption (import blocks),

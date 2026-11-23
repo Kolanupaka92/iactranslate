@@ -80,6 +80,7 @@ from .idempotency import (
 )
 from .jobs_sqlite import create_job_queue
 from .metrics import Metrics
+from .notify import create_notifier
 from .ratelimit import limit_auth, limit_reads, limit_writes
 from .roles import Role, at_least, create_membership, parse_role
 from .store import Project, create_store
@@ -117,6 +118,11 @@ audit = create_audit_log()
 audit.attach(bus)
 metrics = Metrics()
 metrics.attach(bus)
+# Slack / Teams / email when a run ends — None unless a channel is configured
+# (ADR 0077). Looks projects up only to add the name when the operator opts in.
+notifier = create_notifier(lookup=lambda pid: store.get(pid))
+if notifier is not None:
+    notifier.attach(bus)
 
 # Who may do what on which project. Separate from the project store because
 # a grant belongs to neither the project nor the user alone (see roles.py).
@@ -976,7 +982,14 @@ def _execute_run(project: Project) -> None:
         store.end_run(project.id)
 
 
+def _run_failed(project: Project, failure: str, started: float) -> None:
+    bus.publish(Event(EventType.RUN_FAILED, project_id=project.id, detail={
+        "target": project.target, "failure": failure,
+        "duration_s": round(time.time() - started, 1)}))
+
+
 def _execute_run_locked(project: Project, out_dir: Path) -> None:
+    started = time.time()
     try:
         with _plaintext_upload(project) as readable:
             result = run_pipeline(
@@ -1001,6 +1014,9 @@ def _execute_run_locked(project: Project, out_dir: Path) -> None:
         else:
             project.error = str(e)
         store.save(project)
+        _run_failed(project, "plan validation" if isinstance(e, PlanValidationError)
+                    else "policy violation" if isinstance(e, PolicyViolationError)
+                    else "invalid input", started)
         raise
     except Exception:
         # Anything nobody anticipated. The API still answers 500 — that is
@@ -1011,6 +1027,7 @@ def _execute_run_locked(project: Project, out_dir: Path) -> None:
         project.status = "failed"
         project.error = "the run stopped unexpectedly; retry, and report it if it recurs"
         store.save(project)
+        _run_failed(project, "unexpected error", started)
         raise
 
     confidence = score_plan(result.plan, result.vms)
@@ -1079,6 +1096,10 @@ def _execute_run_locked(project: Project, out_dir: Path) -> None:
     }
     store.save(project)
     logger.info("project %s generated %d instances", project.id, result.plan.vm_count)
+    bus.publish(Event(EventType.RUN_COMPLETED, project_id=project.id, detail={
+        "target": project.target, "vm_count": result.plan.vm_count,
+        "monthly_cost_usd": round(_costs.total, 2), "priced": _costs.priced,
+        "duration_s": round(time.time() - started, 1)}))
 
 
 @router.post("/projects/{pid}/run", dependencies=[Depends(require_api_key), Depends(limit_writes)])
