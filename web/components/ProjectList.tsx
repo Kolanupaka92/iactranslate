@@ -1,6 +1,6 @@
 "use client";
 
-import type { ProjectSummary } from "@/lib/api";
+import type { Org, ProjectSummary } from "@/lib/api";
 
 /**
  * Status chips, at 10px — the smallest text in the app and so the least
@@ -28,12 +28,15 @@ export default function ProjectList({
   currentId,
   onOpen,
   onNew,
+  orgs = [],
 }: {
   projects: ProjectSummary[];
   currentId: string | null;
   onOpen: (p: ProjectSummary) => void;
   onNew: () => void;
+  orgs?: Org[];
 }) {
+  const orgName = (id?: string | null) => (id ? orgs.find((o) => o.id === id)?.name : undefined);
   return (
     <aside className="lg:sticky lg:top-8">
       <div className="mb-3 flex items-center justify-between">
@@ -73,6 +76,11 @@ export default function ProjectList({
                   <span className="block truncate text-sm font-medium">{p.name}</span>
                   <span className="mt-1 flex items-center gap-2 text-xs opacity-70">
                     <span className="uppercase">{p.target}</span>
+                    {orgName(p.org_id) && (
+                      <span className="truncate" title="Organisation">
+                        {orgName(p.org_id)}
+                      </span>
+                    )}
                     <span
                       className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
                         STATUS_STYLE[p.status] ?? STATUS_STYLE.created

@@ -142,8 +142,8 @@ class SqlMembership(Membership):
     administrator made is silently revoked. Half-durable authorization is worse
     than none, because nobody notices until someone reports they lost access.
 
-    Grants are small and read on every request, so they are cached in memory and
-    written through; The database is the record, not the hot path.
+    Every read goes to the database (see below); the table is keyed on
+    (project_id, user_id), so the per-request check is a primary-key lookup.
     """
 
     _SCHEMA = """
@@ -161,22 +161,46 @@ class SqlMembership(Membership):
         # A path string opens SQLite, which is how this was always constructed.
         self._db = db if isinstance(db, Database) else Database("sqlite", db)
         self._db.execute(self._db.schema(self._SCHEMA))
-        self._load()
 
-    def _load(self) -> None:
-        for project_id, user_id, role in self._db.query(
-            "SELECT project_id, user_id, role FROM project_members"
+    # Every read goes to the database. These used to be served from a
+    # per-process cache loaded at startup, so on a deployment with several
+    # instances a grant made on one was invisible on the others, and a
+    # revocation kept working where the old grant was cached, until a restart.
+
+    @staticmethod
+    def _role(value: str) -> Optional[Role]:
+        try:
+            return Role(value)
+        except ValueError:
+            # A role written by a newer version: that one grant is unreadable,
+            # which costs one person access instead of failing the request.
+            return None
+
+    def role_for(self, project_id: str, user_id: str, owner_id: Optional[str]) -> Optional[Role]:
+        if owner_id is not None and user_id == owner_id:
+            return Role.ADMIN
+        row = self._db.query_one(
+            "SELECT role FROM project_members WHERE project_id=? AND user_id=?", (project_id, user_id)
+        )
+        return self._role(row[0]) if row else None
+
+    def members(self, project_id: str, owner_id: Optional[str]) -> List[dict]:
+        out: List[dict] = []
+        if owner_id is not None:
+            out.append({"user_id": owner_id, "role": Role.ADMIN.value, "owner": True})
+        for user_id, role in self._db.query(
+            "SELECT user_id, role FROM project_members WHERE project_id=? ORDER BY user_id", (project_id,)
         ):
-            try:
-                self._grants.setdefault(project_id, {})[user_id] = Role(role)
-            except ValueError:
-                # A role written by a newer version. Skipped rather than
-                # crashing every request — an unreadable grant should cost that
-                # one person access, not take the deployment down.
-                continue
+            if user_id != owner_id and self._role(role) is not None:
+                out.append({"user_id": user_id, "role": role, "owner": False})
+        return out
+
+    def projects_for(self, user_id: str) -> List[str]:
+        return [r[0] for r in self._db.query(
+            "SELECT project_id FROM project_members WHERE user_id=? ORDER BY project_id", (user_id,)
+        )]
 
     def grant(self, project_id: str, user_id: str, role: Role) -> None:
-        super().grant(project_id, user_id, role)
         # Both engines implement this spelling of upsert identically.
         self._db.execute(
             "INSERT INTO project_members (project_id, user_id, role, granted_at)"
@@ -186,16 +210,11 @@ class SqlMembership(Membership):
         )
 
     def revoke(self, project_id: str, user_id: str) -> bool:
-        removed = super().revoke(project_id, user_id)
-        if removed:
-            self._db.execute(
-                "DELETE FROM project_members WHERE project_id=? AND user_id=?",
-                (project_id, user_id),
-            )
-        return removed
+        return self._db.execute(
+            "DELETE FROM project_members WHERE project_id=? AND user_id=?", (project_id, user_id)
+        ) > 0
 
     def drop_project(self, project_id: str) -> None:
-        super().drop_project(project_id)
         self._db.execute("DELETE FROM project_members WHERE project_id=?", (project_id,))
 
 

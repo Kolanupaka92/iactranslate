@@ -6,6 +6,7 @@ import AIToggle from "@/components/AIToggle";
 import AssessmentPanel from "@/components/AssessmentPanel";
 import Dashboard from "@/components/Dashboard";
 import DeleteAccount from "@/components/DeleteAccount";
+import OrgPanel from "@/components/OrgPanel";
 import ProjectList from "@/components/ProjectList";
 import RecommendTable from "@/components/RecommendTable";
 import RunSummary from "@/components/RunSummary";
@@ -22,6 +23,7 @@ import {
   deleteProject,
   downloadUrl,
   fetchReportHtml,
+  listOrgs,
   listProjects,
   listTargets,
   logout,
@@ -31,6 +33,7 @@ import {
   whoami,
   type Assessment,
   type Identity,
+  type Org,
   type Provider,
   type ProjectSummary,
   type Recommendation,
@@ -152,6 +155,9 @@ function Section({
 
 export default function Home() {
   const [name, setName] = useState("");
+  const [orgs, setOrgs] = useState<Org[]>([]);
+  /** Where a new project goes: an org id, or null for personal. */
+  const [workspace, setWorkspace] = useState<string | null>(null);
   const [target, setTarget] = useState<Target>("aws");
   const [source, setSource] = useState<Source>("auto");
   const [provider, setProvider] = useState<Provider>("rule");
@@ -194,6 +200,18 @@ export default function Home() {
     };
   }, []);
 
+  const refreshOrgs = useCallback(async () => {
+    setOrgs(await listOrgs().catch(() => []));
+  }, []);
+
+  useEffect(() => {
+    if (identity?.authenticated && identity.multi_tenant) {
+      // Loads an external list once signed in; same pattern as projects.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      void refreshOrgs();
+    }
+  }, [identity, refreshOrgs]);
+
   const refreshProjects = useCallback(async () => {
     // Never fatal — an empty sidebar is better than blocking the whole page.
     setProjects(await listProjects().catch(() => []));
@@ -235,7 +253,7 @@ export default function Home() {
     setError(null);
     try {
       const created = await createProject(
-        name.trim(), target, source, undefined, provider, renderer,
+        name.trim(), target, source, undefined, provider, renderer, workspace,
       );
       setProject(created);
       void refreshProjects();
@@ -244,7 +262,7 @@ export default function Home() {
     } finally {
       setBusy(null);
     }
-  }, [name, target, source, provider, renderer, refreshProjects]);
+  }, [name, target, source, provider, renderer, workspace, refreshProjects]);
 
   const handleFile = useCallback(
     async (f: File) => {
@@ -322,8 +340,10 @@ export default function Home() {
         // which every target supports, rather than sending a request the API
         // will refuse.
         const nextRenderer = rendererFor(t, renderer, targetInfo);
+        // Stays in the same org: switching cloud must not quietly make a
+        // team's project personal.
         const fresh = await createProject(
-          project.name, t, source, undefined, provider, nextRenderer,
+          project.name, t, source, undefined, provider, nextRenderer, project.org_id ?? null,
         );
         await uploadFile(fresh.id, file);
         void deleteProject(project.id).catch(() => {});
@@ -466,12 +486,25 @@ export default function Home() {
       )}
 
       <div className="grid gap-8 lg:grid-cols-[220px_minmax(0,1fr)]">
-        <ProjectList
-          projects={projects}
-          currentId={project?.id ?? null}
-          onOpen={handleOpenProject}
-          onNew={handleNew}
-        />
+        <div className="space-y-8">
+          <ProjectList
+            projects={projects}
+            currentId={project?.id ?? null}
+            onOpen={handleOpenProject}
+            onNew={handleNew}
+            orgs={orgs}
+          />
+          {identity.authenticated && identity.multi_tenant && (
+            <OrgPanel
+              identity={identity}
+              orgs={orgs}
+              onChanged={async () => {
+                await refreshOrgs();
+                await refreshProjects();
+              }}
+            />
+          )}
+        </div>
 
         <div className="space-y-4">
           {/* The landing view: what a returning user has across every estate,
@@ -533,6 +566,23 @@ export default function Home() {
                 maxLength={128}
                 className="w-full rounded-lg border border-neutral-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-emerald-600 dark:border-neutral-700"
               />
+              {orgs.length > 0 && (
+                <label className="flex items-center gap-2 text-sm">
+                  <span className="opacity-70">Workspace</span>
+                  <select
+                    value={workspace ?? ""}
+                    onChange={(e) => setWorkspace(e.target.value || null)}
+                    className="rounded-lg border border-neutral-300 bg-transparent px-2 py-1.5 text-sm dark:border-neutral-700"
+                  >
+                    <option value="">Personal</option>
+                    {orgs.map((o) => (
+                      <option key={o.id} value={o.id}>
+                        {o.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <TargetPicker
                 value={target}
                 onChange={(t) => {

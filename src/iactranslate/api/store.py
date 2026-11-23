@@ -91,6 +91,8 @@ class Project:
     #: is presumed dead (a crashed instance) and may be taken over.
     run_started_at: Optional[float] = None
     owner_id: Optional[str] = None  # None = single-tenant mode (IACTRANSLATE_AUTH unset)
+    #: The organisation the project belongs to, or None for a personal one.
+    org_id: Optional[str] = None
     status: str = "created"  # created -> uploaded -> completed / failed
     workspace: Path = field(default_factory=new_workspace)
     upload_path: Optional[Path] = None
@@ -117,12 +119,13 @@ class ProjectStore:
         provider: str = "rule",
         owner_id: Optional[str] = None,
         renderer: str = "terraform",
+        org_id: Optional[str] = None,
     ) -> Project:
         pid = uuid.uuid4().hex[:12]
         project = Project(
             id=pid, name=name, target=target, source=source,
             column_map=column_map, region=region, policy=policy, provider=provider,
-            owner_id=owner_id, renderer=renderer,
+            owner_id=owner_id, renderer=renderer, org_id=org_id,
         )
         with self._lock:
             self._projects[pid] = project
@@ -166,6 +169,22 @@ class ProjectStore:
         """Projects belonging to one owner, newest first."""
         with self._lock:
             return [p for p in reversed(self._projects.values()) if p.owner_id == owner_id]
+
+    def list_for_org(self, org_id: str) -> List[Project]:
+        with self._lock:
+            return [p for p in reversed(self._projects.values()) if p.org_id == org_id]
+
+    def set_org(self, pid: str, org_id: Optional[str]) -> None:
+        with self._lock:
+            if pid in self._projects:
+                self._projects[pid].org_id = org_id
+
+    def release_org(self, org_id: str) -> None:
+        """An org was deleted: its projects return to their owners."""
+        with self._lock:
+            for p in self._projects.values():
+                if p.org_id == org_id:
+                    p.org_id = None
 
     def save(self, project: Project) -> None:
         """No-op: `get()` returns the same shared object, so in-place field
@@ -227,7 +246,7 @@ class SqlProjectStore:
         "id", "name", "target", "source", "column_map", "region", "policy",
         "provider", "status", "workspace", "upload_path", "project_dir",
         "zip_path", "error", "summary", "created_at", "owner_id", "renderer",
-        "run_started_at",
+        "run_started_at", "org_id",
     )
 
     def __init__(
@@ -243,6 +262,7 @@ class SqlProjectStore:
         self._db.execute(
             "CREATE INDEX IF NOT EXISTS projects_owner ON projects (owner_id)"
         )
+        self._db.execute("CREATE INDEX IF NOT EXISTS projects_org ON projects (org_id)")
 
     def _migrate(self) -> None:
         """Add columns missing from a database created by an older version.
@@ -257,6 +277,7 @@ class SqlProjectStore:
             ("owner_id", "ALTER TABLE projects ADD COLUMN owner_id TEXT"),
             ("renderer", "ALTER TABLE projects ADD COLUMN renderer TEXT"),
             ("run_started_at", "ALTER TABLE projects ADD COLUMN run_started_at {REAL}"),
+            ("org_id", "ALTER TABLE projects ADD COLUMN org_id TEXT"),
         ):
             if column not in existing:
                 # Through `schema()` so type placeholders resolve per engine —
@@ -280,6 +301,7 @@ class SqlProjectStore:
             owner_id=data["owner_id"],
             renderer=data["renderer"] or "terraform",
             run_started_at=data["run_started_at"],
+            org_id=data["org_id"],
         )
 
     def create(
@@ -293,24 +315,25 @@ class SqlProjectStore:
         provider: str = "rule",
         owner_id: Optional[str] = None,
         renderer: str = "terraform",
+        org_id: Optional[str] = None,
     ) -> Project:
         pid = uuid.uuid4().hex[:12]
         workspace = new_workspace()
         self._db.execute(
             "INSERT INTO projects (id, name, target, source, column_map, region, policy, "
             "provider, status, workspace, upload_path, project_dir, zip_path, error, summary, "
-            "created_at, owner_id, renderer) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'created', ?, NULL, NULL, NULL, NULL, NULL, ?, ?, ?)",
+            "created_at, owner_id, renderer, org_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'created', ?, NULL, NULL, NULL, NULL, NULL, ?, ?, ?, ?)",
             (pid, name, target, source,
              json.dumps(column_map) if column_map else None, region,
              json.dumps(policy) if policy else None, provider, str(workspace), time.time(),
-             owner_id, renderer),
+             owner_id, renderer, org_id),
         )
         self._evict()
         return Project(
             id=pid, name=name, target=target, source=source, column_map=column_map,
             region=region, policy=policy, provider=provider, workspace=workspace,
-            owner_id=owner_id, renderer=renderer,
+            owner_id=owner_id, renderer=renderer, org_id=org_id,
         )
 
     def get(self, pid: str) -> Optional[Project]:
@@ -335,6 +358,21 @@ class SqlProjectStore:
             params,
         )
         return [self._row_to_project(row) for row in rows]
+
+    def list_for_org(self, org_id: str) -> List[Project]:
+        rows = self._db.query(
+            f"SELECT {', '.join(self._COLUMNS)} FROM projects WHERE org_id = ? "  # nosec B608
+            "ORDER BY created_at DESC, id DESC",
+            (org_id,),
+        )
+        return [self._row_to_project(row) for row in rows]
+
+    def set_org(self, pid: str, org_id: Optional[str]) -> None:
+        self._db.execute("UPDATE projects SET org_id = ? WHERE id = ?", (org_id, pid))
+
+    def release_org(self, org_id: str) -> None:
+        """An org was deleted: its projects return to their owners."""
+        self._db.execute("UPDATE projects SET org_id = NULL WHERE org_id = ?", (org_id,))
 
     def try_begin_run(self, pid: str) -> bool:
         """One conditional UPDATE — the claim has to be atomic *across

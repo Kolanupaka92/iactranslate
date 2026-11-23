@@ -67,10 +67,16 @@ from .accounts import (
     InvalidCredentials,
     User,
     create_account_store,
+    validate_email,
 )
 from .audit import create_audit_log
 from .auth import require_api_key
-from .delivery import deliver_reset_link, deliver_verification_link, email_enabled
+from .delivery import (
+    deliver_invitation,
+    deliver_reset_link,
+    deliver_verification_link,
+    email_enabled,
+)
 from .events import Event, EventBus, EventType
 from .idempotency import (
     BodyMismatch,
@@ -81,6 +87,14 @@ from .idempotency import (
 from .jobs_sqlite import create_job_queue
 from .metrics import Metrics
 from .notify import create_notifier
+from .orgs import (
+    PROJECT_ROLE,
+    OrgError,
+    OrgRole,
+    create_org_store,
+    org_at_least,
+    parse_org_role,
+)
 from .ratelimit import limit_auth, limit_reads, limit_writes
 from .roles import Role, at_least, create_membership, parse_role
 from .store import Project, create_store
@@ -127,6 +141,8 @@ if notifier is not None:
 # Who may do what on which project. Separate from the project store because
 # a grant belongs to neither the project nor the user alone (see roles.py).
 memberships = create_membership()
+# Organisations (ADR 0080). Only reachable in multi-tenant mode.
+orgs = create_org_store()
 
 # SSO. `None` unless IACTRANSLATE_OIDC_ISSUER is set (ADR 0054).
 sso_config = _oidc.config_from_env()
@@ -206,6 +222,8 @@ class CreateProject(BaseModel):
     #: than here, because whether it is valid depends on `target` — Bicep is a
     #: fine renderer and a wrong answer for an AWS project.
     renderer: str = "terraform"
+    #: Create the project in this organisation (the caller must be a member).
+    org_id: Optional[str] = None
 
     @field_validator("provider")
     @classmethod
@@ -385,6 +403,7 @@ def _summary(project: Project) -> dict:
         "provider": project.provider,
         "renderer": project.renderer,
         "status": project.status,
+        "org_id": project.org_id,
     }
     if project.error:
         data["error"] = project.error
@@ -406,6 +425,18 @@ def current_user(request: Request) -> Optional[User]:
     if user is None:
         raise HTTPException(401, "not signed in")
     return user
+
+
+def _role_on(project: Project, user: User) -> Optional[Role]:
+    """The higher of the caller's project role and what their org role grants."""
+    held = memberships.role_for(project.id, user.id, project.owner_id)
+    if project.org_id is not None:
+        org_role = orgs.role_of(project.org_id, user.id)
+        if org_role is not None:
+            via_org = PROJECT_ROLE[org_role]
+            if held is None or at_least(via_org, held):
+                held = via_org
+    return held
 
 
 def _require_project(pid: str, user: Optional[User], role: Role = Role.VIEWER) -> Project:
@@ -431,7 +462,7 @@ def _require_project(pid: str, user: Optional[User], role: Role = Role.VIEWER) -
             raise HTTPException(404, "project not found")
         return project
 
-    held = memberships.role_for(pid, user.id, project.owner_id)
+    held = _role_on(project, user)
     if held is None:
         raise HTTPException(404, "project not found")
     if not at_least(held, role):
@@ -755,6 +786,14 @@ def delete_account(
     except InvalidCredentials:
         raise HTTPException(403, "current password is incorrect") from None
 
+    # An org this account alone owns, with other members in it, would be left
+    # with nobody able to administer it. Refused before anything is deleted.
+    stranded = orgs.sole_owner_of_shared(user.id)
+    if stranded:
+        names = ", ".join(o.name for o in stranded)
+        raise HTTPException(409, f"you're the only owner of {names}; make someone else an owner "
+                                 "or delete the organisation first")
+
     # Everything this account owns, including the files.
     owned = store.list_for_owner(user.id)
     for project in owned:
@@ -765,6 +804,10 @@ def delete_account(
     # Every grant this account holds on someone else's project.
     for pid in memberships.projects_for(user.id):
         memberships.revoke(pid, user.id)
+    # Every org membership. An org left empty is deleted; any project still in
+    # it (owned by someone else) goes back to its owner.
+    for org_id in orgs.remove_user(user.id):
+        store.release_org(org_id)
 
     accts.delete_user(user.id)
 
@@ -843,13 +886,13 @@ def list_projects(
     else:
         rows = [{**_summary(p), "role": Role.ADMIN.value, "owner": True} for p in owned]
         seen = {p.id for p in owned}
-        for pid in memberships.projects_for(user.id):
-            if pid in seen:
-                continue
-            project = store.get(pid)
-            if project is None:
-                continue  # granted then deleted; nothing to show
-            role = memberships.role_for(pid, user.id, project.owner_id)
+        shared = [store.get(pid) for pid in memberships.projects_for(user.id)]
+        in_orgs = [p for org, _ in orgs.orgs_for(user.id) for p in store.list_for_org(org.id)]
+        for project in shared + in_orgs:
+            if project is None or project.id in seen:
+                continue  # granted then deleted, or already listed
+            seen.add(project.id)
+            role = _role_on(project, user)
             rows.append({**_summary(project), "role": role.value if role else None,
                          "owner": False})
 
@@ -864,6 +907,10 @@ def list_projects(
 def create_project(body: CreateProject, user: Optional[User] = Depends(current_user)) -> dict:
     if user is not None and not user.email_verified and _verification_required():
         raise HTTPException(403, "confirm your email address before creating projects")
+    if body.org_id is not None:
+        # 404 for an org the caller isn't in, like a project: no enumeration.
+        if user is None or orgs.role_of(body.org_id, user.id) is None:
+            raise HTTPException(404, "organisation not found")
     if body.target not in list_targets():
         raise HTTPException(400, f"target '{body.target}' not supported (available: {', '.join(list_targets())})")
     if body.source not in ("auto", *list_sources()):
@@ -895,7 +942,7 @@ def create_project(body: CreateProject, user: Optional[User] = Depends(current_u
         name=body.name, target=body.target, source=body.source,
         column_map=body.column_map, region=body.region, policy=body.policy,
         provider=body.provider, owner_id=user.id if user else None,
-        renderer=body.renderer,
+        renderer=body.renderer, org_id=body.org_id,
     )
     logger.info("created project %s (target=%s source=%s)", project.id, project.target, project.source)
     bus.publish(Event(EventType.PROJECT_CREATED, project_id=project.id,
@@ -1386,6 +1433,285 @@ def revoke_access(pid: str, user_id: str,
         raise HTTPException(404, "no such grant on this project")
     logger.info("revoked access on project %s", pid, extra={"project_id": pid})
     return {"revoked": user_id}
+
+
+
+# --------------------------------------------------------------------------- #
+# Organisations (ADR 0080)
+# --------------------------------------------------------------------------- #
+
+
+class CreateOrg(BaseModel):
+    name: str
+
+
+class RenameOrg(BaseModel):
+    name: str
+
+
+class OrgRoleChange(BaseModel):
+    role: str
+
+
+class InviteMember(BaseModel):
+    email: str
+    role: str = OrgRole.MEMBER.value
+
+
+class AcceptInvitation(BaseModel):
+    token: str
+
+
+class MoveProject(BaseModel):
+    #: The org to move into, or null to make the project personal again.
+    org_id: Optional[str] = None
+
+
+def _signed_in(user: Optional[User]) -> User:
+    if accounts is None:
+        raise HTTPException(400, "organisations require multi-tenant mode (IACTRANSLATE_AUTH=session)")
+    if user is None:
+        raise HTTPException(401, "not signed in")
+    return user
+
+
+def _require_org(org_id: str, user: User, role: OrgRole = OrgRole.MEMBER):
+    """Same rule as projects: not a member is 404, too junior is 403."""
+    org = orgs.get(org_id)
+    held = orgs.role_of(org_id, user.id) if org else None
+    if org is None or held is None:
+        raise HTTPException(404, "organisation not found")
+    if not org_at_least(held, role):
+        raise HTTPException(403, f"this needs the '{role.value}' role in the organisation; "
+                                 f"you have '{held.value}'")
+    return org, held
+
+
+def _org_summary(org, role: OrgRole) -> dict:
+    return {"id": org.id, "name": org.name, "created_at": org.created_at, "role": role.value}
+
+
+@router.post("/orgs", status_code=201, dependencies=[Depends(limit_writes)])
+def create_org(body: CreateOrg, user: Optional[User] = Depends(current_user)) -> dict:
+    user = _signed_in(user)
+    try:
+        org = orgs.create_org(body.name, user.id)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+    logger.info("org created", extra={"org_id": org.id, "user_id": user.id})
+    return _org_summary(org, OrgRole.OWNER)
+
+
+@router.get("/orgs", dependencies=[Depends(limit_reads)])
+def list_orgs(user: Optional[User] = Depends(current_user)) -> list:
+    user = _signed_in(user)
+    return [_org_summary(org, role) for org, role in orgs.orgs_for(user.id)]
+
+
+@router.get("/orgs/{org_id}", dependencies=[Depends(limit_reads)])
+def get_org(org_id: str, user: Optional[User] = Depends(current_user)) -> dict:
+    user = _signed_in(user)
+    org, role = _require_org(org_id, user)
+    members = []
+    for m in orgs.members(org_id):
+        member = accounts.get_user(m["user_id"])
+        members.append({**m, "email": member.email if member else None})
+    return {**_org_summary(org, role), "members": members,
+            "projects": len(store.list_for_org(org_id))}
+
+
+@router.patch("/orgs/{org_id}", dependencies=[Depends(limit_writes)])
+def rename_org(org_id: str, body: RenameOrg, user: Optional[User] = Depends(current_user)) -> dict:
+    user = _signed_in(user)
+    _require_org(org_id, user, OrgRole.ADMIN)
+    try:
+        orgs.rename(org_id, body.name)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+    org, role = _require_org(org_id, user)
+    return _org_summary(org, role)
+
+
+@router.delete("/orgs/{org_id}", status_code=204, dependencies=[Depends(limit_writes)])
+def delete_org(org_id: str, user: Optional[User] = Depends(current_user)) -> Response:
+    """Owners only. Projects are not deleted: each goes back to its owner."""
+    user = _signed_in(user)
+    _require_org(org_id, user, OrgRole.OWNER)
+    store.release_org(org_id)
+    orgs.delete_org(org_id)
+    logger.info("org deleted", extra={"org_id": org_id, "user_id": user.id})
+    return Response(status_code=204)
+
+
+@router.patch("/orgs/{org_id}/members/{member_id}", dependencies=[Depends(limit_writes)])
+def change_org_role(org_id: str, member_id: str, body: OrgRoleChange,
+                    user: Optional[User] = Depends(current_user)) -> dict:
+    user = _signed_in(user)
+    _, held = _require_org(org_id, user, OrgRole.ADMIN)
+    try:
+        role = parse_org_role(body.role)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+    current = orgs.role_of(org_id, member_id)
+    # Only an owner may make or unmake owners; an admin could otherwise
+    # promote themselves past the people who appointed them.
+    if (role == OrgRole.OWNER or current == OrgRole.OWNER) and held != OrgRole.OWNER:
+        raise HTTPException(403, "only an owner can change who is an owner")
+    try:
+        orgs.set_role(org_id, member_id, role)
+    except OrgError as e:
+        raise HTTPException(400, str(e)) from None
+    return {"user_id": member_id, "role": role.value}
+
+
+@router.delete("/orgs/{org_id}/members/{member_id}", dependencies=[Depends(limit_writes)])
+def remove_org_member(org_id: str, member_id: str,
+                      user: Optional[User] = Depends(current_user)) -> dict:
+    """Admins remove members; anyone may remove themselves (leave)."""
+    user = _signed_in(user)
+    _, held = _require_org(org_id, user)
+    if member_id != user.id:
+        if not org_at_least(held, OrgRole.ADMIN):
+            raise HTTPException(403, "only an admin can remove other members")
+        if orgs.role_of(org_id, member_id) == OrgRole.OWNER and held != OrgRole.OWNER:
+            raise HTTPException(403, "only an owner can remove an owner")
+    try:
+        orgs.remove_member(org_id, member_id)
+    except OrgError as e:
+        raise HTTPException(400, str(e)) from None
+    return {"removed": member_id}
+
+
+@router.post("/orgs/{org_id}/invitations", status_code=201, dependencies=[Depends(limit_writes)])
+def invite_member(org_id: str, body: InviteMember, request: Request,
+                  user: Optional[User] = Depends(current_user)) -> dict:
+    user = _signed_in(user)
+    org, held = _require_org(org_id, user, OrgRole.ADMIN)
+    # Per inviter, so the endpoint can't be used to mail-bomb an address.
+    limit_auth(request, user.email)
+    try:
+        role = parse_org_role(body.role)
+        address = validate_email(body.email)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+    if role == OrgRole.OWNER and held != OrgRole.OWNER:
+        raise HTTPException(403, "only an owner can invite an owner")
+    invitee = accounts.get_user_by_email(address)
+    if invitee is not None and orgs.role_of(org_id, invitee.id) is not None:
+        raise HTTPException(409, f"{address} is already a member")
+    inv, token = orgs.invite(org_id, address, role, user.id)
+    deliver_invitation(address, token, org=org.name, inviter=user.email, role=role.value)
+    logger.info("org invitation issued", extra={"org_id": org_id, "role": role.value})
+    return {**inv.to_dict(), "emailed": email_enabled()}
+
+
+@router.get("/orgs/{org_id}/invitations", dependencies=[Depends(limit_reads)])
+def list_org_invitations(org_id: str, user: Optional[User] = Depends(current_user)) -> list:
+    user = _signed_in(user)
+    _require_org(org_id, user, OrgRole.ADMIN)
+    return [i.to_dict() for i in orgs.pending_for_org(org_id)]
+
+
+@router.delete("/orgs/{org_id}/invitations/{invitation_id}", status_code=204,
+               dependencies=[Depends(limit_writes)])
+def withdraw_invitation(org_id: str, invitation_id: str,
+                        user: Optional[User] = Depends(current_user)) -> Response:
+    user = _signed_in(user)
+    _require_org(org_id, user, OrgRole.ADMIN)
+    if not orgs.revoke_invitation(org_id, invitation_id):
+        raise HTTPException(404, "no such invitation")
+    return Response(status_code=204)
+
+
+@router.get("/invitations", dependencies=[Depends(limit_reads)])
+def my_invitations(user: Optional[User] = Depends(current_user)) -> list:
+    """Invitations to the caller's address, to accept in the app.
+
+    Empty until the address is verified: otherwise whoever registered someone
+    else's address would learn which organisations invited its owner.
+    """
+    user = _signed_in(user)
+    if not user.email_verified:
+        return []
+    out = []
+    for inv in orgs.pending_for_email(user.email):
+        org = orgs.get(inv.org_id)
+        if org is not None:
+            out.append({**inv.to_dict(), "org_name": org.name})
+    return out
+
+
+def _accept(inv, user: User) -> dict:
+    try:
+        role = orgs.accept(inv, user.id)
+    except OrgError as e:
+        raise HTTPException(400, str(e)) from None
+    org = orgs.get(inv.org_id)
+    logger.info("org invitation accepted", extra={"org_id": inv.org_id, "user_id": user.id})
+    return _org_summary(org, role)
+
+
+@router.post("/invitations/accept", dependencies=[Depends(limit_writes)])
+def accept_invitation_by_link(body: AcceptInvitation, request: Request,
+                              user: Optional[User] = Depends(current_user)) -> dict:
+    """From the emailed link. Holding the token shows the mail arrived, so
+    a signed-in user with the invited address is verified by accepting."""
+    user = _signed_in(user)
+    limit_auth(request, user.email)
+    inv = orgs.by_token(body.token)
+    if inv is None:
+        raise HTTPException(400, "this invitation link is invalid or has already been used")
+    if inv.email != user.email:
+        # Says which address without revealing anything new: the link was
+        # sent there, and whoever holds it read that email.
+        raise HTTPException(403, f"this invitation is for {inv.email}; sign in with that address")
+    result = _accept(inv, user)
+    accounts.mark_email_verified(user.id)
+    return result
+
+
+@router.post("/invitations/{invitation_id}/accept", dependencies=[Depends(limit_writes)])
+def accept_invitation_in_app(invitation_id: str,
+                             user: Optional[User] = Depends(current_user)) -> dict:
+    """In the console, without the email. Needs a verified address: otherwise
+    whoever registered the invited address first could accept for its owner."""
+    user = _signed_in(user)
+    inv = orgs.by_id(invitation_id)
+    if inv is None or inv.email != user.email:
+        raise HTTPException(404, "invitation not found")
+    if not user.email_verified:
+        raise HTTPException(403, "confirm your email address first, or accept from the emailed link")
+    return _accept(inv, user)
+
+
+@router.post("/invitations/{invitation_id}/decline", status_code=204,
+             dependencies=[Depends(limit_writes)])
+def decline_invitation(invitation_id: str, user: Optional[User] = Depends(current_user)) -> Response:
+    user = _signed_in(user)
+    inv = orgs.by_id(invitation_id)
+    if inv is None or inv.email != user.email:
+        raise HTTPException(404, "invitation not found")
+    orgs.decline(inv)
+    return Response(status_code=204)
+
+
+@router.put("/projects/{pid}/org", dependencies=[Depends(require_api_key), Depends(limit_writes)])
+def move_project(pid: str, body: MoveProject, user: Optional[User] = Depends(current_user)) -> dict:
+    """Move a project into an org, or back to personal.
+
+    Only the project's owner, and only into an org they belong to. Moving
+    changes who can see the project, which is the owner's decision; an org
+    admin who isn't the owner can't pull someone's project into or out of it.
+    """
+    user = _signed_in(user)
+    project = _require_project(pid, user, Role.ADMIN)
+    if project.owner_id != user.id:
+        raise HTTPException(403, "only the project's owner can move it")
+    if body.org_id is not None:
+        _require_org(body.org_id, user)
+    store.set_org(pid, body.org_id)
+    project = store.get(pid)
+    return _summary(project)
 
 
 @router.get("/auth/sso/login", dependencies=[Depends(limit_auth)])

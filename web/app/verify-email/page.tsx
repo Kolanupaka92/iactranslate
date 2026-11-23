@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { ApiError, verifyEmail } from "@/lib/api";
 
@@ -14,13 +14,16 @@ import { ApiError, verifyEmail } from "@/lib/api";
  */
 export default function VerifyEmailPage() {
   const [token, setToken] = useState<string | null | undefined>(undefined);
+  const tokenRead = useRef(false);
   const [state, setState] = useState<"idle" | "busy" | "done" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // Once only. The token is stripped from the address bar below, so a second
+    // run (React runs effects twice in development) would find it gone.
+    if (tokenRead.current) return;
+    tokenRead.current = true;
     const t = new URLSearchParams(window.location.search).get("token");
-    // Reading the URL is an external-system sync that must run after mount.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setToken(t);
     if (t) window.history.replaceState(null, "", window.location.pathname);
   }, []);

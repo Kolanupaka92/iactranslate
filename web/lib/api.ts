@@ -92,6 +92,11 @@ export interface ProjectSummary {
   status: "created" | "uploaded" | "completed" | "failed";
   error?: string;
   result?: RunResult;
+  /** The organisation it belongs to, or null for a personal project. */
+  org_id?: string | null;
+  /** The caller's role on it (multi-tenant only). */
+  role?: string | null;
+  owner?: boolean;
 }
 
 export interface CloudScore {
@@ -214,6 +219,7 @@ export function createProject(
   region?: string,
   provider: Provider = "rule",
   renderer: Renderer = "terraform",
+  orgId: string | null = null,
 ): Promise<ProjectSummary> {
   return request("/projects", {
     method: "POST",
@@ -225,6 +231,7 @@ export function createProject(
       region: region || null,
       provider,
       renderer,
+      org_id: orgId,
     }),
   });
 }
@@ -386,4 +393,100 @@ export function logout(): Promise<void> {
 
 export function listProjects(): Promise<ProjectSummary[]> {
   return request("/projects");
+}
+
+// --- organisations (ADR 0080) ------------------------------------------------
+
+export type OrgRole = "member" | "admin" | "owner";
+
+export interface Org {
+  id: string;
+  name: string;
+  created_at: number;
+  /** The caller's role in it. */
+  role: OrgRole;
+}
+
+export interface OrgMember {
+  user_id: string;
+  email: string | null;
+  role: OrgRole;
+  joined_at: number;
+}
+
+export interface OrgDetail extends Org {
+  members: OrgMember[];
+  projects: number;
+}
+
+export interface OrgInvitation {
+  id: string;
+  org_id: string;
+  email: string;
+  role: OrgRole;
+  created_at: number;
+  expires_at: number;
+  org_name?: string;
+  emailed?: boolean;
+}
+
+const json = (body: unknown): RequestInit => ({
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify(body),
+});
+
+export function listOrgs(): Promise<Org[]> {
+  return request("/orgs");
+}
+
+export function createOrg(name: string): Promise<Org> {
+  return request("/orgs", { method: "POST", ...json({ name }) });
+}
+
+export function getOrg(orgId: string): Promise<OrgDetail> {
+  return request(`/orgs/${orgId}`);
+}
+
+export function deleteOrg(orgId: string): Promise<void> {
+  return request(`/orgs/${orgId}`, { method: "DELETE" });
+}
+
+export function changeOrgRole(orgId: string, userId: string, role: OrgRole): Promise<unknown> {
+  return request(`/orgs/${orgId}/members/${userId}`, { method: "PATCH", ...json({ role }) });
+}
+
+export function removeOrgMember(orgId: string, userId: string): Promise<unknown> {
+  return request(`/orgs/${orgId}/members/${userId}`, { method: "DELETE" });
+}
+
+export function inviteToOrg(orgId: string, email: string, role: OrgRole): Promise<OrgInvitation> {
+  return request(`/orgs/${orgId}/invitations`, { method: "POST", ...json({ email, role }) });
+}
+
+export function listOrgInvitations(orgId: string): Promise<OrgInvitation[]> {
+  return request(`/orgs/${orgId}/invitations`);
+}
+
+export function withdrawInvitation(orgId: string, invitationId: string): Promise<void> {
+  return request(`/orgs/${orgId}/invitations/${invitationId}`, { method: "DELETE" });
+}
+
+export function myInvitations(): Promise<OrgInvitation[]> {
+  return request("/invitations");
+}
+
+export function acceptInvitation(invitationId: string): Promise<Org> {
+  return request(`/invitations/${invitationId}/accept`, { method: "POST" });
+}
+
+export function declineInvitation(invitationId: string): Promise<void> {
+  return request(`/invitations/${invitationId}/decline`, { method: "POST" });
+}
+
+export function acceptInvitationLink(token: string): Promise<Org> {
+  return request("/invitations/accept", { method: "POST", ...json({ token }) });
+}
+
+export function moveProject(projectId: string, orgId: string | null): Promise<ProjectSummary> {
+  return request(`/projects/${projectId}/org`, { method: "PUT", ...json({ org_id: orgId }) });
 }

@@ -583,6 +583,14 @@ All env vars (see `src/iactranslate/config.py`):
 | `GET` | `/projects/{id}` | Status + summary (includes the plan's confidence + policy warnings). |
 | `GET` | `/projects/{id}/download` | The generated project ZIP, in the project's chosen IaC format. 409 if not generated yet. |
 | `DELETE` | `/projects/{id}` | Deletes the project + its temp workspace. 204. |
+| `POST` / `GET` | `/orgs` | Create an organisation (you become owner) / list yours with your role (ADR 0080). Multi-tenant only. |
+| `GET` / `PATCH` / `DELETE` | `/orgs/{id}` | Members and project count / rename (admin) / delete (owner; projects go back to their owners). Not a member: 404. |
+| `PATCH` / `DELETE` | `/orgs/{id}/members/{user_id}` | Change a role (admin; only owners touch owners) / remove a member, or yourself to leave. The last owner can't leave or step down. |
+| `POST` / `GET` | `/orgs/{id}/invitations` | Invite `{email, role}` (admin), emailed when a mailer is configured / list pending. `DELETE …/{invitation_id}` withdraws. |
+| `GET` | `/invitations` | Invitations to your address. Empty until the address is verified. |
+| `POST` | `/invitations/accept` | `{token}` from the emailed link; must be signed in as the invited address. Also verifies it. |
+| `POST` | `/invitations/{id}/accept` · `/decline` | Respond in the app; accepting needs a verified address. |
+| `PUT` | `/projects/{id}/org` | `{org_id}` or `null`: move a project into an org you're in, or back to personal. Project owner only. |
 
 Error contract: 4xx return `{"detail": "..."}` (422 validation returns `{"detail":{"message","issues"[]}}`);
 unexpected errors return a generic `500` (details are logged server-side, never leaked).

@@ -85,6 +85,11 @@ CI proves the output is valid against the real cloud providers (`tofu validate`)
   provider's assertion also counts as proof. An SSO sign-in reclaims an
   unverified account someone registered first. Operators can require
   verification before projects are created.
+- **Organisations.** Projects can belong to a team instead of one person.
+  Members work on every org project, and admins manage people and projects.
+  People join only by accepting an invitation as the invited, proven address.
+  The last owner can't walk away, and deleting an org returns its projects to
+  their owners instead of deleting them.
 - **Rate limited.** Token buckets per route class, with login throttled by
   source address *and* by target account — per-IP alone does nothing against
   credential stuffing. Limits retune at runtime without a restart; per-process,
