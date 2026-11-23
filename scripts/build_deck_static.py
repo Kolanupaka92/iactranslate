@@ -56,7 +56,33 @@ def build() -> str:
         "", html,
     )
 
-    # 5) Title reflects the static variant.
+    # 5) A top bar. The deck's floating "IaCTranslate" mark sits in the chrome
+    #    cut off in step 1, which left the public overview with no way home.
+    topbar_css = (
+        ".topbar{position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:20px;"
+        "padding:12px clamp(20px,5vw,64px);background:rgba(7,11,10,.88);backdrop-filter:blur(8px);"
+        "border-bottom:1px solid var(--line);font-family:var(--mono);font-size:13px;}"
+        ".topbar a{color:var(--muted);text-decoration:none;}"
+        ".topbar a:hover{color:var(--ink);text-decoration:underline;}"
+        ".topbar .home{color:var(--ink);font-weight:600;display:flex;align-items:center;gap:9px;}"
+        ".topbar .home .dot{width:8px;height:8px;border-radius:2px;background:var(--accent);}"
+        ".topbar .push{margin-left:auto;}"
+        ".topbar .cta{color:var(--accent);}"
+    )
+    html = html.replace("</style>", topbar_css + "\n</style>", 1)
+    html = html.replace(
+        '<div class="deck" id="deck">',
+        '<nav class="topbar" aria-label="Site">'
+        '<a class="home" href="https://iactranslate.com" title="IaCTranslate home">'
+        '<span class="dot"></span>IaCTranslate</a>'
+        '<a class="push" href="https://docs.iactranslate.com/">Docs</a>'
+        '<a class="cta" href="https://iactranslate.com/console">Open the console →</a>'
+        "</nav>\n"
+        '<div class="deck" id="deck">',
+        1,
+    )
+
+    # 6) Title reflects the static variant.
     html = html.replace(
         "<title>IaCTranslate — Investor Deck</title>",
         "<title>IaCTranslate — Investor Overview</title>",
