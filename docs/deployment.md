@@ -153,6 +153,9 @@ iactranslate.com runs as three pieces, deployed separately:
   (default 4), so 4 instances plus one starting during a deploy use at most
   20. Before that fix, five pools per instance could exhaust the database and
   stop new revisions from starting.
+- **Backups:** the database is backed up daily from 08:00 UTC, the last 7 kept
+  (on since 2026-11-24). Automated backups belong to the instance and can go
+  with it if the instance is deleted.
 - **Files:** project workspaces live in a Cloud Storage bucket mounted at
   `/workspaces` (`IACTRANSLATE_WORKSPACE_ROOT`), so downloads survive restarts.
 - **Accounts:** multi-tenant (`IACTRANSLATE_AUTH=session`); the console calls
@@ -298,6 +301,26 @@ production deployment of `iactranslate-docs` is READY and that
 build produced no site; `bash scripts/deploy_public_site.sh` deploys it by hand
 while the build is fixed. Until this check existed, the site stayed on an
 August build for three months because pushes "deployed" the raw repository.
+
+### MOP 8 — Check and restore a database backup
+
+Check, weekly: `gcloud sql backups list --instance iactranslate-db` shows a
+SUCCESSFUL backup from the last 24 hours.
+
+Restore into a **new** instance first. Restoring over the live one replaces
+everything written since the backup.
+
+1. Find the backup: `gcloud sql backups list --instance iactranslate-db`.
+2. Create an empty instance with the same PostgreSQL version, region and private
+   network, and at least the same disk size.
+3. `gcloud sql backups restore <BACKUP_ID> --backup-instance=iactranslate-db --restore-instance=<new>`.
+4. Check the data there, then either copy back what was lost, or store the new
+   connection URL as a new version of `iactranslate-database-url` (MOP 4) and
+   roll out a revision.
+5. Delete whichever instance is no longer needed, once certain.
+
+Project files aren't in these backups. They're in the workspaces bucket, where
+deleted files can be recovered for 7 days. **This restore hasn't been rehearsed.**
 
 ## Reference architecture
 
