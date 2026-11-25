@@ -40,9 +40,16 @@ provider's limits. Preparing a first real deployment showed what that missed:
 
 - All 14 target and layout combinations plan and pass `fmt`; names tried are the
   example, one character, 128 characters, with a space, and with brackets.
-- **Still not proven:** anything only the cloud knows, such as quotas,
-  permissions, whether an image exists, or a size being sold in a region. That
-  needs a real apply.
+- **Applied for real on Google Cloud** (2026-11-24): three small Linux machines,
+  16 resources, named "Proof Run". Applied on the first attempt in 48 seconds,
+  with no drift; every machine booted to a login prompt; only the web machine
+  had a public address. Against that live state, regenerating planned no
+  changes, and switching to the for_each layout planned 0 to add, change or
+  destroy with all 3 machines moved. Then destroyed, and Google listed nothing
+  left.
+- **Still not proven on a real cloud:** every other target, Windows, data disks,
+  load balancers, names over the service account limit, egress through NAT, and
+  an estate large enough to meet quotas.
 - CloudFormation, Bicep, CDK, Pulumi and Kubernetes output isn't planned.
 - A Google project whose name is longer than 48 characters is shortened, which
   would rename resources if it had been applied before.

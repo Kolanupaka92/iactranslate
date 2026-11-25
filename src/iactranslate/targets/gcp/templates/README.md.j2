@@ -65,6 +65,7 @@ is silently falling back to local state.
 ```bash
 gcloud auth application-default login
 # A new project has these APIs off, and the first apply fails without them.
+# They can take a few minutes to take effect.
 gcloud services enable compute.googleapis.com iam.googleapis.com --project YOUR_PROJECT_ID
 terraform init
 terraform plan
