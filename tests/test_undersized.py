@@ -36,7 +36,7 @@ def _plan(target, *vms, **kw):
 
 
 @pytest.mark.parametrize("target,fits", [
-    ("aws", (128, 4096)), ("azure", (128, 3892)), ("gcp", (160, 3844)), ("oci", (126, 1024)),
+    ("aws", (128, 4096)), ("azure", (128, 3892)), ("gcp", (160, 3844)), ("oci", (252, 1024)),
     ("digitalocean", (32, 256)), ("nutanix", (128, 2048)), ("proxmox", (128, 2048))])
 def test_the_largest_size_is_used_whole_and_one_more_is_too_much(target, fits):
     for (cpu, mem), undersized in ((fits, False), ((fits[0], fits[1] + 1), True)):

@@ -10,7 +10,7 @@ resource "oci_core_instance" "{{ c.resource_name }}" {
 
 
   shape_config {
-    ocpus         = {{ c.vcpu }}
+    ocpus         = {{ c.instance_type.split('-')[1].split('x')[0] }}
     memory_in_gbs = {{ c.memory_gib }}
   }
 

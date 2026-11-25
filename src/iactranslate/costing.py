@@ -62,8 +62,9 @@ _STORAGE_USD_PER_GB_MONTH = {
 
 # Windows Server license-included uplift, USD per vCPU-hour, charged *on top of*
 # the equivalent Linux rate. AWS publishes $0.046/vCPU-hour; Azure and GCP price
-# Windows comparably per-core. DigitalOcean offers no Windows images at all
-# (ADR 0023), so the uplift there is zero by construction.
+# Windows comparably per-core; OCI publishes $0.092 per OCPU, which is two vCPUs.
+# DigitalOcean offers no Windows images at all (ADR 0023), so the uplift there is
+# zero by construction.
 _WINDOWS_USD_PER_VCPU_HOUR = {
     "aws": 0.046,
     "azure": 0.046,

@@ -1,13 +1,18 @@
+import re
 import zipfile
 
+import pytest
 from fastapi.testclient import TestClient
 
 from iactranslate.agents import build_migration_plan
 from iactranslate.api.main import app
+from iactranslate.costing import estimate_costs
 from iactranslate.generator import build_files
+from iactranslate.models import NormalizedVM
 from iactranslate.normalize import normalize
 from iactranslate.parsers import parse
 from iactranslate.pipeline import run_pipeline
+from iactranslate.renderers import render
 from iactranslate.targets import get_target
 from iactranslate.targets.base import CAP_GITOPS, CAP_LIVE_PRICING, CAP_PULUMI, CAP_TERRAFORM
 
@@ -34,14 +39,49 @@ def test_oci_catalog_shape_names_are_unique_and_flex():
     assert all(n.startswith("VM.Standard.E4.Flex-") or n.startswith("VM.Standard.E5.Flex-") for n in names)
 
 
-def test_oci_shape_config_matches_catalog_vcpu_and_memory(rvtools_path):
+def _block(compute, c):
+    return re.search(rf'"oci_core_instance" "{c.resource_name}" {{(.*?)^}}', compute, re.S | re.M).group(1)
+
+
+def test_oci_shape_config_is_in_ocpus(rvtools_path):
     files, plan = _files(rvtools_path)
-    compute = files["compute.tf"]
     for c in plan.compute:
-        spec = OCI.spec_of(c.instance_type)
-        assert spec is not None
-        assert f"ocpus         = {spec.vcpu}" in compute
-    assert "shape_config {" in compute
+        spec, block = OCI.spec_of(c.instance_type), _block(files["compute.tf"], c)
+        assert int(re.search(r"ocpus\s+= (\d+)$", block, re.M).group(1)) * 2 == spec.vcpu == c.vcpu
+        assert float(re.search(r"memory_in_gbs\s+= ([\d.]+)$", block, re.M).group(1)) == spec.memory_gib
+
+
+def test_oci_for_each_rows_are_in_ocpus(rvtools_path):
+    plan = build_migration_plan(normalize(parse(rvtools_path)), project_name="oci-gen", target=OCI)
+    compute = render("terraform-foreach", plan, OCI)["compute.tf"]
+    ocpus = [int(n) for n in re.findall(r"^ +ocpus +=\s+(\d+)$", compute, re.M)]
+    assert [n * 2 for n in ocpus] == [c.vcpu for c in plan.compute]
+
+
+def test_every_shape_is_one_oracle_sells():
+    limit = {"E4.Flex": 64, "E5.Flex": 126}
+    price = {"E4.Flex": (0.025, 0.0015), "E5.Flex": (0.03, 0.002)}  # Oracle's list, per OCPU and GB
+    for name in OCI.instance_names():
+        spec = OCI.spec_of(name)
+        ocpu, gb = (int(n) for n in name.split("-")[1].split("x"))
+        assert (spec.vcpu, spec.memory_gib) == (ocpu * 2, gb)
+        assert 1 <= ocpu <= limit[spec.family]
+        assert max(1, ocpu) <= gb <= min(64 * ocpu, 1024)
+        per_ocpu, per_gb = price[spec.family]
+        assert spec.on_demand_usd_hr == pytest.approx(ocpu * per_ocpu + gb * per_gb, abs=1e-4)
+
+
+@pytest.mark.parametrize("cpu,gib,ocpu", [(2, 8, 1), (4, 16, 2), (8, 32, 4), (8, 64, 4), (16, 64, 8), (3, 10, 2)])
+def test_a_vm_gets_half_its_vcpus_in_ocpus(cpu, gib, ocpu):
+    vm = NormalizedVM(vm_name="x", cpu=cpu, memory_gib=gib, os="Ubuntu 22.04")
+    c = build_migration_plan([vm], "p", OCI).compute[0]
+    assert c.instance_type.split("-")[1].split("x")[0] == str(ocpu)
+
+
+def test_windows_is_licensed_at_oracles_price_per_ocpu():
+    vm = NormalizedVM(vm_name="x", cpu=4, memory_gib=16, os="Windows Server 2022")
+    costs = estimate_costs(build_migration_plan([vm], "p", OCI))
+    assert costs.windows_licensing == pytest.approx(2 * 0.092 * 730, abs=0.01)  # 2 OCPUs
 
 
 def test_oci_database_tier_prefers_e5_flex(rvtools_path):
