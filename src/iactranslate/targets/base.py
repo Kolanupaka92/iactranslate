@@ -128,6 +128,13 @@ class Target(Protocol):
         """
         ...
 
+    def min_boot_gib(self, image_key: str) -> int:
+        """Smallest boot disk the cloud accepts for an image.
+
+        A smaller one is refused when applied, which no plan shows (ADR 0089).
+        """
+        ...
+
     def subnet_tier_for_tier(self, tier: Tier) -> SubnetTier: ...
 
     def sg_for_tier(self, tier: Tier) -> str: ...

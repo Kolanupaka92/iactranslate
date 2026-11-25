@@ -126,12 +126,17 @@ def _os_family(text: str) -> str:
     return "windows" if "windows" in text.lower() else "linux"
 
 
-def _root_and_extra(vm: NormalizedVM) -> Tuple[int, List[int]]:
+def _root_and_extra(vm: NormalizedVM, image_min_gib: int) -> Tuple[int, List[int], Optional[str]]:
+    """(boot disk, data disks, what to say if the boot disk isn't the source's)."""
     disks = [int(math.ceil(d)) for d in vm.disks_gib if d > 0]
+    floor = max(_MIN_ROOT_GIB, image_min_gib)
     if not disks:
-        return _MIN_ROOT_GIB, []
-    root = max(_MIN_ROOT_GIB, disks[0])
-    return root, disks[1:]
+        return floor, [], f"No disk in the inventory: a {floor} GiB boot disk is assumed."
+    if disks[0] < image_min_gib:
+        return floor, disks[1:], (
+            f"Boot disk raised from {disks[0]} to {floor} GiB, the least this image allows here."
+        )
+    return max(floor, disks[0]), disks[1:], None
 
 
 def build_compute_plans(
@@ -174,7 +179,9 @@ def build_compute_plans(
         if substitution:
             reason += f" {substitution}"
         family_changed = bool(vm.os) and _os_family(vm.os) != _os_family(image_key)
-        root_gib, extra_gib = _root_and_extra(vm)
+        root_gib, extra_gib, disk_note = _root_and_extra(vm, target.min_boot_gib(image_key))
+        if disk_note:
+            reason += f" {disk_note}"
         cost, price_source = monthly_cost(
             target.name, instance_type, region, target.cost_of(instance_type), live_pricing
         )

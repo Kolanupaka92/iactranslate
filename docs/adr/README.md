@@ -96,5 +96,6 @@ Format: [Michael Nygard's ADR template](https://cognitect.com/blog/2011/11/15/do
 | [0086](0086-never-shrink-a-machine-in-silence.md) | Every catalog has larger sizes, and a machine that still doesn't fit is flagged everywhere and makes that cloud not eligible | Accepted |
 | [0087](0087-no-headroom-without-usage-data.md) | Without usage data a machine gets its allocation and nothing more; CPU and memory are decided separately | Accepted |
 | [0088](0088-an-ocpu-is-two-vcpus.md) | Oracle sizes are counted in vCPUs, generated in OCPUs; its machines had twice the CPU they needed | Accepted |
+| [0089](0089-what-a-plan-cannot-see.md) | Boot disks are never below the image, Google data disks aren't fought over, its probes are let in | Accepted |
 
 See also the [Architecture & Design](../architecture.md) overview.

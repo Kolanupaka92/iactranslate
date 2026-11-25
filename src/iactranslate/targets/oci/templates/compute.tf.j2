@@ -28,7 +28,7 @@ resource "oci_core_instance" "{{ c.resource_name }}" {
   source_details {
     source_type             = "image"
     source_id               = data.oci_core_images.{{ image_refs[c.image_key].resource }}.images[0].id
-    boot_volume_size_in_gbs = {{ c.root_volume_gib }}
+    boot_volume_size_in_gbs = max({{ c.root_volume_gib }}, ceil(data.oci_core_images.{{ image_refs[c.image_key].resource }}.images[0].size_in_mbs / 1024))
   }
 
 {% if not c.image_key.startswith('windows') %}

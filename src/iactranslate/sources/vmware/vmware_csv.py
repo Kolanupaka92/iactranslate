@@ -41,7 +41,8 @@ def parse(path: str) -> List[RawVM]:
     cpu_col = find_column(df, ["CPUs", "CPU", "vCPU", "cpu"])
     mem_col = find_column(df, ["Memory GiB", "Memory MiB", "Memory", "RAM", "memory"])
     disk_col = find_column(
-        df, ["Disk GiB", "Disk MiB", "Provisioned MiB", "Storage", "Disk", "disk"]
+        df, ["Disk GiB", "Disk GB", "Disk MiB", "Disk MB", "Provisioned GiB", "Provisioned GB",
+             "Provisioned MiB", "Provisioned MB", "Storage", "Disk", "disk"]
     )
     os_col = find_column(df, ["OS", "Guest OS", "Operating System", "os"])
     power_col = find_column(df, ["Powerstate", "Power State", "power_state"])

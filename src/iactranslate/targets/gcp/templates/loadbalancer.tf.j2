@@ -5,6 +5,26 @@
 # different resource families, not one resource with a scheme flag: external uses
 # a target pool (raw instances, no group needed); internal uses a regional backend
 # service, which requires an instance group even for unmanaged instances.
+{% set internal = network.load_balancers | rejectattr("internet_facing") | list %}
+{% if internal %}
+# Google's health probes come from its own range, not the network's. Without
+# this rule every instance behind an internal load balancer looks unhealthy.
+# One rule for all of them: a name per load balancer can pass Google's 63
+# characters.
+resource "google_compute_firewall" "lb_probes" {
+  name    = "${var.project_name}-lb-probes"
+  network = google_compute_network.main.id
+
+  allow {
+    protocol = "tcp"
+    ports    = [{% for p in internal | map(attribute="listeners") | map("first") | map(attribute="target_port") | unique | sort %}"{{ p }}"{% if not loop.last %}, {% endif %}{% endfor %}]
+  }
+
+  source_ranges = ["35.191.0.0/16"]
+  target_tags   = [{% for t in internal | map(attribute="security_group") | unique | sort %}"{{ t }}"{% if not loop.last %}, {% endif %}{% endfor %}]
+}
+
+{% endif %}
 {% for lb in network.load_balancers %}
 {% if lb.internet_facing %}
 resource "google_compute_http_health_check" "{{ lb.resource_name }}" {

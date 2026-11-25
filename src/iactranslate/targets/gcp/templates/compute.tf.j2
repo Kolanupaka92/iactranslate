@@ -41,6 +41,12 @@ resource "google_compute_instance" "{{ c.resource_name }}" {
     environment = "{{ c.environment.value }}"
     source_vm   = "{{ vm_slug[c.vm_name] }}"
   }
+
+  lifecycle {
+    # Data disks are attached in storage.tf. Without this, the two resources
+    # fight over them and a later run detaches every data disk.
+    ignore_changes = [attached_disk]
+  }
 }
 
 {% endfor %}

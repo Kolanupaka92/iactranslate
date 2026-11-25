@@ -64,6 +64,11 @@ class OciTarget:
     def image_reference(self, image_key: str) -> Dict[str, object]:
         return mapping.image_reference(image_key)
 
+    def min_boot_gib(self, image_key: str) -> int:
+        # Oracle: the image's own size or 50 GB, whichever is higher. The
+        # template raises it to the image's size, known only to the provider.
+        return 50
+
     def subnet_tier_for_tier(self, tier: Tier) -> SubnetTier:
         return mapping.SUBNET_BY_TIER.get(tier, SubnetTier.PRIVATE)
 

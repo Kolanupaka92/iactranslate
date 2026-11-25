@@ -100,7 +100,7 @@ def _oci_image(out):
     schema = json.loads(_run(["providers", "schema", "-json"], out).stdout)["provider_schemas"]
     provider = next(v for k, v in schema.items() if k.endswith("/oci"))
     images = provider["data_source_schemas"]["oci_core_images"]["block"]["attributes"]["images"]["type"]
-    return json.dumps(_zero(images[1]))
+    return json.dumps({**_zero(images[1]), "size_in_mbs": "47694"})
 
 
 @lru_cache(maxsize=1)

@@ -20,7 +20,7 @@ locals {
       nsg_id      = oci_core_network_security_group.{{ sg_resource[c.security_group] }}.id
       public_ip   = {{ "true" if c.vm_name in public_vm_names else "false" }}
       image_id    = data.oci_core_images.{{ image_refs[c.image_key].resource }}.images[0].id
-      boot_gb     = {{ c.root_volume_gib }}
+      boot_gb     = max({{ c.root_volume_gib }}, ceil(data.oci_core_images.{{ image_refs[c.image_key].resource }}.images[0].size_in_mbs / 1024))
       tier        = "{{ c.tier.value }}"
       environment = "{{ c.environment.value }}"
     }

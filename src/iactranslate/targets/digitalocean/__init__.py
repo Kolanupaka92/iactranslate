@@ -61,6 +61,9 @@ class DigitalOceanTarget:
     def image_reference(self, image_key: str) -> Dict[str, object]:
         return mapping.image_reference(image_key)
 
+    def min_boot_gib(self, image_key: str) -> int:
+        return 10  # bundled with the Droplet size; not set by the template
+
     def subnet_tier_for_tier(self, tier: Tier) -> SubnetTier:
         return mapping.SUBNET_BY_TIER.get(tier, SubnetTier.PRIVATE)
 

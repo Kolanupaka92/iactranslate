@@ -59,6 +59,14 @@ class AzureTarget:
     def image_reference(self, image_key: str) -> Dict[str, object]:
         return mapping.image_reference(image_key)
 
+    def min_boot_gib(self, image_key: str) -> int:
+        # The disk may not be smaller than the image (azurerm docs). Microsoft
+        # says Windows is usually 127 GiB and Linux typically 30; RHEL's LVM
+        # images are 64.
+        if image_key.startswith("windows"):
+            return 127
+        return 64 if image_key.startswith("rhel") else 30
+
     def subnet_tier_for_tier(self, tier: Tier) -> SubnetTier:
         return mapping.SUBNET_BY_TIER.get(tier, SubnetTier.PRIVATE)
 

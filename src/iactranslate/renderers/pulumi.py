@@ -539,6 +539,15 @@ def _gcp_main(plan: MigrationPlan, target: Target) -> str:
                     f'    backends=[{{"group": ig_{lb.resource_name}.self_link}}],',
                     ")",
                 ]
+                lines += [
+                    "gcp.compute.Firewall(  # Google's health probes",
+                    f"    {_py_str(f'{lb.resource_name}-probes')},",
+                    "    network=network.id, project=project,",
+                    f'    allows=[{{"protocol": "tcp", "ports": ["{lb.listeners[0].target_port}"]}}],',
+                    '    source_ranges=["35.191.0.0/16"],',
+                    f"    target_tags=[{_py_str(lb.security_group)}],",
+                    ")",
+                ]
                 first_subnet = next(s for s in net.subnets if s.tier == lb.subnet_tier)
                 for listener in lb.listeners:
                     lines += [
