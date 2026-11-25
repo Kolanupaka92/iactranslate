@@ -60,5 +60,10 @@ around it was never finished:
   httpx silently never sends. The SAML replay test had been passing because
   the cookie was missing, not because the replay was caught. Both now send the
   cookie, and the replay is refused as "already used".
-- **No real provider has been exercised yet.** That's the first check when a
-  customer's OIDC is configured (MOP 5).
+- **Checked with Google in production** (2026-11-24): sign-in through
+  iactranslate.com's `/api` rewrite, Google's real tokens and keys, and linking
+  to the existing verified account with the same address. A made-up callback
+  was refused for the state mismatch. All of it was served by one instance, so
+  finishing a login on another instance is covered by tests only.
+- **Not checked:** Entra ID, Okta and other providers, and an account created
+  by its first SSO sign-in.

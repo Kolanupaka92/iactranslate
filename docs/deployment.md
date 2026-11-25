@@ -166,12 +166,16 @@ iactranslate.com runs as three pieces, deployed separately:
   | `iactranslate-encryption-key` | `IACTRANSLATE_ENCRYPTION_KEY` | uploads encrypted at rest (ADR 0043) |
   | `iactranslate-slack-webhook` | `IACTRANSLATE_NOTIFY_SLACK_WEBHOOK` | run notifications (ADR 0077) |
   | `iactranslate-smtp-password` | `IACTRANSLATE_SMTP_PASSWORD` | Gmail App Password for account email (ADR 0078) |
+  | `iactranslate-oidc-client-secret` | `IACTRANSLATE_OIDC_CLIENT_SECRET` | OIDC sign-in (ADR 0082) |
 
 - **Mail:** Gmail over STARTTLS (`smtp.gmail.com:587`), signed in as the
   owner's Gmail address, which is also `IACTRANSLATE_RESET_EMAIL_FROM`. Sends
   reset, verification and invitation emails. Notification email is off (no
   `IACTRANSLATE_NOTIFY_EMAIL_TO`); notifications go to Slack.
-- **Off on purpose:** SAML and OIDC (no customer IdP yet; both are in the image), and
+- **OIDC:** on since 2026-11-24 with Google as the provider, whose app is in
+  Testing, so only its listed test users can finish signing in. The client
+  secret is `iactranslate-oidc-client-secret`.
+- **Off on purpose:** SAML (no customer IdP yet; it is in the image), and
   `IACTRANSLATE_REQUIRE_VERIFIED_EMAIL` (the verification banner is a nudge).
 
 A deploy changes only the image, so all of the above carries over.
@@ -245,6 +249,14 @@ then rotate `iactranslate-slack-webhook` with steps 1 and 3.
    `--update-env-vars`.
 3. Check `GET /api/v1/auth/methods` reports `"oidc": true`, then have someone
    sign in once. Refusals are logged as `sso callback rejected` with the reason.
+   No `/auth/sso/callback` request at all means it stopped on the provider's
+   pages: an account not allowed there, or a passkey the browser can't complete
+   (sign in from an ordinary browser).
+4. To turn it off: `--remove-env-vars IACTRANSLATE_OIDC_ISSUER,IACTRANSLATE_OIDC_CLIENT_ID
+   --remove-secrets IACTRANSLATE_OIDC_CLIENT_SECRET`. The stored secret stays.
+
+Use a Google Cloud project of its own for a Google client: the consent screen
+(name, audience, publishing status) is shared by every client in a project.
 
 **SAML:**
 
