@@ -43,4 +43,4 @@ def test_targets_pick_distinct_instance_families(rvtools_path):
     assert all(t.startswith("Standard_") for t in az_types)
     assert all(t.startswith(("e2-", "n2-")) for t in gcp_types)
     assert all(t.startswith("VM.Standard.") for t in oci_types)
-    assert all(t.startswith(("s-", "m-")) for t in do_types)
+    assert all(t.startswith(("s-", "g-", "m-")) for t in do_types)

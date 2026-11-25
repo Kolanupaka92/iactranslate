@@ -3,7 +3,9 @@
 Unlike OCI's Flex shapes, DigitalOcean Droplet sizes are real, stable, named
 slugs (`s-2vcpu-4gb`, `m-4vcpu-32gb`) that have existed unchanged for years —
 no synthetic catalog key needed here, `name` is the actual Terraform `size`
-value. "s-" is Basic (shared CPU, general purpose); "m-" is Memory-Optimized.
+value. "s-" is Basic (shared CPU, general purpose); "g-" is General Purpose and "m-"
+Memory-Optimized, both with dedicated CPU. 40 vCPU and 256 GiB are the most any
+of them offers.
 
 Pricing: converted from DigitalOcean's published monthly rates (/730 hours) —
 ballpark, like every other catalog in this codebase. Production sizing should
@@ -27,6 +29,13 @@ INSTANCE_CATALOG: List[InstanceSpec] = [
     InstanceSpec("m-2vcpu-16gb", 2, 16.0, "m", 0.1151),
     InstanceSpec("m-4vcpu-32gb", 4, 32.0, "m", 0.2301),
     InstanceSpec("m-8vcpu-64gb", 8, 64.0, "m", 0.4603),
+    InstanceSpec("m-16vcpu-128gb", 16, 128.0, "m", 0.9205),
+    InstanceSpec("m-24vcpu-192gb", 24, 192.0, "m", 1.3808),
+    InstanceSpec("m-32vcpu-256gb", 32, 256.0, "m", 1.8411),
+    # General purpose (dedicated CPU), for what the Basic sizes can't hold.
+    InstanceSpec("g-16vcpu-64gb", 16, 64.0, "g", 0.6904),
+    InstanceSpec("g-32vcpu-128gb", 32, 128.0, "g", 1.3808),
+    InstanceSpec("g-40vcpu-160gb", 40, 160.0, "g", 1.7260),
 ]
 
 

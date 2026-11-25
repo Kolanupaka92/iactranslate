@@ -82,6 +82,19 @@ export default function RunSummary({ result }: { result: RunResult }) {
         </div>
       </div>
 
+      {result.undersized_count ? (
+        <p
+          role="alert"
+          className="rounded-lg border border-red-600/30 bg-red-600/10 px-3 py-2 text-sm text-red-800 dark:text-red-300"
+        >
+          <strong>
+            {result.undersized_count} workload{result.undersized_count === 1 ? "" : "s"} won&apos;t fit.
+          </strong>{" "}
+          No size in this target&apos;s catalog is large enough, so the closest was used. Don&apos;t
+          apply this plan until that&apos;s resolved. Affected rows are marked below.
+        </p>
+      ) : null}
+
       {result.right_sized_count ? (
         <p className="rounded-lg border border-emerald-600/30 bg-emerald-600/10 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-400">
           Right-sized {result.right_sized_count} of {result.vm_count} workloads to observed
@@ -132,7 +145,14 @@ export default function RunSummary({ result }: { result: RunResult }) {
             {result.instances.map((i) => (
               <tr key={i.vm} className="border-b border-neutral-100 dark:border-neutral-900">
                 <td className="py-2 pr-4 font-mono text-xs">{i.vm}</td>
-                <td className="py-2 pr-4 font-mono text-xs">{i.instance_type}</td>
+                <td className="py-2 pr-4 font-mono text-xs">
+                  {i.instance_type}
+                  {i.undersized ? (
+                    <span className="ml-2 font-sans font-medium text-red-800 dark:text-red-300">
+                      too small
+                    </span>
+                  ) : null}
+                </td>
                 <td className="py-2 capitalize">{i.tier}</td>
               </tr>
             ))}

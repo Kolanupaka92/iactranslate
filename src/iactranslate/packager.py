@@ -40,6 +40,14 @@ def migration_summary(plan: MigrationPlan, vms: Optional[List[NormalizedVM]] = N
         f"- **Translation confidence:** {conf.overall * 100:.0f}% ({conf.level})"
         + (f" — {plural(len(conf.low_confidence()), 'workload')} need review" if conf.low_confidence() else ""),
     ]
+    undersized = [c for c in plan.compute if c.undersized]
+    if undersized:
+        lines.append(
+            f"- **Will not fit:** {plural(len(undersized), 'workload')} larger than any "
+            f"{plan.target} size in the catalog: "
+            + ", ".join(f"`{c.vm_name}`" for c in undersized)
+            + ". Resolve before migrating; see \"Why these instances\"."
+        )
     if right_sized:
         lines.append(
             f"- **Right-sized from utilization:** {len(right_sized)} of {plan.vm_count} "

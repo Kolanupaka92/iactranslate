@@ -128,6 +128,7 @@ def sizing_decision(
     target_vcpu: Optional[int] = None,
     target_memory_gib: Optional[float] = None,
     alternatives: Optional[List[str]] = None,
+    shortfall: Optional[str] = None,
 ) -> Decision:
     """Build the evidence for one instance-type choice.
 
@@ -157,7 +158,8 @@ def sizing_decision(
         evidence.append(Evidence(field="instance_spec", source="target catalog",
                                  value=f"{target_vcpu} vCPU / {target_memory_gib:g} GiB"))
 
-    assumptions = [f"{round((headroom - 1) * 100)}% headroom above demand"]
+    # With a shortfall the headroom was not applied, so it can't be claimed.
+    assumptions = [shortfall or f"{round((headroom - 1) * 100)}% headroom above demand"]
     if measured:
         assumptions.append(
             "Utilization in the inventory is representative of normal load"

@@ -187,7 +187,10 @@ iactranslate/
    the requirement: if the source carries **utilization** (CPU/mem %), size to *actual usage*
    at `IACTRANSLATE_TARGET_UTILIZATION` headroom (right-sizing); otherwise size to raw
    allocation with 1.2× headroom (unchanged). The provider proposes an instance; the code
-   **re-checks it against the target catalog** (falls back to `smallest_fit`), computes cost,
+   **re-checks it against the target catalog** (falls back to `smallest_fit`, also when the
+   proposal is too small), flags a machine no size can hold as `undersized` (ADR 0086: README,
+   migration summary, backlog, CLI, API `undersized_count`, console, and the recommendation,
+   where that cloud is not eligible), computes cost,
    and derives subnet tier + security group. Right-sized rows record the before/after and
    surface in the migration summary and API (`right_sized_count`). **Cost** comes from
    `pricing.monthly_cost()`: static catalog rates by default, or live market prices when

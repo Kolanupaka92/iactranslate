@@ -137,7 +137,11 @@ export default function RecommendTable({
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2 text-sm">
-        <span className="opacity-70">Recommended:</span>
+        <span className="opacity-70">
+          {rec.ranked.some((s) => s.eligible !== false)
+            ? "Recommended:"
+            : "No cloud can take every workload. Closest:"}
+        </span>
         <span className="font-semibold uppercase">{rec.recommended}</span>
         <span
           className={`rounded-full px-2 py-0.5 text-xs font-medium ${
@@ -205,7 +209,8 @@ export default function RecommendTable({
           </thead>
           <tbody>
             {rec.ranked.map((s) => {
-              const winner = s.cloud === rec.recommended;
+              const eligible = s.eligible !== false;
+              const winner = eligible && s.cloud === rec.recommended;
               return (
                 <tr
                   key={s.cloud}
@@ -213,6 +218,11 @@ export default function RecommendTable({
                 >
                   <td className="py-2.5 pr-4 font-semibold uppercase">
                     {s.cloud}
+                    {!eligible && (
+                      <span className="ml-2 rounded bg-red-600/15 px-1.5 py-0.5 text-xs font-medium normal-case text-red-800 dark:text-red-300">
+                        Not eligible
+                      </span>
+                    )}
                     {winner && (
                       <span className="ml-2 rounded bg-emerald-600/15 px-1.5 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-400">
                         Recommended
@@ -253,7 +263,7 @@ export default function RecommendTable({
 
       <div className="space-y-2 text-sm">
         {rec.ranked.map((s) => (
-          <details key={s.cloud} open={s.cloud === rec.recommended}>
+          <details key={s.cloud} open={s.cloud === rec.recommended || s.eligible === false}>
             <summary className="cursor-pointer font-medium uppercase">
               {s.cloud} — why
             </summary>

@@ -54,6 +54,8 @@ export interface InstanceRow {
   vm: string;
   instance_type: string;
   tier: string;
+  /** No size in the target's catalog holds it; `instance_type` is too small. */
+  undersized?: boolean;
 }
 
 export interface ConfidenceSummary {
@@ -72,6 +74,7 @@ export interface RunResult {
   pricing_basis?: string;
   pricing_source?: "static" | "live";
   right_sized_count?: number;
+  undersized_count?: number;
   /** Workloads whose size rests on measured utilization rather than on what
    *  was allocated. The estate-level honesty signal: when this is low, any
    *  saving shown is unproven, and the UI says so. */
@@ -109,6 +112,9 @@ export interface CloudScore {
   fit_score: number;
   os_score: number;
   weighted_score: number;
+  /** False when it can't take every workload: no image for the OS, or no size
+   *  large enough. `reasons` says which. Its cost isn't comparable. */
+  eligible?: boolean;
   reasons: string[];
 }
 

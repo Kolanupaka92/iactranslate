@@ -15,13 +15,32 @@ from ..evidence import sizing_decision
 from ..models import ComputePlan, Environment, NormalizedVM, Tier
 from ..pricing import monthly_cost
 from ..sizing import effective_demand
-from ..targets.base import STEADY_CPU_TIERS, Target
+from ..targets.base import STEADY_CPU_TIERS, Target, is_undersized
 from .base import LLMProvider
 
 _MIN_ROOT_GIB = 30
 
 
-def _decision_reason(vm, demand, spec, tier, overridden: bool, suggested: str) -> str:
+def _shortfall(demand, spec) -> Optional[str]:
+    """Where a size can't hold the demand, or only without the usual headroom."""
+    need = f"{demand.vcpu:g} vCPU / {demand.memory_gib:g} GiB"
+    if is_undersized(spec, demand.vcpu, demand.memory_gib):
+        return (
+            f"DOES NOT FIT: the workload needs {need} and no size in the catalog is "
+            f"that large. {spec.name} ({spec.vcpu} vCPU / {spec.memory_gib:g} GiB) is the "
+            f"closest. Do not migrate this workload on this plan without resolving that first: "
+            f"reduce or split it, choose another target, or pick a larger size by hand."
+        )
+    if is_undersized(spec, demand.vcpu * demand.headroom, demand.memory_gib * demand.headroom):
+        return (
+            f"Fits {need}, but without the usual {round((demand.headroom - 1) * 100)}% "
+            f"headroom: the catalog has nothing larger that fits."
+        )
+    return None
+
+
+def _decision_reason(vm, demand, spec, tier, overridden: bool, suggested: str,
+                     too_small: bool = False) -> str:
     """A human-readable explanation of why this instance/tier was chosen."""
     chosen = (
         f"{spec.name} ({spec.vcpu} vCPU / {spec.memory_gib:g} GiB)"
@@ -44,7 +63,9 @@ def _decision_reason(vm, demand, spec, tier, overridden: bool, suggested: str) -
             f"{vm.memory_gib:g} GiB → {chosen}"
         )
     reason = f"{basis}; {tier.value} tier."
-    if overridden:
+    if too_small:
+        reason += f" Guardrail: model suggestion '{suggested}' is smaller than the workload needs."
+    elif overridden:
         reason += f" Catalog guardrail: model suggestion '{suggested}' is not a real type."
     return reason
 
@@ -134,17 +155,26 @@ def build_compute_plans(
         demand = effective_demand(vm)
         suggestion = provider.rightsize(vm, tier, environment)
         instance_type = suggestion.instance_type
-        # Guardrail: never emit an instance type that isn't in the target catalog.
-        # Fall back to the same demand model the provider should have used.
-        overridden = not target.instance_exists(instance_type)
-        if overridden:
+        # Guardrail: never emit an instance type that isn't in the target catalog,
+        # or one too small when the catalog has one that fits. Fall back to the
+        # same demand model the provider should have used.
+        suggested = target.spec_of(instance_type) if target.instance_exists(instance_type) else None
+        too_small = suggested is not None and is_undersized(suggested, demand.vcpu, demand.memory_gib)
+        overridden = suggested is None
+        if suggested is None or too_small:
             instance_type = target.smallest_fit(
                 demand.vcpu, demand.memory_gib, headroom=demand.headroom,
                 steady_cpu=tier in STEADY_CPU_TIERS,
             ).name
+            too_small = too_small and instance_type != suggestion.instance_type
+            overridden = overridden or too_small
 
         spec = target.spec_of(instance_type)
-        reason = _decision_reason(vm, demand, spec, tier, overridden, suggestion.instance_type)
+        reason = _decision_reason(vm, demand, spec, tier, overridden, suggestion.instance_type, too_small)
+        undersized = bool(spec) and is_undersized(spec, demand.vcpu, demand.memory_gib)
+        shortfall = _shortfall(demand, spec) if spec else None
+        if shortfall:
+            reason += f" {shortfall}"
         image_key = suggestion.image_key or target.image_key(vm.os)
         substitution = os_substitution_note(vm.os, image_key)
         if substitution:
@@ -161,6 +191,7 @@ def build_compute_plans(
                 resource_name=vm.resource_name,
                 source_os=vm.os,
                 os_family_changed=family_changed,
+                undersized=undersized,
                 instance_type=instance_type,
                 image_key=image_key,
                 vcpu=spec.vcpu if spec else vm.cpu,
@@ -184,6 +215,7 @@ def build_compute_plans(
                     cpu_util_pct=vm.cpu_util_pct,
                     mem_util_pct=vm.mem_util_pct,
                     headroom=demand.headroom,
+                    shortfall=shortfall,
                     target_vcpu=spec.vcpu if spec else None,
                     target_memory_gib=spec.memory_gib if spec else None,
                     # What the deterministic engine would have picked when the

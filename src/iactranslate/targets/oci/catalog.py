@@ -14,7 +14,8 @@ only exists because our model needs a unique catalog key, OCI doesn't.
 
 Pricing: OCPU-hour + GB-hour rates from OCI's published Flex pricing
 (approximately $0.025/OCPU-hr + $0.0015/GB-hr for E4.Flex; E5.Flex is the
-newer generation at a modest premium, ~$0.03/OCPU-hr + $0.0017/GB-hr).
+newer generation at a modest premium, $0.03/OCPU-hr + $0.002/GB-hr, read from Oracle's price
+API on 2026-11-24).
 Ballpark, like the AWS/Azure/GCP catalogs — production sizing should use
 OCI's Cost Estimator.
 """
@@ -27,7 +28,7 @@ from ..base import InstanceSpec
 _E4_OCPU_HR = 0.025
 _E4_GB_HR = 0.0015
 _E5_OCPU_HR = 0.03
-_E5_GB_HR = 0.0017
+_E5_GB_HR = 0.002
 
 
 def _e4(ocpu: int, mem_gb: float) -> InstanceSpec:
@@ -53,6 +54,15 @@ INSTANCE_CATALOG: List[InstanceSpec] = [
     _e5(4, 32),
     _e5(8, 64),
     _e5(16, 128),
+    # Up to each shape's limits: E4.Flex 64 OCPU, E5.Flex 126, 1,024 GB, and at
+    # most 64 GB per OCPU (ADR 0086).
+    _e4(48, 192),
+    _e4(64, 256),
+    _e4(64, 1024),
+    _e5(32, 256),
+    _e5(64, 512),
+    _e5(64, 1024),
+    _e5(126, 1024),
 ]
 
 

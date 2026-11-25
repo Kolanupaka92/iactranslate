@@ -1158,6 +1158,9 @@ def _execute_run_locked(project: Project, out_dir: Path) -> None:
         # rather than leaving a customer to assume they are real market prices.
         "pricing_source_degraded": result.plan.pricing_source_degraded,
         "right_sized_count": sum(1 for c in result.plan.compute if c.right_sized),
+        # Workloads larger than anything in the catalog: the plan's size for them
+        # is too small, and the console says so (ADR 0086).
+        "undersized_count": sum(1 for c in result.plan.compute if c.undersized),
         "provider_requested": project.provider,
         "provider_used": result.plan.provider_used,
         "confidence": {
@@ -1183,6 +1186,7 @@ def _execute_run_locked(project: Project, out_dir: Path) -> None:
                 "vm": c.vm_name,
                 "instance_type": c.instance_type,
                 "tier": c.tier.value,
+                "undersized": c.undersized,
                 "basis": c.decision.basis.value if c.decision else None,
                 "basis_label": c.decision.basis.label if c.decision else None,
                 "evidence": (

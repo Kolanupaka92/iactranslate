@@ -172,6 +172,12 @@ def _cmd_translate(args: argparse.Namespace) -> int:
     print(f"Confidence: {conf.overall * 100:.0f}% ({conf.level})"
           + (f" — {len(conf.low_confidence())} low-confidence VM(s)"
              if conf.low_confidence() else ""))
+    undersized = [c for c in plan.compute if c.undersized]
+    if undersized:
+        print(f"WARNING:    {len(undersized)} VM(s) do not fit any {plan.target} size in the catalog: "
+              + ", ".join(c.vm_name for c in undersized[:5])
+              + (f" and {len(undersized) - 5} more" if len(undersized) > 5 else "")
+              + ". Resolve before migrating; decisions.json has the detail.")
     if result.policy and result.policy.warnings:
         print(f"Policy:     {len(result.policy.warnings)} warning(s) (see policy-report.json)")
         for w in result.policy.warnings[:5]:

@@ -198,6 +198,9 @@ class ComputePlan(BaseModel):
     # image (DigitalOcean does; ADR 0023) — exactly the case that most needs the
     # warning.
     os_family_changed: bool = False
+    # True when no size in the target's catalog holds the workload's demand, so
+    # `instance_type` is the closest and too small (ADR 0086).
+    undersized: bool = False
     # Brownfield: existing cloud resource id to adopt via a Terraform import block.
     external_id: Optional[str] = None
 

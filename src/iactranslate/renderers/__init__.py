@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import Callable, Dict, List, Optional
 
+from ..display import plural
 from ..generator import build_files as _build_terraform
 from ..identity import IdentityMode
 from ..landing_zone import LandingZone
@@ -84,6 +85,22 @@ def list_renderers() -> List[str]:
     return list(_RENDERERS)
 
 
+def undersized_warning(plan: MigrationPlan) -> str:
+    """Markdown naming the workloads no size in the catalog can hold, or ""."""
+    small = [c for c in plan.compute if c.undersized]
+    if not small:
+        return ""
+    rows = "\n".join(
+        f"> - `{c.vm_name}`: {c.instance_type} ({c.vcpu} vCPU / {c.memory_gib:g} GiB) is too small"
+        for c in small
+    )
+    return (
+        f"> **Do not apply as is: {plural(len(small), 'workload')} will not fit.** "
+        f"No {plan.target} size in the catalog is large enough, so the closest was used. "
+        f"`decisions.json` says what each one needs.\n>\n{rows}\n"
+    )
+
+
 def render(
     name: str,
     plan: MigrationPlan,
@@ -108,10 +125,17 @@ def render(
             f"renderer '{name}' not supported (available: {', '.join(_RENDERERS)})"
         ) from e
     if name == "terraform":
-        return fn(plan, target, state_backend, zone, identity, hybrid)
-    if name == "terraform-foreach":
-        return fn(plan, target, state_backend, zone, identity, hybrid, layout="for_each")
-    return fn(plan, target)
+        files = fn(plan, target, state_backend, zone, identity, hybrid)
+    elif name == "terraform-foreach":
+        files = fn(plan, target, state_backend, zone, identity, hybrid, layout="for_each")
+    else:
+        files = fn(plan, target)
+    warning = undersized_warning(plan)
+    if warning and "README.md" in files:
+        # Here rather than in fourteen templates: no renderer may omit it.
+        title, _, rest = files["README.md"].partition("\n")
+        files["README.md"] = f"{title}\n\n{warning}\n{rest}"
+    return files
 
 
 def renderer_label(name: str) -> str:

@@ -56,6 +56,10 @@ class CloudScore(BaseModel):
         default=0,
         description="VMs whose operating system this cloud publishes no image for",
     )
+    undersized_workloads: int = Field(
+        default=0,
+        description="VMs larger than any size in this cloud's catalog",
+    )
     eligible: bool = Field(
         default=True,
         description="False when the cloud cannot host part of the estate at all",
@@ -213,6 +217,15 @@ def _unsupported_count(target, vms: List[NormalizedVM]) -> int:
     return count
 
 
+def _remedy(score: CloudScore) -> str:
+    options = []
+    if score.unsupported_workloads:
+        options.append("a custom image")
+    if score.undersized_workloads:
+        options.append("smaller workloads")
+    return " or ".join(options)
+
+
 def recommend(
     vms: List[NormalizedVM],
     targets: Optional[List[str]] = None,
@@ -266,6 +279,9 @@ def recommend(
             "fit": _fit(vms, plan.compute),
             "os": _os_affinity(name, windows_fraction),
             "unsupported": _unsupported_count(target, vms),
+            "undersized": sum(1 for c in plan.compute if c.undersized),
+            # A machine can be both; it is still one machine it can't take.
+            "blocked": sum(1 for c in plan.compute if c.os_family_changed or c.undersized),
         }
 
     # The cost baseline every other cloud is measured against must come from a
@@ -273,12 +289,13 @@ def recommend(
     # by construction — it silently drops the workloads it cannot host — so
     # anchoring "$X more than the cheapest option" to it would overstate the
     # premium on every real candidate.
-    priced = {n: r for n, r in raw.items() if not r["unsupported"]} or raw
+    priced = {n: r for n, r in raw.items() if not r["blocked"]} or raw
     cheapest_cost = min(r["cost"] for r in priced.values()) or 1.0
-    best_fit = max(r["fit"] for r in raw.values())
+    # A cloud that gives machines less than they need would "waste" least.
+    best_fit = max(r["fit"] for r in priced.values())
     lowest_cost_cloud = min(priced, key=lambda n: priced[n]["cost"])
     # Only claim "tightest fit" when one cloud strictly wins (not a tie).
-    fit_winners = [n for n, r in raw.items() if r["fit"] == best_fit]
+    fit_winners = [n for n, r in priced.items() if r["fit"] == best_fit]
     tightest_fit_cloud = fit_winners[0] if len(fit_winners) == 1 else None
 
     scores: List[CloudScore] = []
@@ -287,7 +304,8 @@ def recommend(
         fit_score = r["fit"]
         os_score = r["os"]
         unsupported = r["unsupported"]
-        eligible = unsupported == 0
+        undersized, blocked = r["undersized"], r["blocked"]
+        eligible = blocked == 0
         weighted = round(w.cost * cost_score + w.fit * fit_score + w.os * os_score, 4)
         if not eligible:
             # A disqualified cloud scores zero, not "well but excluded". Leaving
@@ -298,7 +316,7 @@ def recommend(
             weighted = 0.0
 
         reasons: List[str] = []
-        if not eligible:
+        if unsupported:
             # Stated first, and stated bluntly. This cloud's cost advantage is
             # partly an artifact of not running workloads it cannot run, so
             # presenting it as a cheaper peer would be actively misleading.
@@ -307,6 +325,12 @@ def recommend(
                 f"system {name.upper()} publishes no image for. Its cost figure "
                 f"excludes licensing for machines it cannot host, so it is not "
                 f"comparable to the others."
+            )
+        if undersized:
+            reasons.append(
+                f"NOT ELIGIBLE: {undersized} of {total} workloads need more than the "
+                f"largest {name.upper()} size in the catalog. Its cost figure prices "
+                f"machines too small for them, so it is not comparable to the others."
             )
         if eligible:
             if name == lowest_cost_cloud:
@@ -322,7 +346,10 @@ def recommend(
             # artifacts of the workloads it silently drops.
             reasons.append(
                 f"Priced at ${r['cost']:.2f}/mo for the "
-                f"{total - unsupported} workloads it can host, shown for reference only."
+                f"{total - blocked} workloads it can host, shown for reference only."
+                if not undersized else
+                f"Priced at ${r['cost']:.2f}/mo, too small for {undersized} of them, "
+                f"shown for reference only."
             )
         if name == "azure" and windows > 0:
             reasons.append(
@@ -350,6 +377,7 @@ def recommend(
                 os_score=os_score,
                 weighted_score=weighted,
                 unsupported_workloads=unsupported,
+                undersized_workloads=undersized,
                 eligible=eligible,
                 reasons=reasons,
             )
@@ -399,9 +427,14 @@ def recommend(
         if not s_.eligible:
             notes.append(
                 f"{s_.cloud.upper()} was excluded from the recommendation: it cannot "
-                f"host {s_.unsupported_workloads} of {total} workloads. Migrating those "
-                f"would need a different cloud or a custom image."
+                f"host {raw[s_.cloud]['blocked']} of {total} workloads as they are. Migrating those "
+                f"would need a different cloud, {_remedy(s_)}."
             )
+    if not eligible_scores:
+        notes.insert(0,
+            "No compared cloud can take every workload as it is. The ranking below is "
+            "not a recommendation to migrate; resolve the workloads that don't fit first."
+        )
     if decisiveness == "close":
         notes.append(
             "Close call — the top two clouds are within the scoring noise; "
@@ -426,6 +459,11 @@ def recommend(
         f"${cheapest_cost:.2f}/mo (${cheapest_cost * 12:,.0f}/yr). "
         f"{'Custom weights' if custom else 'Weights'} — cost {w.cost}, fit {w.fit}, OS {w.os}."
     )
+    if not eligible_scores:
+        summary = (
+            f"No compared cloud can take every workload as it is. Closest: "
+            f"{winner.cloud.upper()}. {winner.reasons[0]}"
+        )
     return Recommendation(
         recommended=winner.cloud, summary=summary, ranked=scores,
         decisiveness=decisiveness, margin=margin,

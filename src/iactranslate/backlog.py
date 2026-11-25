@@ -123,6 +123,10 @@ def build_backlog(
             ]
             if c.os_family_changed:
                 description.append("Warning: the target image is a different OS family from the source.")
+            if c.undersized:
+                description.append(
+                    f"Warning: {c.instance_type} is too small for this workload, and {plan.target} has no "
+                    "size in the catalog that fits. Resolve this before migrating.")
             if w.validation_checks:
                 description.append("Acceptance criteria: " + "; ".join(w.validation_checks))
             items.append(BacklogItem(

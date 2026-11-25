@@ -42,6 +42,10 @@ INSTANCE_CATALOG: List[InstanceSpec] = [
     InstanceSpec("mem-8x64", 8, 64.0, "mem", 0.0),
     InstanceSpec("mem-16x128", 16, 128.0, "mem", 0.0),
     InstanceSpec("mem-32x256", 32, 256.0, "mem", 0.0),
+    InstanceSpec("std-128x512", 128, 512.0, "std", 0.0),
+    InstanceSpec("mem-64x512", 64, 512.0, "mem", 0.0),
+    InstanceSpec("mem-128x1024", 128, 1024.0, "mem", 0.0),
+    InstanceSpec("mem-128x2048", 128, 2048.0, "mem", 0.0),
 ]
 
 

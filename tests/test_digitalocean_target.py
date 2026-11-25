@@ -31,7 +31,7 @@ def test_digitalocean_capabilities_are_honest():
 def test_digitalocean_catalog_uses_real_stable_slugs():
     names = DO.instance_names()
     assert len(names) == len(set(names))
-    assert all(n.startswith(("s-", "m-")) for n in names)
+    assert all(n.startswith(("s-", "g-", "m-")) for n in names)
 
 
 def test_digitalocean_renders_droplet_and_vpc_resources(rvtools_path):
@@ -122,7 +122,7 @@ def test_digitalocean_pipeline_e2e(rvtools_path, tmp_path):
     assert result.plan.target == "digitalocean"
     assert result.plan.region == "nyc3"
     for c in result.plan.compute:
-        assert c.instance_type.startswith(("s-", "m-"))
+        assert c.instance_type.startswith(("s-", "g-", "m-"))
     with zipfile.ZipFile(result.zip_path) as zf:
         assert "compute.tf" in zf.namelist()
 

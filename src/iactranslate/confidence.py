@@ -90,6 +90,11 @@ def _classification_factor(c: ComputePlan) -> FactorScore:
 
 
 def _sizing_factor(c: ComputePlan) -> FactorScore:
+    if c.undersized:
+        return FactorScore(
+            factor="sizing", score=0.0,
+            basis="Does not fit: the target's catalog has no size large enough.",
+        )
     if c.right_sized:
         return FactorScore(
             factor="sizing", score=0.9,
