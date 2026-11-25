@@ -12,7 +12,7 @@ from __future__ import annotations
 from typing import Dict, List
 
 from ..graph import assign_subnets, public_instances
-from ..models import MigrationPlan, SubnetTier, terraform_safe_name
+from ..models import MigrationPlan, SubnetTier, resource_prefix, terraform_safe_name
 from ..targets.base import Target
 
 
@@ -242,7 +242,7 @@ def _azure_main(plan: MigrationPlan, target: Target) -> str:
         "",
         "rg = azure.core.ResourceGroup(",
         '    "rg",',
-        f"    name={_py_str(plan.project_name + '-rg')},",
+        f"    name={_py_str(resource_prefix(plan.project_name) + '-rg')},",
         "    location=location,",
         ")",
         "vnet = azure.network.VirtualNetwork(",

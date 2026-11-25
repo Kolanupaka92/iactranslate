@@ -24,7 +24,7 @@ from __future__ import annotations
 from typing import Dict, List
 
 from ..graph import EdgeKind, InfrastructureGraph, NodeKind, build_graph
-from ..models import MigrationPlan, terraform_safe_name
+from ..models import MigrationPlan, stack_name, terraform_safe_name
 from ..targets.base import Target
 from .cloudformation import _ami_dynamic_ref, _ami_parameter_name, _cid
 
@@ -297,7 +297,7 @@ def _app_py(plan: MigrationPlan) -> str:
         "app = cdk.App()",
         f"{cls}(",
         "    app,",
-        f"    {_py_str(plan.project_name + '-stack')},",
+        f"    {_py_str(stack_name(plan.project_name) + '-stack')},",
         f"    env=cdk.Environment(region={_py_str(plan.region)}),",
         ")",
         "app.synth()",

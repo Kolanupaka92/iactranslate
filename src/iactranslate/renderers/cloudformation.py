@@ -21,7 +21,7 @@ import re
 from typing import Dict, List, Optional
 
 from ..graph import EdgeKind, InfrastructureGraph, NodeKind, build_graph
-from ..models import MigrationPlan
+from ..models import MigrationPlan, stack_name
 from ..targets.base import Target
 
 # image_key -> AWS-published SSM public parameter holding the latest AMI id.
@@ -345,7 +345,7 @@ def _readme(plan: MigrationPlan, image_keys: List[str]) -> str:
         "## Deploy\n\n"
         "```bash\n"
         f"aws cloudformation deploy --template-file template.json "
-        f"--stack-name {plan.project_name} --capabilities CAPABILITY_NAMED_IAM"
+        f"--stack-name {stack_name(plan.project_name)} --capabilities CAPABILITY_NAMED_IAM"
         + (" --parameter-overrides " + " ".join(f"{_ami_parameter_name(k)}=<ami-id>" for k in needs_param)
            if needs_param else "")
         + "\n```\n"

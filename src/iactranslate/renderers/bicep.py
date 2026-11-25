@@ -23,7 +23,7 @@ from __future__ import annotations
 from typing import Dict, List
 
 from ..graph import EdgeKind, InfrastructureGraph, NodeKind, build_graph
-from ..models import MigrationPlan, terraform_safe_name
+from ..models import MigrationPlan, resource_prefix, terraform_safe_name
 from ..targets.base import Target
 
 
@@ -81,7 +81,7 @@ def _resources_bicep(graph: InfrastructureGraph, plan: MigrationPlan, target: Ta
     vnet_id = _id(f"vnet-{plan.project_name}")
     lines += [
         f"resource {vnet_id} 'Microsoft.Network/virtualNetworks@2023-05-01' = {{",
-        f"  name: {_str(plan.project_name + '-vnet')}",
+        f"  name: {_str(resource_prefix(plan.project_name) + '-vnet')}",
         "  location: location",
         "  properties: {",
         f"    addressSpace: {{ addressPrefixes: [{_str(vpc.attributes['cidr'])}] }}",
@@ -330,7 +330,7 @@ def _main_bicep(plan: MigrationPlan) -> str:
         "param adminSshPublicKey string = ''",
         "",
         "resource rg 'Microsoft.Resources/resourceGroups@2023-07-01' = {",
-        f"  name: {_str(plan.project_name + '-rg')}",
+        f"  name: {_str(resource_prefix(plan.project_name) + '-rg')}",
         "  location: location",
         "}",
         "",

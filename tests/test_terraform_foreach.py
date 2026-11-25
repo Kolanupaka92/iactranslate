@@ -136,7 +136,7 @@ def test_one_instance_resource_with_a_row_per_machine(plan, foreach):
 
 def test_data_volumes_are_keyed_like_classic_labels(classic, foreach):
     classic_vols = _addresses(classic, "aws_ebs_volume")
-    keys = set(re.findall(r'^    "([a-z0-9_]+)" = \{ vm =', foreach["storage.tf"], re.MULTILINE))
+    keys = set(re.findall(r'^    "([a-z0-9_]+)"\s*= \{ vm =', foreach["storage.tf"], re.MULTILINE))
     assert classic_vols and keys == classic_vols
     assert _addresses(foreach, "aws_ebs_volume") == {"data"}
     assert _addresses(foreach, "aws_volume_attachment") == {"data"}

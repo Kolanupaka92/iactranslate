@@ -20,7 +20,7 @@ variable "zone" {
 variable "project_name" {
   description = "Project name used as a resource name prefix and label."
   type        = string
-  default     = "{{ project_slug }}"
+  default     = "{{ project_gcp }}"
 }
 
 # Boot images are resolved automatically to public image families (see compute.tf).

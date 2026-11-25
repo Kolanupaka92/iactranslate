@@ -24,9 +24,10 @@ from ..identity import (
 from ..identity import notes as identity_notes
 from ..identity import supported as identity_supported
 from ..landing_zone import LandingZone, gcp_labels
-from ..models import ComputePlan, MigrationPlan, SubnetTier, terraform_safe_name
+from ..models import ComputePlan, MigrationPlan, SubnetTier, resource_prefix, terraform_safe_name
 from ..state import StateBackend, resolve_backend
 from ..targets.base import Target
+from .hclfmt import format_hcl, is_hcl
 
 
 def _rfc1035_slug(value: str) -> str:
@@ -308,6 +309,9 @@ def build_files(
         "region": plan.region,
         "project": plan.project_name,
         "project_slug": _rfc1035_slug(plan.project_name),
+        "project_prefix": resource_prefix(plan.project_name),
+        # Google's 63 characters, less the longest suffix its resources add.
+        "project_gcp": _rfc1035_slug(resource_prefix(plan.project_name)),
         "image_keys": _image_keys(plan.compute),
         "image_refs": image_refs,
         "subnet_of": subnet_of,
@@ -360,4 +364,6 @@ def build_files(
         out["migrate-from-classic.tf"] = _migrate_from_classic(plan, classic, out)
     # Drop files that rendered empty — e.g. imports.tf when there are no
     # brownfield resource ids to adopt.
-    return {name: content for name, content in out.items() if content.strip()}
+    # Aligned like `terraform fmt`, which the generated pipelines check first.
+    return {name: format_hcl(content) if is_hcl(name) else content
+            for name, content in out.items() if content.strip()}

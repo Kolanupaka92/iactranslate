@@ -12,6 +12,8 @@ is a real CIS finding. Azure, GCP, OCI and DigitalOcean encrypt at rest
 unconditionally and cannot be told not to, so emitting an "encrypt = true" there
 would be noise that implies a control the provider does not expose.
 """
+import re
+
 import pytest
 
 from iactranslate.agents import build_migration_plan
@@ -42,7 +44,7 @@ def test_aws_root_volumes_are_encrypted(vms):
     """EBS is not encrypted by default. An unencrypted root volume is the
     finding that ends a security review (CIS AWS Foundations 2.2.1)."""
     files, _ = _files(vms, "aws")
-    assert "encrypted   = true" in files["compute.tf"]
+    assert re.search(r"\bencrypted\s*= true", files["compute.tf"])
 
 
 def test_aws_data_volumes_are_encrypted(vms):
@@ -50,14 +52,14 @@ def test_aws_data_volumes_are_encrypted(vms):
     windows_heavy = normalize(parse("tests/fixtures/rvtools_sample.xlsx"))
     files, plan = _files(windows_heavy, "aws")
     if "storage.tf" in files:
-        assert "encrypted         = true" in files["storage.tf"]
+        assert re.search(r"\bencrypted\s*= true", files["storage.tf"])
 
 
 def test_encryption_is_not_optional_on_aws(vms):
     """No configuration turns it off. A knob here would only ever be used to
     create the exposure this exists to close."""
     files, _ = _files(vms, "aws", LandingZone())
-    assert "encrypted   = true" in files["compute.tf"]
+    assert re.search(r"\bencrypted\s*= true", files["compute.tf"])
 
 
 # --- whose key ---------------------------------------------------------------
@@ -115,7 +117,7 @@ def test_clouds_that_always_encrypt_emit_no_encryption_config(vms, cloud):
     unconditionally; on Nutanix and Proxmox it is a cluster or datastore
     setting. Emitting one would imply a control the platform does not have."""
     files, _ = _files(vms, cloud)
-    assert "encrypted   = true" not in files["compute.tf"]
+    assert not re.search(r"\bencrypted\s*= true", files["compute.tf"])
 
 
 # --- the policy ---------------------------------------------------------------

@@ -5,6 +5,7 @@ failure at any stage is localized, serializable, and testable.
 """
 from __future__ import annotations
 
+import hashlib
 import re
 from enum import Enum
 from typing import Dict, List, Optional
@@ -59,6 +60,36 @@ def terraform_safe_name(value: str) -> str:
     if not re.match(r"[a-zA-Z_]", slug[0]):
         slug = f"r_{slug}"
     return slug
+
+
+#: Longest prefix that leaves room for the suffixes resources add
+#: ("-database", "-public-0-nsg") inside AWS IAM's 64 characters.
+_MAX_PREFIX = 48
+
+
+def resource_prefix(project_name: str) -> str:
+    """A project name usable in cloud resource names (ADR 0084).
+
+    People type names with spaces; AWS IAM and most Azure resources refuse them.
+    A name that is already usable is returned unchanged, so regenerating an
+    estate never renames its resources.
+    """
+    safe = re.sub(r"[^A-Za-z0-9._-]+", "-", project_name).strip("-._")
+    if not safe:
+        safe = "project"
+    if not safe[0].isalnum():
+        safe = f"n{safe}"
+    if len(safe) > _MAX_PREFIX:
+        # Not a secret: keeps two long names that start alike apart.
+        digest = hashlib.sha256(safe.encode()).hexdigest()[:4]
+        safe = f"{safe[:_MAX_PREFIX - 5].rstrip('-._')}-{digest}"
+    return safe
+
+
+def stack_name(project_name: str) -> str:
+    """A CloudFormation stack name: letters, digits and hyphens, letter first."""
+    safe = re.sub(r"[^A-Za-z0-9]+", "-", resource_prefix(project_name)).strip("-")
+    return safe if safe[0].isalpha() else f"n-{safe}"
 
 
 class NormalizedVM(BaseModel):

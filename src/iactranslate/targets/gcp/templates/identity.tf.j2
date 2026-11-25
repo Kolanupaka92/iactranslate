@@ -11,9 +11,10 @@
 {% for tier in identity_roles %}
 
 resource "google_service_account" "{{ tier }}" {
-  # account_id is RFC1035-ish and capped at 30 characters, so it is built from
-  # the tier rather than the project name, which can be long.
-  account_id   = "${var.project_name}-{{ tier }}"
+  # Google allows 6 to 30 characters. A longer name is shortened, with a hash so
+  # two long names that start alike stay different.
+{% set room = 29 - tier|length %}
+  account_id   = length(var.project_name) > {{ room }} ? "${trimsuffix(substr(var.project_name, 0, {{ room - 5 }}), "-")}-${substr(md5(var.project_name), 0, 4)}-{{ tier }}" : {% if tier|length < 4 %}length(var.project_name) < 2 ? "${var.project_name}-{{ tier }}-sa" : {% endif %}"${var.project_name}-{{ tier }}"
   display_name = "{{ tier }} tier ({{ project }})"
 }
 {% endfor %}
