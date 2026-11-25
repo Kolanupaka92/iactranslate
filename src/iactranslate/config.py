@@ -23,7 +23,21 @@ MAX_VMS: int = int(os.getenv("IACTRANSLATE_MAX_VMS", "20000"))
 
 # Cap the in-memory project store; oldest projects are evicted (their temp
 # workspaces are deleted) beyond this to bound disk usage.
+#: Applies to projects nobody owns (single-tenant mode). An account's projects
+#: are never evicted to make room; accounts have a quota instead (below).
 MAX_PROJECTS: int = int(os.getenv("IACTRANSLATE_MAX_PROJECTS", "200"))
+
+
+def max_projects_per_account() -> int:
+    """How many projects one account may own; creating another is refused.
+
+    Refused, not evicted. Evicting the oldest project on the deployment let
+    one account's projects delete another customer's (ADR 0083).
+    """
+    try:
+        return max(int(os.getenv("IACTRANSLATE_MAX_PROJECTS_PER_ACCOUNT", "50")), 1)
+    except ValueError:
+        return 50
 
 
 def _target_utilization() -> float:

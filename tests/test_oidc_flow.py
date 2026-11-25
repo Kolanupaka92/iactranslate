@@ -164,7 +164,8 @@ def test_a_successful_sign_in_returns_to_the_console(api, key):
 
 def test_methods_offer_oidc(api):
     main, _ = api
-    assert _browser(main).get("/auth/methods").json() == {"password": True, "saml": False, "oidc": True}
+    assert _browser(main).get("/auth/methods").json() == {
+        "password": True, "saml": False, "oidc": True, "oidc_name": None}
 
 
 # --- refused -------------------------------------------------------------------------------

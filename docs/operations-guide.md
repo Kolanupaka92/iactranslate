@@ -530,7 +530,8 @@ All env vars (see `src/iactranslate/config.py`):
 | `IACTRANSLATE_ANTHROPIC_MODEL` | `claude-opus-4-8` | Model for classify/rightsize. |
 | `IACTRANSLATE_MAX_UPLOAD_MB` | `25` | Upload cap → `413`. Streamed, never buffered whole. |
 | `IACTRANSLATE_MAX_VMS` | `20000` | Inventory size cap → `400`. |
-| `IACTRANSLATE_MAX_PROJECTS` | `200` | Store capacity cap; oldest evicted (temp dirs deleted). |
+| `IACTRANSLATE_MAX_PROJECTS` | `200` | Cap on projects nobody owns (single-tenant mode); the oldest of those are evicted, files included. An account's projects are never evicted (ADR 0083). |
+| `IACTRANSLATE_MAX_PROJECTS_PER_ACCOUNT` | `50` | Projects one account may own; creating more is refused with 409. |
 | `IACTRANSLATE_STORE` | `memory` | `memory` (dies on restart, zero setup) or `sqlite` (persists project metadata **and the audit trail** to `IACTRANSLATE_DB_PATH`, surviving a restart — see ADR 0025, 0026). |
 | `IACTRANSLATE_DB_POOL_SIZE` | `4` | PostgreSQL connections per API process, shared by every store. Keep (max instances + 1) × this under the server's connection limit. A Cloud SQL db-f1-micro allows 25, 3 of them reserved. |
 | `IACTRANSLATE_DB_PATH` | `./iactranslate.db` | SQLite file path when `IACTRANSLATE_STORE=sqlite`. |
@@ -550,6 +551,7 @@ All env vars (see `src/iactranslate/config.py`):
 | `IACTRANSLATE_OIDC_ISSUER` | (none) | Turns OIDC sign-in on (ADR 0054, 0082). The provider's issuer URL; endpoints come from its discovery document over https. Needs `pip install 'iactranslate[sso]'` (in the image already). |
 | `IACTRANSLATE_OIDC_CLIENT_ID` / `_CLIENT_SECRET` | (none) | The app registration at the provider. Keep the secret in Secret Manager. |
 | `IACTRANSLATE_OIDC_REDIRECT_URI` | `{APP_URL}/api/v1/auth/sso/callback` | Register exactly this at the provider. Through the console's `/api` rewrite, so the session cookie belongs to the site. |
+| `IACTRANSLATE_OIDC_NAME` | `Google` for Google's issuer, else none | The provider's name on its button ("Continue with …"). Without one the button says "single sign-on". |
 | `IACTRANSLATE_OIDC_SCOPES` | `openid email profile` | Scopes requested. |
 | `IACTRANSLATE_OIDC_TRUST_UNVERIFIED_EMAIL` | `0` | `1` accepts an email the provider doesn't mark `email_verified` (some Entra setups). Such sign-ins don't count as proof of the address. |
 | `IACTRANSLATE_SAML_IDP_ENTITY_ID` | (none) | Turns SAML sign-in on (ADR 0081); needs the rows below too, and `pip install 'iactranslate[saml]'` (in the image already). |

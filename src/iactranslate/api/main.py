@@ -38,7 +38,7 @@ from ..agents import build_migration_plan
 from ..agents.providers import get_provider
 from ..assessment import assess
 from ..confidence import score_plan
-from ..config import MAX_UPLOAD_BYTES, cors_origins
+from ..config import MAX_UPLOAD_BYTES, cors_origins, max_projects_per_account
 from ..costing import estimate_costs
 from ..crypto import (
     EncryptionUnavailable,
@@ -943,6 +943,11 @@ def create_project(body: CreateProject, user: Optional[User] = Depends(current_u
             f"renderer '{body.renderer}' cannot target '{body.target}' "
             f"(valid for {body.target}: {', '.join(renderers_for(body.target))})",
         )
+    if user is not None and store.count_for_owner(user.id) >= max_projects_per_account():
+        # Refused, never evicted: making room by deleting the oldest project
+        # would delete work the caller, or another customer, still needs.
+        raise HTTPException(409, f"you already have {max_projects_per_account()} projects, the most an "
+                                 "account can own; delete one first")
     project = store.create(
         name=body.name, target=body.target, source=body.source,
         column_map=body.column_map, region=body.region, policy=body.policy,
@@ -1751,7 +1756,9 @@ def auth_methods() -> dict:
     buttons to draw, nothing about any account."""
     return {"password": accounts is not None,
             "saml": accounts is not None and saml_config is not None,
-            "oidc": accounts is not None and sso_config is not None}
+            "oidc": accounts is not None and sso_config is not None,
+            # What to call the OIDC provider on its button, when known.
+            "oidc_name": _oidc.provider_name(sso_config) if accounts is not None else None}
 
 
 def _app_url(path: str) -> str:

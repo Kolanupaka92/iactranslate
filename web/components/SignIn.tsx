@@ -91,19 +91,22 @@ export default function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
       {(methods?.saml || methods?.oidc) && mode === "login" && (
         <>
           {/* One button per configured method; labelled only when both
-              exist, since "single sign-on" is all a user needs otherwise. */}
+              exist, since "single sign-on" is all a user needs otherwise. A
+              provider with a name (Google) is called by it. */}
           {[
-            methods.oidc && { href: oidcLoginUrl, label: "OIDC" },
-            methods.saml && { href: samlLoginUrl, label: "SAML" },
+            methods.oidc && { href: oidcLoginUrl, label: "OIDC", name: methods.oidc_name },
+            methods.saml && { href: samlLoginUrl, label: "SAML", name: null },
           ]
-            .filter((b): b is { href: string; label: string } => Boolean(b))
+            .filter((b): b is Exclude<typeof b, false> => Boolean(b))
             .map((b, _i, all) => (
               <a
                 key={b.label}
                 href={b.href}
                 className="mt-3 block rounded border border-slate-300 px-3 py-2 text-center text-sm font-medium text-slate-800 hover:border-slate-900 first:mt-5"
               >
-                Continue with single sign-on{all.length > 1 ? ` (${b.label})` : ""}
+                {b.name
+                  ? `Continue with ${b.name}`
+                  : `Continue with single sign-on${all.length > 1 ? ` (${b.label})` : ""}`}
               </a>
             ))}
           <p className="mt-4 text-center text-xs text-slate-400">or with email and password</p>

@@ -129,8 +129,13 @@ class ProjectStore:
         )
         with self._lock:
             self._projects[pid] = project
-            self._evict_locked()
+            if owner_id is None:
+                self._evict_locked()
         return project
+
+    def count_for_owner(self, owner_id: str) -> int:
+        with self._lock:
+            return sum(1 for p in self._projects.values() if p.owner_id == owner_id)
 
     def get(self, pid: str) -> Optional[Project]:
         with self._lock:
@@ -201,9 +206,14 @@ class ProjectStore:
         return True
 
     def _evict_locked(self) -> None:
-        """Drop oldest projects beyond capacity. Caller must hold the lock."""
-        while len(self._projects) > self._max:
-            _, victim = self._projects.popitem(last=False)
+        """Drop the oldest *unowned* projects beyond capacity. Caller holds the lock.
+
+        Only single-tenant projects (no owner) are ever evicted: an account's
+        work must not disappear because someone else created more.
+        """
+        unowned = [p for p in self._projects.values() if p.owner_id is None]
+        for victim in unowned[:max(len(unowned) - self._max, 0)]:
+            del self._projects[victim.id]
             shutil.rmtree(victim.workspace, ignore_errors=True)
 
 
@@ -329,7 +339,8 @@ class SqlProjectStore:
              json.dumps(policy) if policy else None, provider, str(workspace), time.time(),
              owner_id, renderer, org_id),
         )
-        self._evict()
+        if owner_id is None:
+            self._evict()
         return Project(
             id=pid, name=name, target=target, source=source, column_map=column_map,
             region=region, policy=policy, provider=provider, workspace=workspace,
@@ -358,6 +369,10 @@ class SqlProjectStore:
             params,
         )
         return [self._row_to_project(row) for row in rows]
+
+    def count_for_owner(self, owner_id: str) -> int:
+        row = self._db.query_one("SELECT COUNT(*) FROM projects WHERE owner_id = ?", (owner_id,))
+        return row[0] if row else 0
 
     def list_for_org(self, org_id: str) -> List[Project]:
         rows = self._db.query(
@@ -412,7 +427,10 @@ class SqlProjectStore:
         return True
 
     def _evict(self) -> None:
-        """Drop oldest projects beyond capacity.
+        """Drop the oldest *unowned* projects beyond capacity.
+
+        Only single-tenant projects (no owner) are ever evicted: an account's
+        work must not disappear because someone else created more (ADR 0083).
 
         Ordered by `created_at, id` rather than SQLite's `rowid`, which has no
         PostgreSQL equivalent. Two projects created in the same millisecond are
@@ -420,12 +438,13 @@ class SqlProjectStore:
         but deterministic, and for a capacity guard "evict one of the oldest" is
         the actual requirement.
         """
-        row = self._db.query_one("SELECT COUNT(*) FROM projects")
+        row = self._db.query_one("SELECT COUNT(*) FROM projects WHERE owner_id IS NULL")
         overflow = (row[0] if row else 0) - self._max
         if overflow <= 0:
             return
         victims = self._db.query(
-            "SELECT id, workspace FROM projects ORDER BY created_at ASC, id ASC LIMIT ?",
+            "SELECT id, workspace FROM projects WHERE owner_id IS NULL "
+            "ORDER BY created_at ASC, id ASC LIMIT ?",
             (overflow,),
         )
         for vid, workspace in victims:

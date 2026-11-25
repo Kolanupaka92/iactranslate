@@ -254,6 +254,20 @@ class SqlLoginStore(LoginStore):
         return PendingLogin(state=state, nonce=row[0], verifier=row[1], created_at=row[2], redirect_to=row[3])
 
 
+def provider_name(config: Optional[OidcConfig]) -> Optional[str]:
+    """The name on the sign-in button: "Continue with <name>".
+
+    `IACTRANSLATE_OIDC_NAME`, or Google for Google's issuer, else None and the
+    button says "single sign-on".
+    """
+    if config is None:
+        return None
+    name = os.getenv("IACTRANSLATE_OIDC_NAME", "").strip()
+    if name:
+        return name[:40]
+    return "Google" if config.issuer.rstrip("/") == "https://accounts.google.com" else None
+
+
 def create_login_store() -> LoginStore:
     """Database-backed whenever the deployment has a database."""
     from .sql import backend, create_database

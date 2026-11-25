@@ -497,6 +497,8 @@ export interface AuthMethods {
   password: boolean;
   saml: boolean;
   oidc: boolean;
+  /** The OIDC provider's name for its button, e.g. "Google". */
+  oidc_name?: string | null;
 }
 
 export function authMethods(): Promise<AuthMethods> {

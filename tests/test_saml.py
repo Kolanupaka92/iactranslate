@@ -365,7 +365,8 @@ def test_metadata_and_methods(api):
     assert md.get("entityID") == SP
     acs = md.find(".//{urn:oasis:names:tc:SAML:2.0:metadata}AssertionConsumerService")
     assert acs.get("Location") == ACS
-    assert client.get("/auth/methods").json() == {"password": True, "saml": True, "oidc": False}
+    assert client.get("/auth/methods").json() == {
+        "password": True, "saml": True, "oidc": False, "oidc_name": None}
 
 
 def test_saml_is_off_without_configuration(tmp_path, monkeypatch):

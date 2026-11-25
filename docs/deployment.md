@@ -39,8 +39,9 @@ Bounds that make this safe on untrusted input (all env-overridable — see the
 - **Temporary workspace** per project (`tempfile.mkdtemp`), never a shared dir.
 - **Memory/CPU** bounded by `IACTRANSLATE_MAX_VMS` (inventory size cap) and the
   25 MB streamed upload cap.
-- **Store capacity** `IACTRANSLATE_MAX_PROJECTS`; oldest projects (and their temp
-  dirs) are evicted and deleted beyond it.
+- **Store capacity** `IACTRANSLATE_MAX_PROJECTS` in single-tenant mode, where the
+  oldest projects are evicted beyond it. Accounts have a quota instead
+  (`IACTRANSLATE_MAX_PROJECTS_PER_ACCOUNT`) and are never evicted (ADR 0083).
 - **No timeouts/retries needed today** — the pipeline is a synchronous, sub-second
   function (see [performance](operations-guide.md#14-performance)); timeouts and
   retries belong to the async reference architecture below.

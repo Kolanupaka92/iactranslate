@@ -90,5 +90,6 @@ Format: [Michael Nygard's ADR template](https://cognitect.com/blog/2011/11/15/do
 | [0080](0080-organisations.md) | Organisations: owner/admin/member, org projects follow org roles (highest role wins), consent-and-proof invitations, last-owner protection, project grants read from the database on every check | Accepted |
 | [0081](0081-saml-single-sign-on.md) | SAML 2.0 SP on signxml (not python3-saml/xmlsec): pinned cert, signed-copy-only reads, one assertion, no DTDs, browser-bound single-use requests, trusted email domains | Accepted |
 | [0082](0082-oidc-sign-in-from-the-console.md) | OIDC from the console: login state in the database, a state cookie against login CSRF, redirect back to the console, PyJWT in the image | Accepted |
+| [0083](0083-no-cross-account-eviction.md) | Accounts get a project quota that refuses; only unowned projects are ever evicted | Accepted |
 
 See also the [Architecture & Design](../architecture.md) overview.
