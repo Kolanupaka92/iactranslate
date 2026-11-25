@@ -102,7 +102,7 @@ def _sizing_factor(c: ComputePlan) -> FactorScore:
         )
     return FactorScore(
         factor="sizing", score=0.6,
-        basis="Sized from allocation — no utilization data, so headroom is assumed.",
+        basis="Sized to the allocation as it is — no utilization data to check it against.",
     )
 
 

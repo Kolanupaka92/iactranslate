@@ -71,22 +71,15 @@ def test_catalogs_have_unique_names_and_a_price_where_priced(target):
     assert all((s.on_demand_usd_hr > 0) is ("priced" in t.capabilities) for s in specs)
 
 
-def test_headroom_gives_way_before_the_demand_does():
-    catalog = [InstanceSpec("s", 4, 16, "f", 1), InstanceSpec("l", 10, 64, "f", 5)]
-    assert smallest_fit(catalog, 10, 64, headroom=1.2).name == "l"
-    c = _plan("digitalocean", _vm(32, 256)).compute[0]
-    assert not c.undersized and "without the usual 20% headroom" in c.reason
-    assert not any("headroom above demand" in a for a in c.decision.assumptions)
+def test_missing_headroom_is_said_and_not_claimed():  # measured 32 / 256, the most there is
+    c = _plan("digitalocean", _vm(32, 256, cpu_util_pct=100, mem_util_pct=100)).compute[0]
+    assert not c.undersized and "without the usual headroom" in c.reason
+    assert not any("% headroom" in a for a in c.decision.assumptions)
 
 
 def test_the_closest_size_covers_the_most_not_the_most_vcpu():
     catalog = [InstanceSpec("cpu", 96, 100, "f", 1), InstanceSpec("mem", 64, 1000, "f", 9)]
     assert smallest_fit(catalog, 64, 2000).name == "mem"
-
-
-def test_steady_cpu_is_kept_when_headroom_gives_way():
-    catalog = [InstanceSpec("shared", 10, 64, "f", 1, shared_cpu=True), InstanceSpec("own", 10, 64, "f", 5)]
-    assert smallest_fit(catalog, 10, 64, headroom=1.2, steady_cpu=True).name == "own"
 
 
 def test_utilization_decides_whether_it_fits():  # allocated past the catalog, using little

@@ -14,7 +14,7 @@ from typing import Dict, List, Optional, Tuple
 from ..evidence import sizing_decision
 from ..models import ComputePlan, Environment, NormalizedVM, Tier
 from ..pricing import monthly_cost
-from ..sizing import effective_demand
+from ..sizing import effective_demand, fit
 from ..targets.base import STEADY_CPU_TIERS, Target, is_undersized
 from .base import LLMProvider
 
@@ -31,11 +31,8 @@ def _shortfall(demand, spec) -> Optional[str]:
             f"closest. Do not migrate this workload on this plan without resolving that first: "
             f"reduce or split it, choose another target, or pick a larger size by hand."
         )
-    if is_undersized(spec, demand.vcpu * demand.headroom, demand.memory_gib * demand.headroom):
-        return (
-            f"Fits {need}, but without the usual {round((demand.headroom - 1) * 100)}% "
-            f"headroom: the catalog has nothing larger that fits."
-        )
+    if is_undersized(spec, demand.target_vcpu, demand.target_memory_gib):
+        return f"Fits the measured {need}, but without the usual headroom above it."
     return None
 
 
@@ -162,10 +159,7 @@ def build_compute_plans(
         too_small = suggested is not None and is_undersized(suggested, demand.vcpu, demand.memory_gib)
         overridden = suggested is None
         if suggested is None or too_small:
-            instance_type = target.smallest_fit(
-                demand.vcpu, demand.memory_gib, headroom=demand.headroom,
-                steady_cpu=tier in STEADY_CPU_TIERS,
-            ).name
+            instance_type = fit(target, demand, steady_cpu=tier in STEADY_CPU_TIERS).name
             too_small = too_small and instance_type != suggestion.instance_type
             overridden = overridden or too_small
 
@@ -214,7 +208,8 @@ def build_compute_plans(
                     source_memory_gib=vm.memory_gib,
                     cpu_util_pct=vm.cpu_util_pct,
                     mem_util_pct=vm.mem_util_pct,
-                    headroom=demand.headroom,
+                    vcpu_headroom=demand.vcpu_headroom,
+                    memory_headroom=demand.memory_headroom,
                     shortfall=shortfall,
                     target_vcpu=spec.vcpu if spec else None,
                     target_memory_gib=spec.memory_gib if spec else None,

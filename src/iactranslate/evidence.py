@@ -124,7 +124,8 @@ def sizing_decision(
     source_memory_gib: float,
     cpu_util_pct: Optional[float],
     mem_util_pct: Optional[float],
-    headroom: float,
+    vcpu_headroom: float,
+    memory_headroom: float,
     target_vcpu: Optional[int] = None,
     target_memory_gib: Optional[float] = None,
     alternatives: Optional[List[str]] = None,
@@ -159,7 +160,15 @@ def sizing_decision(
                                  value=f"{target_vcpu} vCPU / {target_memory_gib:g} GiB"))
 
     # With a shortfall the headroom was not applied, so it can't be claimed.
-    assumptions = [shortfall or f"{round((headroom - 1) * 100)}% headroom above demand"]
+    if shortfall:
+        assumptions = [shortfall]
+    else:
+        assumptions = [
+            f"{round((h - 1) * 100)}% headroom above measured {what}" if measured_pct is not None
+            else f"{what} is the source allocation, with nothing added"
+            for what, measured_pct, h in (
+                ("CPU", cpu_util_pct, vcpu_headroom), ("memory", mem_util_pct, memory_headroom))
+        ]
     if measured:
         assumptions.append(
             "Utilization in the inventory is representative of normal load"

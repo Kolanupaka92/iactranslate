@@ -53,7 +53,7 @@ def test_nothing_steady_that_fits_is_cheaper(target, cpus, gib):
     others = [t.spec_of(n) for n in t.instance_names()]
     assert spec.on_demand_usd_hr == min(
         o.on_demand_usd_hr for o in others
-        if not o.shared_cpu and o.vcpu >= cpus * 1.2 and o.memory_gib >= gib * 1.2)
+        if not o.shared_cpu and o.vcpu >= cpus and o.memory_gib >= gib)
 
 
 def test_a_web_server_may_still_share_cpu():

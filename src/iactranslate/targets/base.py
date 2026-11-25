@@ -53,30 +53,26 @@ def smallest_fit(
     catalog: List[InstanceSpec],
     vcpu: float,
     memory_gib: float,
-    headroom: float = 1.0,
     steady_cpu: bool = False,
 ) -> InstanceSpec:
-    """Cheapest instance that fits vCPU + memory (× headroom).
+    """Cheapest instance that fits vCPU + memory.
 
     `steady_cpu` (databases, caches) leaves out shared and burstable CPUs, unless
     nothing else fits. The shape follows the source: a memory-optimized size is
     chosen when it is the cheapest that fits, never by tier alone. Forcing one
     put a 2 GiB database on a 16 GiB machine (ADR 0085).
 
-    If nothing has room for the headroom, the demand alone is fitted. If nothing
-    fits that either, returns the size that covers the most of it. The caller
-    must check with `is_undersized` and say so (ADR 0086).
+    If nothing fits, returns the size that covers the most of it. The caller must
+    check with `is_undersized` and say so (ADR 0086).
     """
-    for factor in (headroom, 1.0):
-        fit = sorted(
-            (i for i in catalog
-             if i.vcpu >= vcpu * factor and i.memory_gib >= memory_gib * factor),
-            key=lambda i: (i.on_demand_usd_hr, i.vcpu, i.memory_gib),
-        )
-        if steady_cpu:
-            fit = [i for i in fit if not i.shared_cpu] or fit
-        if fit:
-            return fit[0]
+    fit = sorted(
+        (i for i in catalog if not is_undersized(i, vcpu, memory_gib)),
+        key=lambda i: (i.on_demand_usd_hr, i.vcpu, i.memory_gib),
+    )
+    if steady_cpu:
+        fit = [i for i in fit if not i.shared_cpu] or fit
+    if fit:
+        return fit[0]
 
     def covered(i: InstanceSpec) -> float:
         return min(i.vcpu / vcpu, 1.0) * min(i.memory_gib / memory_gib, 1.0)
@@ -85,7 +81,7 @@ def smallest_fit(
 
 
 def is_undersized(spec: InstanceSpec, vcpu: float, memory_gib: float) -> bool:
-    """Smaller than the workload's own demand, before any headroom."""
+    """Less vCPU or less memory than asked for."""
     return spec.vcpu < vcpu or spec.memory_gib < memory_gib
 
 
@@ -112,9 +108,8 @@ class Target(Protocol):
 
     def smallest_fit(
         self,
-        vcpu: int,
+        vcpu: float,
         memory_gib: float,
-        headroom: float = 1.0,
         steady_cpu: bool = False,
     ) -> InstanceSpec: ...
 

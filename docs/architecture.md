@@ -352,8 +352,8 @@ how you read the output critically.
 - **Public/private topology is derived from workload tiers** (web → public,
   app/db/cache → private), not from the source network layout.
 - **Utilization data, when present, is trusted** and drives right-sizing.
-- **Missing utilization falls back to allocated resources** (with headroom) — a
-  safe over-estimate, flagged by the assessment and the confidence engine.
+- **Missing utilization falls back to allocated resources**, with nothing added —
+  unverified, and flagged by the assessment and the confidence engine.
 - **Existing IP addresses are informational only** — cloud subnets get fresh
   CIDRs; source IPs are not reproduced.
 

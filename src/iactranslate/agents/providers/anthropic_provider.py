@@ -19,6 +19,7 @@ from typing import List
 from pydantic import BaseModel, Field
 
 from ...models import AppGroup, Environment, NormalizedVM, Tier
+from ...sizing import effective_demand
 from ...targets.base import Target
 from ..base import RightsizeSuggestion
 from .rule_engine import RuleEngineProvider
@@ -115,9 +116,12 @@ class AnthropicProvider:
         self, vm: NormalizedVM, tier: Tier, environment: Environment
     ) -> RightsizeSuggestion:
         instances = ", ".join(self._target.instance_names())
+        need = effective_demand(vm)
         prompt = (
             f"Recommend a {self._target.name.upper()} migration target for one VMware VM.\n"
-            "Choose the smallest instance that comfortably fits, leaving ~20% headroom.\n"
+            f"Choose the smallest instance with at least {need.target_vcpu:g} vCPU and "
+            f"{need.target_memory_gib:g} GiB. Don't add headroom: where usage was measured it is "
+            "already included.\n"
             "For database and cache tiers avoid burstable or shared-CPU instances. Choose memory-optimized "
             "only when the VM's own memory needs it.\n"
             f"instance_type MUST be one of: {instances}.\n"

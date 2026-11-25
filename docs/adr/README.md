@@ -94,5 +94,6 @@ Format: [Michael Nygard's ADR template](https://cognitect.com/blog/2011/11/15/do
 | [0084](0084-plan-the-generated-code.md) | Generated Terraform is planned against mocked providers and `fmt`-checked on every target; project names are made safe for cloud resources | Accepted |
 | [0085](0085-size-databases-by-their-shape.md) | Databases and caches get the cheapest fit that doesn't share CPU, not a forced memory-optimized family | Accepted |
 | [0086](0086-never-shrink-a-machine-in-silence.md) | Every catalog has larger sizes, and a machine that still doesn't fit is flagged everywhere and makes that cloud not eligible | Accepted |
+| [0087](0087-no-headroom-without-usage-data.md) | Without usage data a machine gets its allocation and nothing more; CPU and memory are decided separately | Accepted |
 
 See also the [Architecture & Design](../architecture.md) overview.

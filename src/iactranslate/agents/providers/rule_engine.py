@@ -8,7 +8,7 @@ from __future__ import annotations
 from typing import Dict, List
 
 from ...models import AppGroup, Environment, NormalizedVM, Tier
-from ...sizing import effective_demand
+from ...sizing import effective_demand, fit
 from ...targets.base import STEADY_CPU_TIERS, Target
 from ..base import RightsizeSuggestion
 from ..heuristics import detect_environment, detect_tier
@@ -43,13 +43,7 @@ class RuleEngineProvider:
         self, vm: NormalizedVM, tier: Tier, environment: Environment
     ) -> RightsizeSuggestion:
         # Size to observed utilization when available, else to raw allocation.
-        d = effective_demand(vm)
-        instance = self._target.smallest_fit(
-            vcpu=d.vcpu,
-            memory_gib=d.memory_gib,
-            headroom=d.headroom,
-            steady_cpu=tier in STEADY_CPU_TIERS,
-        )
+        instance = fit(self._target, effective_demand(vm), steady_cpu=tier in STEADY_CPU_TIERS)
         return RightsizeSuggestion(
             instance_type=instance.name,
             image_key=self._target.image_key(vm.os),

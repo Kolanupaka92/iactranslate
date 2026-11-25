@@ -42,12 +42,11 @@ class DigitalOceanTarget:
 
     def smallest_fit(
         self,
-        vcpu: int,
+        vcpu: float,
         memory_gib: float,
-        headroom: float = 1.0,
         steady_cpu: bool = False,
     ) -> InstanceSpec:
-        return smallest_fit(INSTANCE_CATALOG, vcpu, memory_gib, headroom, steady_cpu)
+        return smallest_fit(INSTANCE_CATALOG, vcpu, memory_gib, steady_cpu)
 
     def spec_of(self, name: str) -> Optional[InstanceSpec]:
         return self._index.get(name)

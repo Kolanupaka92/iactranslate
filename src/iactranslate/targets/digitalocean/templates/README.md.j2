@@ -78,8 +78,8 @@ is silently falling back to local state.
    then list its fingerprint in `ssh_key_fingerprints`.
 3. **Images resolve automatically** to public image slugs (e.g. `ubuntu-22-04-x64`) in
    `compute.tf` — nothing to fill in.
-4. **Review sizing.** Droplet sizes were selected to fit each source VM's vCPU and memory
-   with headroom; databases and caches avoid shared-CPU `s-` sizes. Root disk size is bundled into
+4. **Review sizing.** Droplet sizes were selected to fit each source VM's vCPU and memory;
+   databases and caches avoid shared-CPU `s-` sizes. Root disk size is bundled into
    the Droplet size and isn't independently configurable — see `storage.tf` for extra volumes.
 5. **Review networking.** A VPC (`{{ network.vpc_cidr }}`) with tag-based firewalls is
    defined. DigitalOcean has no subnet or managed NAT gateway resources — every Droplet joins

@@ -7,12 +7,12 @@ AWS = get_target("aws")
 
 
 def test_smallest_fit_respects_requirements():
-    inst = AWS.smallest_fit(vcpu=4, memory_gib=16, headroom=1.0)
+    inst = AWS.smallest_fit(vcpu=4, memory_gib=16)
     assert inst.vcpu >= 4 and inst.memory_gib >= 16
 
 
 def test_memory_optimized_is_chosen_when_the_shape_needs_it():
-    inst = AWS.smallest_fit(vcpu=2, memory_gib=16, headroom=1.0, steady_cpu=True)
+    inst = AWS.smallest_fit(vcpu=2, memory_gib=16, steady_cpu=True)
     assert inst.family == "r5"
 
 

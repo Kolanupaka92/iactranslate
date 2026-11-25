@@ -185,8 +185,8 @@ iactranslate/
    environment (prod/dev/…) and tier (web/app/database/cache).
 5. **Rightsize** (`agents/rightsizing.py` + `sizing.py`). Per VM, `effective_demand()` decides
    the requirement: if the source carries **utilization** (CPU/mem %), size to *actual usage*
-   at `IACTRANSLATE_TARGET_UTILIZATION` headroom (right-sizing); otherwise size to raw
-   allocation with 1.2× headroom (unchanged). The provider proposes an instance; the code
+   at `IACTRANSLATE_TARGET_UTILIZATION` headroom (right-sizing); otherwise size to the raw
+   allocation, with nothing added (ADR 0087). Each of CPU and memory is decided on its own. The provider proposes an instance; the code
    **re-checks it against the target catalog** (falls back to `smallest_fit`, also when the
    proposal is too small), flags a machine no size can hold as `undersized` (ADR 0086: README,
    migration summary, backlog, CLI, API `undersized_count`, console, and the recommendation,
@@ -714,7 +714,7 @@ its generated README for the caveat if the estate has Windows workloads.
 
 **Glossary:** *RVTools* = popular VMware vSphere inventory exporter (.xlsx). *CMDB* =
 Configuration Management Database (ServiceNow/Device42/Lansweeper). *Rightsizing* = choosing
-the cloud instance that fits a VM's vCPU/memory with headroom. *Target* = destination cloud.
+the cloud instance that fits a VM's measured or allocated vCPU/memory. *Target* = destination cloud.
 *Source* = origin inventory format. *OpenTofu/`tofu`* = open-source Terraform, used to
 validate generated HCL.
 
