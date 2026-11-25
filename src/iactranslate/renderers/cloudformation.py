@@ -234,6 +234,9 @@ def _build_template(graph: InfrastructureGraph, plan: MigrationPlan) -> Dict[str
 
         resources[iid] = {
             "Type": "AWS::EC2::Instance",
+            # A newer image can make a stack update replace the server. Keep the
+            # old one and its disks when it does (ADR 0090).
+            "UpdateReplacePolicy": "Retain",
             "Properties": {
                 "InstanceType": inst.attributes["instance_type"],
                 "ImageId": image_id,

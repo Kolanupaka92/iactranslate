@@ -76,7 +76,7 @@ def _image_keys(compute: List[ComputePlan]) -> List[str]:
     return sorted({c.image_key for c in compute})
 
 
-def _data_volumes(compute: List[ComputePlan]) -> List[dict]:
+def data_volumes(compute: List[ComputePlan]) -> List[dict]:
     """Flatten extra disks into aws_ebs_volume/attachment render records."""
     volumes: List[dict] = []
     for c in compute:
@@ -179,7 +179,7 @@ def _migrate_from_classic(plan: MigrationPlan, classic: Dict[str, str],
     """
     maps = {(t, n) for t, n in _declared(for_each) if n in ("vm", "data")}
     machines = {c.resource_name for c in plan.compute}
-    volumes = {v["resource_name"] for v in _data_volumes(plan.compute)}
+    volumes = {v["resource_name"] for v in data_volumes(plan.compute)}
     blocks = []
     for rtype, label in _declared(classic):
         if (rtype, "vm") in maps and label in machines:
@@ -328,7 +328,7 @@ def build_files(
         "static_host_of": (
             _static_hosts(plan.compute, subnet_of) if target.name == "proxmox" else {}
         ),
-        "volumes": _data_volumes(plan.compute),
+        "volumes": data_volumes(plan.compute),
         "SubnetTier": SubnetTier,
         # How other resources address a machine's instance: its own label in
         # the classic layout, its map key in the for_each one.

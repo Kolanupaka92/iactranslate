@@ -55,4 +55,11 @@ resource "aws_instance" "vm" {
     Environment = each.value.environment
     SourceVM    = each.value.name
   }
+
+  lifecycle {
+    # images.tf finds the newest image on every run. Without this, each one its
+    # vendor publishes would replace this server and its boot disk. To rebuild
+    # on a newer image on purpose: terraform apply -replace=<address>
+    ignore_changes = [ami]
+  }
 }

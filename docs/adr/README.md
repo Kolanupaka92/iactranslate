@@ -97,5 +97,6 @@ Format: [Michael Nygard's ADR template](https://cognitect.com/blog/2011/11/15/do
 | [0087](0087-no-headroom-without-usage-data.md) | Without usage data a machine gets its allocation and nothing more; CPU and memory are decided separately | Accepted |
 | [0088](0088-an-ocpu-is-two-vcpus.md) | Oracle sizes are counted in vCPUs, generated in OCPUs; its machines had twice the CPU they needed | Accepted |
 | [0089](0089-what-a-plan-cannot-see.md) | Boot disks are never below the image, Google data disks aren't fought over, its probes are let in | Accepted |
+| [0090](0090-keep-disks-and-running-servers.md) | Pulumi and Bicep create every data disk; a newer image never replaces a running server | Accepted |
 
 See also the [Architecture & Design](../architecture.md) overview.

@@ -2,10 +2,16 @@
 # platform image at apply time; OCI image OCIDs are region-specific, so
 # there's no static id to bake in the way GCP's public image families allow).
 {% for key, ref in image_refs.items() %}
+{% set ns = namespace(shape="") %}
+{% for c in compute if c.image_key == key and c.instance_type.split("-")[0] > ns.shape %}{% set ns.shape = c.instance_type.split("-")[0] %}{% endfor %}
 data "oci_core_images" "{{ ref.resource }}" {
   compartment_id           = var.compartment_id
   operating_system         = "{{ ref.operating_system }}"
   operating_system_version = "{{ ref.operating_system_version }}"
+  # Only images that run on this shape. The newest of an OS can be for Arm or
+  # for GPUs, which won't boot on it.
+  shape                    = "{{ ns.shape }}"
+  state                    = "AVAILABLE"
   sort_by                  = "TIMECREATED"
   sort_order               = "DESC"
 }

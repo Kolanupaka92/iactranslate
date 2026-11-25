@@ -54,7 +54,8 @@ is silently falling back to local state.
 
 1. **AMIs resolve automatically.** `images.tf` looks up the latest matching AMI per
    detected OS via `aws_ami` data sources — no IDs to fill in. To pin a specific/golden
-   image, set `ami_overrides` in `terraform.tfvars`.
+   image, set `ami_overrides` in `terraform.tfvars`. A running server keeps the image it
+   was created from; rebuild one on purpose with `terraform apply -replace=<address>`.
 2. **Review sizing.** Instance types were selected to fit each source VM's vCPU and
    memory; databases and caches avoid burstable t3. Adjust in `compute.tf` if needed.
 3. **Review networking.** A VPC (`{{ network.vpc_cidr }}`) with public/private subnets

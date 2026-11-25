@@ -109,7 +109,7 @@ def _ssh_key():
     return key.public_bytes(serialization.Encoding.OpenSSH, serialization.PublicFormat.OpenSSH).decode()
 
 
-def _plan(out):
+def _plan(out, runs=lambda out: 'run "plan" {\n  command = plan\n}\n'):
     text = "".join(p.read_text() for p in out.glob("*.tf"))
     block = re.search(r"required_providers\s*\{(.*?)\n  \}", text, re.S).group(1)
     providers = re.findall(r"^\s+(\w+)\s*=\s*\{", block, re.M)
@@ -119,8 +119,8 @@ def _plan(out):
     if "@OCI_IMAGE@" in mocks:
         mocks = mocks.replace("@OCI_IMAGE@", _oci_image(out))
     # The one input the operator always supplies.
-    key = f'  variables {{\n    admin_ssh_public_key = "{_ssh_key()}"\n  }}\n' if "admin_ssh_public_key" in text else ""
-    (out / "plan.tftest.hcl").write_text(mocks + f'run "plan" {{\n  command = plan\n{key}}}\n')
+    key = f'variables {{\n  admin_ssh_public_key = "{_ssh_key()}"\n}}\n' if "admin_ssh_public_key" in text else ""
+    (out / "plan.tftest.hcl").write_text(mocks + key + runs(out))
     return _run(["test", "-no-color"], out)
 
 
@@ -147,6 +147,38 @@ def test_generated_code_passes_the_pipelines_fmt_check(tmp_path, target, layout)
     out = _generate(tmp_path, target, layout, "acme-datacenter-migration")
     result = _run(["fmt", "-check", "-diff", "-recursive", "-no-color"], out)
     assert result.returncode == 0, result.stdout[-3000:]
+
+
+@needs_tofu
+@pytest.mark.parametrize("layout", LAYOUTS)
+@pytest.mark.parametrize("target", ["aws", "oci"])
+def test_a_newer_image_replaces_nothing_that_is_running(tmp_path, target, layout):
+    """Apply (mocked), then plan with a newer image: the server keeps its own (ADR 0090)."""
+    source = tmp_path / "in.csv"
+    source.write_text("name,cpu,memory_gib,disk_gib,os\napp01,2,4,60,Ubuntu 22.04\n")
+    out = _generate(tmp_path, target, layout, "acme", str(source))
+    server = '.vm["app01"]' if layout == "terraform-foreach" else ".app01"
+
+    def runs(out):
+        if target == "aws":
+            def image(n):
+                return f'  variables {{\n    ami_overrides = {{ "ubuntu-22.04" = "{n}" }}\n  }}\n'
+            kept = f"aws_instance{server}.ami"
+        else:
+            data = re.search(r'data "(oci_core_images" "\w+)"', (out / "images.tf").read_text()).group(1)
+            fields = json.loads(_oci_image(out))
+
+            def image(n):
+                values = json.dumps({**fields, "id": n})
+                return (f'  override_data {{\n    target = data.{data.replace(chr(34) + " " + chr(34), ".")}\n'
+                        f"    values = {{ images = [{values}] }}\n  }}\n")
+            kept = f"oci_core_instance{server}.source_details[0].source_id"
+        check = f'  assert {{\n    condition     = {kept} == "ami-a"\n    error_message = "replaced"\n  }}\n'
+        return (f'run "deploy" {{\n  command = apply\n{image("ami-a")}{check}}}\n'
+                f'run "later" {{\n  command = plan\n{image("ami-b")}{check}}}\n')
+
+    result = _plan(out, runs)
+    assert result.returncode == 0, (result.stdout + result.stderr)[-4000:]
 
 
 # --- the aligner itself, without tofu --------------------------------------------------

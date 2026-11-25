@@ -304,6 +304,7 @@ def _resources_bicep(graph: InfrastructureGraph, plan: MigrationPlan, target: Ta
             "      }",
             f"      osDisk: {{ createOption: 'FromImage', diskSizeGB: {c.root_volume_gib}, "
             "managedDisk: { storageAccountType: 'StandardSSD_LRS' } }",
+            *_data_disks(c.resource_name, c.extra_volumes_gib),
             "    }",
             f"    networkProfile: {{ networkInterfaces: [ {{ id: {nic_id}.id }} ] }}",
             "  }",
@@ -316,6 +317,19 @@ def _resources_bicep(graph: InfrastructureGraph, plan: MigrationPlan, target: Ta
         ]
 
     return "\n".join(lines)
+
+
+def _data_disks(vm: str, sizes: List[int]) -> List[str]:
+    if not sizes:
+        return []
+    return [
+        "      dataDisks: [",
+        *(f"        {{ name: {_str(f'{vm}-data-{lun}')}, lun: {lun}, createOption: 'Empty', "
+          f"diskSizeGB: {gib}, caching: 'ReadWrite', deleteOption: 'Detach', "
+          "managedDisk: { storageAccountType: 'StandardSSD_LRS' } }"
+          for lun, gib in enumerate(sizes)),
+        "      ]",
+    ]
 
 
 def _main_bicep(plan: MigrationPlan) -> str:

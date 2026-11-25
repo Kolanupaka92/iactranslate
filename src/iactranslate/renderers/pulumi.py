@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from typing import Dict, List
 
+from ..generator.renderer import data_volumes
 from ..graph import assign_subnets, public_instances
 from ..models import MigrationPlan, SubnetTier, resource_prefix, terraform_safe_name
 from ..targets.base import Target
@@ -148,16 +149,32 @@ def _aws_main(plan: MigrationPlan, target: Target) -> str:
             f'    root_block_device={{"volume_size": {c.root_volume_gib}, "volume_type": "gp3"}},',
             f'    tags={{"Name": {_py_str(c.vm_name)}, "Tier": {_py_str(c.tier.value)}, '
             f'"Environment": {_py_str(c.environment.value)}}},',
+            # A newer image must not replace a running server (ADR 0090).
+            '    opts=pulumi.ResourceOptions(provider=provider, ignore_changes=["ami"]'
+            # Brownfield: adopt the existing instance rather than recreate it.
+            + (f", import_={_py_str(c.external_id)}" if c.external_id else "") + "),",
+            ")",
+        ]
+
+    volumes = data_volumes(plan.compute)
+    if volumes:
+        lines += ["", "# --- Data volumes --------------------------------------------------------"]
+    for v in volumes:
+        inst, vol = f"inst_{v['instance_resource']}", f"vol_{v['resource_name']}"
+        lines += [
+            f"{vol} = aws.ebs.Volume(",
+            f"    {_py_str(v['resource_name'])},",
+            f"    availability_zone={inst}.availability_zone,",
+            f'    size={v["size"]}, type="gp3", encrypted=True,',
+            f'    tags={{"Name": {_py_str(v["vm_name"] + "-data")}, "SourceVM": {_py_str(v["vm_name"])}}},',
+            "    opts=opts,",
+            ")",
+            "aws.ec2.VolumeAttachment(",
+            f"    {_py_str(v['resource_name'])},",
+            f"    device_name={_py_str(v['device'])}, volume_id={vol}.id, instance_id={inst}.id,",
             "    opts=opts,",
             ")",
         ]
-        if c.external_id:
-            # Brownfield: adopt the existing instance rather than recreate it.
-            lines[-1] = (
-                "    opts=pulumi.ResourceOptions(provider=provider, "
-                f"import_={_py_str(c.external_id)}),"
-            )
-            lines.append(")")
 
     if net.load_balancers:
         lines += ["", "# --- Load balancers --------------------------------------------------------"]
@@ -320,7 +337,7 @@ def _azure_main(plan: MigrationPlan, target: Target) -> str:
                 ")",
                 f"pool_{lb.resource_name} = azure.lb.BackendAddressPool(",
                 f"    {_py_str(lb.resource_name)},",
-                f"    resource_group_name=rg.name, loadbalancer_id={lb_var}.id,",
+                f"    loadbalancer_id={lb_var}.id,",
                 ")",
             ]
             for listener in lb.listeners:
@@ -328,12 +345,12 @@ def _azure_main(plan: MigrationPlan, target: Target) -> str:
                 lines += [
                     f"probe_{suffix} = azure.lb.Probe(",
                     f"    {_py_str(suffix)},",
-                    f"    resource_group_name=rg.name, loadbalancer_id={lb_var}.id,",
+                    f"    loadbalancer_id={lb_var}.id,",
                     f'    protocol="Tcp", port={listener.target_port},',
                     ")",
                     "azure.lb.Rule(",
                     f"    {_py_str(suffix)},",
-                    f"    resource_group_name=rg.name, loadbalancer_id={lb_var}.id,",
+                    f"    loadbalancer_id={lb_var}.id,",
                     '    protocol="Tcp",',
                     f"    frontend_port={listener.listener_port}, backend_port={listener.target_port},",
                     '    frontend_ip_configuration_name="frontend",',
@@ -417,6 +434,25 @@ def _azure_main(plan: MigrationPlan, target: Target) -> str:
             ")",
         ]
 
+    volumes = data_volumes(plan.compute)
+    if volumes:
+        lines += ["", "# --- Data disks ----------------------------------------------------------"]
+    for v in volumes:
+        disk = f"disk_{v['resource_name']}"
+        lines += [
+            f"{disk} = azure.compute.ManagedDisk(",
+            f"    {_py_str(v['resource_name'])},",
+            "    resource_group_name=rg.name, location=rg.location,",
+            f'    storage_account_type="StandardSSD_LRS", create_option="Empty", disk_size_gb={v["size"]},',
+            f'    tags={{"SourceVM": {_py_str(v["vm_name"])}}},',
+            ")",
+            "azure.compute.DataDiskAttachment(",
+            f"    {_py_str(v['resource_name'])},",
+            f"    managed_disk_id={disk}.id, virtual_machine_id=inst_{v['instance_resource']}.id,",
+            f'    lun={v["lun"]}, caching="ReadWrite",',
+            ")",
+        ]
+
     lines += ["", 'pulumi.export("resource_group", rg.name)', ""]
     return "\n".join(lines)
 
@@ -487,6 +523,26 @@ def _gcp_main(plan: MigrationPlan, target: Target) -> str:
             f'{subnet_res}.id, "access_configs": {access}}}],',
             f'    labels={{"tier": {_py_str(c.tier.value)}, '
             f'"environment": {_py_str(c.environment.value)}}},',
+            # Data disks are attached below, and a newer image must not replace
+            # a running server (ADR 0090).
+            '    opts=pulumi.ResourceOptions(ignore_changes=["attachedDisks", '
+            '"bootDisk.initializeParams.image"]),',
+            ")",
+        ]
+
+    volumes = data_volumes(plan.compute)
+    if volumes:
+        lines += ["", "# --- Data disks ---------------------------------------------------------"]
+    for v in volumes:
+        disk = f"disk_{v['resource_name']}"
+        lines += [
+            f"{disk} = gcp.compute.Disk(",
+            f"    {_py_str(v['resource_name'])},",
+            f'    zone=zone, project=project, size={v["size"]}, type="pd-balanced",',
+            ")",
+            "gcp.compute.AttachedDisk(",
+            f"    {_py_str(v['resource_name'])},",
+            f"    disk={disk}.id, instance=inst_{v['instance_resource']}.id,",
             ")",
         ]
 
@@ -506,7 +562,7 @@ def _gcp_main(plan: MigrationPlan, target: Target) -> str:
                     f"pool_{lb.resource_name} = gcp.compute.TargetPool(",
                     f"    {_py_str(lb.resource_name)},",
                     "    region=region, project=project,",
-                    f"    health_checks=[hc_{lb.resource_name}.self_link],",
+                    f"    health_checks=hc_{lb.resource_name}.self_link,",
                     f"    instances=[{member_refs}],",
                     ")",
                 ]
@@ -535,7 +591,7 @@ def _gcp_main(plan: MigrationPlan, target: Target) -> str:
                     f"    {_py_str(lb.resource_name)},",
                     '    region=region, project=project, protocol="TCP",',
                     '    load_balancing_scheme="INTERNAL",',
-                    f"    health_checks=[hc_{lb.resource_name}.self_link],",
+                    f"    health_checks=hc_{lb.resource_name}.self_link,",
                     f'    backends=[{{"group": ig_{lb.resource_name}.self_link}}],',
                     ")",
                 ]

@@ -70,7 +70,7 @@ def test_oracle_takes_the_images_own_size_when_larger(layout):
 @pytest.mark.parametrize("layout", LAYOUTS)
 def test_attached_disks_are_not_fought_over(layout):
     compute = render(layout, _plan("gcp", _vm(disks=(30, 10)), _vm("prod-web-01")), get_target("gcp"))["compute.tf"]
-    assert compute.count("ignore_changes = [attached_disk]") == compute.count('resource "google_compute_instance"')
+    assert compute.count("ignore_changes = [attached_disk, ") == compute.count('resource "google_compute_instance"')
 
 
 def test_an_internal_load_balancers_probes_are_let_in():
