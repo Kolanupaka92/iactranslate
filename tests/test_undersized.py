@@ -195,3 +195,8 @@ def test_the_api_reports_it():
     result = client.get(f"/projects/{pid}").json()["result"]
     assert result["undersized_count"] == 1
     assert {i["vm"]: i["undersized"] for i in result["instances"]} == {"big": True, "small": False}
+
+
+def test_among_ineligible_clouds_the_fewest_blocked_comes_first():
+    rec = recommend([_vm(*HUGE), _vm(64, 512, "mid")])
+    assert rec.ranked[-1].cloud == "digitalocean" and "digitalocean" not in rec.summary.lower()

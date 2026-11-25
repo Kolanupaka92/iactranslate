@@ -137,26 +137,31 @@ export default function RecommendTable({
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2 text-sm">
-        <span className="opacity-70">
-          {rec.ranked.some((s) => s.eligible !== false)
-            ? "Recommended:"
-            : "No cloud can take every workload. Closest:"}
-        </span>
-        <span className="font-semibold uppercase">{rec.recommended}</span>
-        <span
-          className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-            DECISIVENESS_STYLE[rec.decisiveness] ?? ""
-          }`}
-        >
-          {/* "margin 0.06" said nothing on its own — not what it measures,
-              against whom, or on what scale. `capitalize` is scoped to the one
-              word that needs it; on the whole span it title-cased the sentence
-              into "Moderate Lead · 0.06 Ahead Of OCI". */}
-          <span className="capitalize">{rec.decisiveness}</span> lead
-          {rec.runner_up
-            ? ` · ${rec.margin.toFixed(2)} ahead of ${rec.runner_up.toUpperCase()}`
-            : ` · margin ${rec.margin.toFixed(2)}`}
-        </span>
+        {rec.ranked.every((s) => s.eligible === false) ? (
+          // Every score is zero, so a "closest" cloud or a lead would be noise.
+          <span className="font-semibold text-red-800 dark:text-red-300">
+            No cloud can take every workload as it is.
+          </span>
+        ) : (
+          <>
+            <span className="opacity-70">Recommended:</span>
+            <span className="font-semibold uppercase">{rec.recommended}</span>
+            <span
+              className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                DECISIVENESS_STYLE[rec.decisiveness] ?? ""
+              }`}
+            >
+              {/* "margin 0.06" said nothing on its own — not what it measures,
+                  against whom, or on what scale. `capitalize` is scoped to the one
+                  word that needs it; on the whole span it title-cased the sentence
+                  into "Moderate Lead · 0.06 Ahead Of OCI". */}
+              <span className="capitalize">{rec.decisiveness}</span> lead
+              {rec.runner_up
+                ? ` · ${rec.margin.toFixed(2)} ahead of ${rec.runner_up.toUpperCase()}`
+                : ` · margin ${rec.margin.toFixed(2)}`}
+            </span>
+          </>
+        )}
         {/* A ranking under someone's own priorities is not the neutral
             recommendation, and must not be mistaken for it in a screenshot. */}
         {rec.custom_weights && (
@@ -219,7 +224,7 @@ export default function RecommendTable({
                   <td className="py-2.5 pr-4 font-semibold uppercase">
                     {s.cloud}
                     {!eligible && (
-                      <span className="ml-2 rounded bg-red-600/15 px-1.5 py-0.5 text-xs font-medium normal-case text-red-800 dark:text-red-300">
+                      <span className="ml-2 whitespace-nowrap rounded bg-red-600/15 px-1.5 py-0.5 text-xs font-medium normal-case text-red-800 dark:text-red-300">
                         Not eligible
                       </span>
                     )}

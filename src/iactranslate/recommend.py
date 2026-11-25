@@ -386,7 +386,8 @@ def recommend(
     # Eligibility dominates score. A cloud that cannot run part of the estate is
     # not a cheaper option, it is not an option — and it would otherwise *win* on
     # cost precisely because it skips the workloads it cannot host.
-    scores.sort(key=lambda s: (s.eligible, s.weighted_score), reverse=True)
+    # Ineligible clouds all score zero; among them, fewest blocked machines first.
+    scores.sort(key=lambda s: (s.eligible, s.weighted_score, -raw[s.cloud]["blocked"]), reverse=True)
     winner = scores[0]
     eligible_scores = [s for s in scores if s.eligible]
 
@@ -461,8 +462,8 @@ def recommend(
     )
     if not eligible_scores:
         summary = (
-            f"No compared cloud can take every workload as it is. Closest: "
-            f"{winner.cloud.upper()}. {winner.reasons[0]}"
+            "No compared cloud can take every workload as it is. "
+            f"Fewest problems: {winner.cloud.upper()}, {raw[winner.cloud]['blocked']} of {total}."
         )
     return Recommendation(
         recommended=winner.cloud, summary=summary, ranked=scores,
