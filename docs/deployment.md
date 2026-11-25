@@ -155,7 +155,8 @@ iactranslate.com runs as three pieces, deployed separately:
   stop new revisions from starting.
 - **Backups:** the database is backed up daily from 08:00 UTC, the last 7 kept
   (on since 2026-11-24). Automated backups belong to the instance and can go
-  with it if the instance is deleted.
+  with it if the instance is deleted, so deletion protection is on; deleting it
+  first needs `gcloud sql instances patch iactranslate-db --no-deletion-protection`.
 - **Files:** project workspaces live in a Cloud Storage bucket mounted at
   `/workspaces` (`IACTRANSLATE_WORKSPACE_ROOT`), so downloads survive restarts.
 - **Accounts:** multi-tenant (`IACTRANSLATE_AUTH=session`); the console calls
