@@ -86,8 +86,8 @@ terraform init -backend-config=backend.hcl
 8. **Encryption at rest** is a property of the datastore — LUKS under LVM, or Ceph's
    encryption at the OSD — not of the VM. Enable it on the storage; nothing per-VM is
    generated.
-9. **Review sizing.** VMs were placed on a standard grid (`std-*` balanced, `mem-*` for
-   database/cache) with headroom. Proxmox accepts any values — edit `compute.tf` freely.
+9. **Review sizing.** VMs were placed on a standard grid (`std-*` balanced, `mem-*`
+   memory-heavy) with headroom. Proxmox accepts any values — edit `compute.tf` freely.
 
 ## Deploy
 

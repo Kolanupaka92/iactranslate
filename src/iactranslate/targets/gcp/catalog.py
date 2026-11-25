@@ -11,7 +11,7 @@ from typing import Dict, List
 from ..base import InstanceSpec
 
 INSTANCE_CATALOG: List[InstanceSpec] = [
-    InstanceSpec("e2-medium", 2, 4.0, "e2", 0.0335),
+    InstanceSpec("e2-medium", 2, 4.0, "e2", 0.0335, shared_cpu=True),
     InstanceSpec("e2-standard-2", 2, 8.0, "e2-standard", 0.067),
     InstanceSpec("e2-standard-4", 4, 16.0, "e2-standard", 0.134),
     InstanceSpec("e2-standard-8", 8, 32.0, "e2-standard", 0.268),

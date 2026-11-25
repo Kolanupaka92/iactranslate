@@ -9,7 +9,7 @@ from typing import Dict, List
 
 from ...models import AppGroup, Environment, NormalizedVM, Tier
 from ...sizing import effective_demand
-from ...targets.base import Target
+from ...targets.base import STEADY_CPU_TIERS, Target
 from ..base import RightsizeSuggestion
 from ..heuristics import detect_environment, detect_tier
 
@@ -48,7 +48,7 @@ class RuleEngineProvider:
             vcpu=d.vcpu,
             memory_gib=d.memory_gib,
             headroom=d.headroom,
-            prefer_family=self._target.family_for_tier(tier),
+            steady_cpu=tier in STEADY_CPU_TIERS,
         )
         return RightsizeSuggestion(
             instance_type=instance.name,

@@ -62,8 +62,8 @@ is silently falling back to local state.
 3. **Set your SSH key.** `admin_ssh_public_key` for Linux instances. Windows instances get an
    auto-generated initial password, retrievable after launch with
    `oci compute instance get-windows-initial-credentials --instance-id <ocid>`.
-4. **Review sizing.** Shapes are Flex (E4.Flex general-purpose, E5.Flex memory-optimized for
-   database/cache) sized to fit each source VM's vCPU and memory with headroom. Adjust
+4. **Review sizing.** Shapes are Flex (E4.Flex general-purpose, E5.Flex
+   memory-heavy) sized to fit each source VM's vCPU and memory with headroom. Adjust
    `shape_config` in `compute.tf` if needed.
 5. **Review networking.** A VCN (`{{ network.vpc_cidr }}`) with public/private subnets, per-tier
    Network Security Groups, and {{ "a NAT gateway for private egress" if network.nat_gateway else "no NAT gateway" }}

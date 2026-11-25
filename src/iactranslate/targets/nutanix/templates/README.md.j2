@@ -85,8 +85,8 @@ terraform init -backend-config=backend.hcl
    the plan fronts; point your existing LB at them.
 7. **Encryption at rest** is a cluster setting in Prism (data-at-rest encryption, software or
    SED-based), not a per-VM attribute. Enable it on the cluster; nothing per-VM is generated.
-8. **Review sizing.** VMs were placed on a standard grid (`std-*` balanced, `mem-*` for
-   database/cache) sized to each source VM with headroom. AHV accepts any values — edit
+8. **Review sizing.** VMs were placed on a standard grid (`std-*` balanced, `mem-*`
+   memory-heavy) sized to each source VM with headroom. AHV accepts any values — edit
    `compute.tf` freely.
 
 ## Deploy

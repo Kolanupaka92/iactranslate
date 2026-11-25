@@ -7,11 +7,6 @@ from ...models import IngressRule, SubnetTier, Tier
 
 VPC_CIDR = "10.0.0.0/16"
 
-FAMILY_BY_TIER: Dict[Tier, Optional[str]] = {
-    Tier.DATABASE: "r5",
-    Tier.CACHE: "r5",
-}
-
 SG_BY_TIER: Dict[Tier, str] = {
     Tier.WEB: "web-sg",
     Tier.APP: "app-sg",

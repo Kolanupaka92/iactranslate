@@ -7,11 +7,6 @@ from ...models import IngressRule, SubnetTier, Tier
 
 VCN_CIDR = "10.0.0.0/16"
 
-FAMILY_BY_TIER: Dict[Tier, Optional[str]] = {
-    Tier.DATABASE: "E5.Flex",
-    Tier.CACHE: "E5.Flex",
-}
-
 # Network Security Group name per tier (attached to instance VNICs, like an
 # AWS security group or an Azure NSG-on-NIC — not OCI's subnet-level Security
 # Lists, which would be the wrong analog for a per-tier, per-instance model).

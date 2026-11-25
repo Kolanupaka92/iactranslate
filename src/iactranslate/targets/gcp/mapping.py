@@ -7,11 +7,6 @@ from ...models import IngressRule, SubnetTier, Tier
 
 VPC_CIDR = "10.0.0.0/16"
 
-FAMILY_BY_TIER: Dict[Tier, Optional[str]] = {
-    Tier.DATABASE: "n2-highmem",
-    Tier.CACHE: "n2-highmem",
-}
-
 # Firewall/network-tag name per tier (used as GCE network tags — RFC1035).
 SG_BY_TIER: Dict[Tier, str] = {
     Tier.WEB: "web-fw",

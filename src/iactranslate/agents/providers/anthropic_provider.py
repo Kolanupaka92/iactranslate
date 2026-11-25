@@ -118,7 +118,8 @@ class AnthropicProvider:
         prompt = (
             f"Recommend a {self._target.name.upper()} migration target for one VMware VM.\n"
             "Choose the smallest instance that comfortably fits, leaving ~20% headroom.\n"
-            "Prefer memory-optimized instances for database/cache tiers.\n"
+            "For database and cache tiers avoid burstable or shared-CPU instances. Choose memory-optimized "
+            "only when the VM's own memory needs it.\n"
             f"instance_type MUST be one of: {instances}.\n"
             "image_key is one of: windows-2022, windows-2019, windows-2016, "
             "amazon-linux-2, ubuntu-22.04, rhel-9, sles-15, centos-7.\n\n"

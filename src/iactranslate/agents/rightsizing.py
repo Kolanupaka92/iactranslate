@@ -15,7 +15,7 @@ from ..evidence import sizing_decision
 from ..models import ComputePlan, Environment, NormalizedVM, Tier
 from ..pricing import monthly_cost
 from ..sizing import effective_demand
-from ..targets.base import Target
+from ..targets.base import STEADY_CPU_TIERS, Target
 from .base import LLMProvider
 
 _MIN_ROOT_GIB = 30
@@ -140,7 +140,7 @@ def build_compute_plans(
         if overridden:
             instance_type = target.smallest_fit(
                 demand.vcpu, demand.memory_gib, headroom=demand.headroom,
-                prefer_family=target.family_for_tier(tier),
+                steady_cpu=tier in STEADY_CPU_TIERS,
             ).name
 
         spec = target.spec_of(instance_type)

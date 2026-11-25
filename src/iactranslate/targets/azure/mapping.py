@@ -7,11 +7,6 @@ from ...models import IngressRule, SubnetTier, Tier
 
 VNET_CIDR = "10.0.0.0/16"
 
-FAMILY_BY_TIER: Dict[Tier, Optional[str]] = {
-    Tier.DATABASE: "Eas_v5",
-    Tier.CACHE: "Eas_v5",
-}
-
 # Network security group name per tier.
 SG_BY_TIER: Dict[Tier, str] = {
     Tier.WEB: "web-nsg",

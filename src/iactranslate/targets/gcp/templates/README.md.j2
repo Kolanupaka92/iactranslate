@@ -56,7 +56,7 @@ is silently falling back to local state.
 2. **Boot images resolve automatically** to public image families (e.g.
    `ubuntu-os-cloud/ubuntu-2204-lts`) in `compute.tf` — nothing to fill in.
 3. **Review sizing.** Machine types were selected to fit each source VM's vCPU and memory with
-   headroom (n2-highmem for database/cache). Adjust in `compute.tf` if needed.
+   headroom; databases and caches avoid shared-core types. Adjust in `compute.tf` if needed.
 4. **Review networking.** A VPC (`{{ network.vpc_cidr }}`) with subnetworks, tag-scoped firewall
    rules, external IPs for the web tier, and {{ "Cloud NAT for private egress" if network.nat_gateway else "no NAT" }} is defined.
 

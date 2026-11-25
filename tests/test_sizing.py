@@ -46,6 +46,7 @@ def test_pipeline_rightsizes_and_is_cheaper(cmdb_util_path, cmdb_path, tmp_path)
 
 
 def test_allocation_path_unchanged(cmdb_path, tmp_path):
-    # No utilization columns -> identical to prior behavior (regression guard).
+    # No utilization columns -> sized from allocation (regression guard; databases
+    # by shape since ADR 0085).
     r = run_pipeline(input_path=cmdb_path, project_name="a", out_dir=str(tmp_path / "a"), target="aws")
-    assert r.plan.total_estimated_monthly_cost_usd == 3217.83
+    assert r.plan.total_estimated_monthly_cost_usd == 3130.23

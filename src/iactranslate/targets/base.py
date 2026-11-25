@@ -41,6 +41,8 @@ class InstanceSpec:
     memory_gib: float
     family: str
     on_demand_usd_hr: float
+    #: CPU that is shared or burstable: cheap, and throttled under steady load.
+    shared_cpu: bool = False
 
     @property
     def monthly_usd(self) -> float:
@@ -52,37 +54,34 @@ def smallest_fit(
     vcpu: int,
     memory_gib: float,
     headroom: float = 1.0,
-    prefer_family: Optional[str] = None,
+    steady_cpu: bool = False,
 ) -> InstanceSpec:
     """Cheapest instance that fits vCPU + memory (× headroom).
 
-    `prefer_family` biases toward a family (e.g. memory-optimized for databases)
-    but falls back to any family if nothing in that family fits. If nothing fits
-    at all, returns the largest available as a best effort.
+    `steady_cpu` (databases, caches) leaves out shared and burstable CPUs, unless
+    nothing else fits. The shape follows the source: a memory-optimized size is
+    chosen when it is the cheapest that fits, never by tier alone. Forcing one
+    put a 2 GiB database on a 16 GiB machine (ADR 0085). If nothing fits at all,
+    returns the largest available as a best effort.
     """
     need_cpu = vcpu * headroom
     need_mem = memory_gib * headroom
-
-    def candidates(family: Optional[str]) -> List[InstanceSpec]:
-        fit = [
-            i
-            for i in catalog
-            if i.vcpu >= need_cpu
-            and i.memory_gib >= need_mem
-            and (family is None or i.family == family)
-        ]
-        return sorted(fit, key=lambda i: (i.on_demand_usd_hr, i.vcpu, i.memory_gib))
-
-    if prefer_family:
-        preferred = candidates(prefer_family)
-        if preferred:
-            return preferred[0]
-
-    any_fit = candidates(None)
-    if any_fit:
-        return any_fit[0]
-
+    fit = sorted(
+        (i for i in catalog if i.vcpu >= need_cpu and i.memory_gib >= need_mem),
+        key=lambda i: (i.on_demand_usd_hr, i.vcpu, i.memory_gib),
+    )
+    if steady_cpu:
+        steady = [i for i in fit if not i.shared_cpu]
+        if steady:
+            return steady[0]
+    if fit:
+        return fit[0]
     return max(catalog, key=lambda i: (i.vcpu, i.memory_gib))
+
+
+#: Tiers that run hot for long stretches, so a shared or burstable CPU would be
+#: throttled just when it is needed.
+STEADY_CPU_TIERS = frozenset({Tier.DATABASE, Tier.CACHE})
 
 
 @runtime_checkable
@@ -106,7 +105,7 @@ class Target(Protocol):
         vcpu: int,
         memory_gib: float,
         headroom: float = 1.0,
-        prefer_family: Optional[str] = None,
+        steady_cpu: bool = False,
     ) -> InstanceSpec: ...
 
     def spec_of(self, name: str) -> Optional[InstanceSpec]: ...
@@ -123,8 +122,6 @@ class Target(Protocol):
         GCP   -> {"image": "<project>/<family>"}          (a public image family)
         """
         ...
-
-    def family_for_tier(self, tier: Tier) -> Optional[str]: ...
 
     def subnet_tier_for_tier(self, tier: Tier) -> SubnetTier: ...
 

@@ -17,12 +17,12 @@ from ..base import InstanceSpec
 
 INSTANCE_CATALOG: List[InstanceSpec] = [
     # Basic (shared CPU, general purpose).
-    InstanceSpec("s-1vcpu-1gb", 1, 1.0, "s", 0.0082),
-    InstanceSpec("s-1vcpu-2gb", 1, 2.0, "s", 0.0164),
-    InstanceSpec("s-2vcpu-2gb", 2, 2.0, "s", 0.0247),
-    InstanceSpec("s-2vcpu-4gb", 2, 4.0, "s", 0.0329),
-    InstanceSpec("s-4vcpu-8gb", 4, 8.0, "s", 0.0658),
-    InstanceSpec("s-8vcpu-16gb", 8, 16.0, "s", 0.1315),
+    InstanceSpec("s-1vcpu-1gb", 1, 1.0, "s", 0.0082, shared_cpu=True),
+    InstanceSpec("s-1vcpu-2gb", 1, 2.0, "s", 0.0164, shared_cpu=True),
+    InstanceSpec("s-2vcpu-2gb", 2, 2.0, "s", 0.0247, shared_cpu=True),
+    InstanceSpec("s-2vcpu-4gb", 2, 4.0, "s", 0.0329, shared_cpu=True),
+    InstanceSpec("s-4vcpu-8gb", 4, 8.0, "s", 0.0658, shared_cpu=True),
+    InstanceSpec("s-8vcpu-16gb", 8, 16.0, "s", 0.1315, shared_cpu=True),
     # Memory-optimized (database/cache tiers).
     InstanceSpec("m-2vcpu-16gb", 2, 16.0, "m", 0.1151),
     InstanceSpec("m-4vcpu-32gb", 4, 32.0, "m", 0.2301),

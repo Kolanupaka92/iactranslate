@@ -498,8 +498,8 @@ change the plan or any rendered IaC.
 
 ### 7.1 Add a new cloud target (e.g. Oracle Cloud)
 1. `src/iactranslate/targets/oci/` with:
-   - `catalog.py` — `INSTANCE_CATALOG: List[InstanceSpec]` (name, vcpu, memory_gib, family, $/hr) + `index()`.
-   - `mapping.py` — `VPC_CIDR`, `FAMILY_BY_TIER`, `SG_BY_TIER`, `SUBNET_BY_TIER`, `DEFAULT_INGRESS`, `image_key(os)`.
+   - `catalog.py` — `INSTANCE_CATALOG: List[InstanceSpec]` (name, vcpu, memory_gib, family, $/hr, `shared_cpu` for burstable or shared types) + `index()`.
+   - `mapping.py` — `VPC_CIDR`, `SG_BY_TIER`, `SUBNET_BY_TIER`, `DEFAULT_INGRESS`, `image_key(os)`.
    - `__init__.py` — an `OciTarget` class implementing the `Target` protocol (see `aws/__init__.py`).
    - `templates/*.j2` — 11 files (copy `aws/templates/`, swap resources; use `TEMPLATE_MAP`).
 2. Register it in `targets/__init__.py` `_REGISTRY`.

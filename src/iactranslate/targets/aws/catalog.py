@@ -10,12 +10,12 @@ from typing import Dict, List
 from ..base import InstanceSpec
 
 INSTANCE_CATALOG: List[InstanceSpec] = [
-    InstanceSpec("t3.micro", 2, 1.0, "t3", 0.0104),
-    InstanceSpec("t3.small", 2, 2.0, "t3", 0.0208),
-    InstanceSpec("t3.medium", 2, 4.0, "t3", 0.0416),
-    InstanceSpec("t3.large", 2, 8.0, "t3", 0.0832),
-    InstanceSpec("t3.xlarge", 4, 16.0, "t3", 0.1664),
-    InstanceSpec("t3.2xlarge", 8, 32.0, "t3", 0.3328),
+    InstanceSpec("t3.micro", 2, 1.0, "t3", 0.0104, shared_cpu=True),
+    InstanceSpec("t3.small", 2, 2.0, "t3", 0.0208, shared_cpu=True),
+    InstanceSpec("t3.medium", 2, 4.0, "t3", 0.0416, shared_cpu=True),
+    InstanceSpec("t3.large", 2, 8.0, "t3", 0.0832, shared_cpu=True),
+    InstanceSpec("t3.xlarge", 4, 16.0, "t3", 0.1664, shared_cpu=True),
+    InstanceSpec("t3.2xlarge", 8, 32.0, "t3", 0.3328, shared_cpu=True),
     InstanceSpec("m5.large", 2, 8.0, "m5", 0.096),
     InstanceSpec("m5.xlarge", 4, 16.0, "m5", 0.192),
     InstanceSpec("m5.2xlarge", 8, 32.0, "m5", 0.384),

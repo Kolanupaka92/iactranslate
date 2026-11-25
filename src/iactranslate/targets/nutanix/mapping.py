@@ -24,11 +24,6 @@ from ...models import IngressRule, SubnetTier, Tier
 
 VPC_CIDR = "10.0.0.0/16"
 
-FAMILY_BY_TIER: Dict[Tier, Optional[str]] = {
-    Tier.DATABASE: "mem",
-    Tier.CACHE: "mem",
-}
-
 #: Nutanix's grouping primitive is the *category* (a key/value label a Flow
 #: microsegmentation policy targets), not a security group attached to a NIC.
 #: These names become category values, and the ingress rules below are the

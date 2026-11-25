@@ -11,8 +11,8 @@ def test_smallest_fit_respects_requirements():
     assert inst.vcpu >= 4 and inst.memory_gib >= 16
 
 
-def test_smallest_fit_prefers_family():
-    inst = AWS.smallest_fit(vcpu=2, memory_gib=16, headroom=1.0, prefer_family="r5")
+def test_memory_optimized_is_chosen_when_the_shape_needs_it():
+    inst = AWS.smallest_fit(vcpu=2, memory_gib=16, headroom=1.0, steady_cpu=True)
     assert inst.family == "r5"
 
 

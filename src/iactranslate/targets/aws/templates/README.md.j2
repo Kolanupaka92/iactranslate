@@ -56,7 +56,7 @@ is silently falling back to local state.
    detected OS via `aws_ami` data sources — no IDs to fill in. To pin a specific/golden
    image, set `ami_overrides` in `terraform.tfvars`.
 2. **Review sizing.** Instance types were selected to fit each source VM's vCPU and
-   memory with headroom. Adjust in `compute.tf` if needed.
+   memory with headroom; databases and caches avoid burstable t3. Adjust in `compute.tf` if needed.
 3. **Review networking.** A VPC (`{{ network.vpc_cidr }}`) with public/private subnets
    across {{ network.subnets | selectattr("tier", "equalto", SubnetTier.PUBLIC) | list | length }}
    AZs, security groups, and {{ "a NAT gateway" if network.nat_gateway else "no NAT gateway" }} is defined.

@@ -49,9 +49,9 @@ class AwsTarget:
         vcpu: int,
         memory_gib: float,
         headroom: float = 1.0,
-        prefer_family: Optional[str] = None,
+        steady_cpu: bool = False,
     ) -> InstanceSpec:
-        return smallest_fit(INSTANCE_CATALOG, vcpu, memory_gib, headroom, prefer_family)
+        return smallest_fit(INSTANCE_CATALOG, vcpu, memory_gib, headroom, steady_cpu)
 
     def spec_of(self, name: str) -> Optional[InstanceSpec]:
         return self._index.get(name)
@@ -65,9 +65,6 @@ class AwsTarget:
 
     def image_reference(self, image_key: str) -> Dict[str, object]:
         return mapping.image_reference(image_key)
-
-    def family_for_tier(self, tier: Tier) -> Optional[str]:
-        return mapping.FAMILY_BY_TIER.get(tier)
 
     def subnet_tier_for_tier(self, tier: Tier) -> SubnetTier:
         return mapping.SUBNET_BY_TIER.get(tier, SubnetTier.PRIVATE)

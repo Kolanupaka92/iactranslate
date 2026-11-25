@@ -10,7 +10,7 @@ def test_static_is_the_default(rvtools_path, tmp_path, monkeypatch):
     monkeypatch.delenv("IACTRANSLATE_PRICING", raising=False)
     r = run_pipeline(input_path=rvtools_path, project_name="s", out_dir=str(tmp_path / "s"), target="azure")
     assert r.plan.pricing_source == "static"
-    assert r.plan.total_estimated_monthly_cost_usd == 3004.68  # unchanged catalog rates
+    assert r.plan.total_estimated_monthly_cost_usd == 2887.88  # catalog rates; databases by shape (ADR 0085)
 
 
 def test_monthly_cost_static_ignores_live_flag():

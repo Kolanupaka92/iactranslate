@@ -57,7 +57,7 @@ is silently falling back to local state.
 2. **Set admin credentials.** `admin_ssh_public_key` (Linux VMs) and `admin_password`
    (Windows VMs) — supply securely (e.g. `TF_VAR_admin_password`), never commit secrets.
 3. **Review sizing.** VM sizes were selected to fit each source VM's vCPU and memory with
-   headroom (E-series for database/cache). Adjust in `compute.tf` if needed.
+   headroom; databases and caches avoid burstable B-series. Adjust in `compute.tf` if needed.
 4. **Review networking.** A VNet (`{{ network.vpc_cidr }}`) with public/private subnets,
    per-tier NSGs, and public IPs for the web tier is defined.
 

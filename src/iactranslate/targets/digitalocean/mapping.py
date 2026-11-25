@@ -15,11 +15,6 @@ from ...models import IngressRule, SubnetTier, Tier
 
 VPC_CIDR = "10.0.0.0/16"
 
-FAMILY_BY_TIER: Dict[Tier, Optional[str]] = {
-    Tier.DATABASE: "m",
-    Tier.CACHE: "m",
-}
-
 # Firewall name per tier — DigitalOcean firewalls attach by tag, not by
 # subnet or NIC, so this doubles as the Droplet tag every instance in that
 # tier carries.
