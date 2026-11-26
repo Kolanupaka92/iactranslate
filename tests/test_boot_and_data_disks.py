@@ -111,3 +111,28 @@ def test_the_disk_column_is_read_in_its_own_unit(tmp_path, header, value, gib):
     source.write_text(f"Name,CPUs,Memory MB,{header},Guest OS,Power State,Cluster\n"
                       f"x,2,4096,{value},Ubuntu,poweredOn,c\n")
     assert normalize(vmware_csv.parse(str(source)))[0].disks_gib == [gib]
+
+
+def test_google_puts_an_internal_load_balancers_machines_in_its_subnet():  # refused otherwise
+    vms = [_vm(f"prod-app-0{i}") for i in range(1, 5)] + [_vm("prod-db-01"), _vm("prod-web-01"), _vm("prod-web-02")]
+    plan = _plan("gcp", *vms)
+    from iactranslate.graph import assign_subnets
+    subnet_of = assign_subnets(plan)
+    for lb in plan.network.load_balancers:
+        if not lb.internet_facing:
+            rule_subnet = next(s for s in plan.network.subnets if s.tier == lb.subnet_tier).resource_name
+            assert {subnet_of[vm] for vm in lb.targets} == {rule_subnet}
+    for layout in LAYOUTS:
+        text = render(layout, plan, get_target("gcp"))["loadbalancer.tf"]
+        assert re.search(r"subnetwork\s+= google_compute_subnetwork\.private_0\.id", text)
+    aws = _plan("aws", *vms)  # elsewhere the spread across zones stays
+    assert len({assign_subnets(aws)[f"prod-app-0{i}"] for i in range(1, 5)}) == 2
+
+
+
+@pytest.mark.parametrize("layout", LAYOUTS)
+def test_google_may_stop_a_machine_to_resize_it(layout):  # refused otherwise, once deployed
+    compute = render(layout, _plan("gcp", _vm("a"), _vm("b")), get_target("gcp"))["compute.tf"]
+    assert compute.count("allow_stopping_for_update = true") == compute.count('resource "google_compute_instance"')
+    program = render("pulumi", _plan("gcp", _vm("a"), _vm("b")), get_target("gcp"))["__main__.py"]
+    assert program.count("allow_stopping_for_update=True") == program.count("gcp.compute.Instance(") == 2

@@ -40,6 +40,9 @@ resource "google_compute_instance" "vm" {
   name         = each.value.slug
   machine_type = each.value.machine_type
   zone         = var.zone
+  # A new size or subnet is applied by stopping and starting the machine, as on
+  # the other clouds. Without this, Google refuses the change (ADR 0092).
+  allow_stopping_for_update = true
   tags         = [each.value.network_tag]
 
   boot_disk {

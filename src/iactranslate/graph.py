@@ -100,11 +100,22 @@ def assign_subnets(plan: MigrationPlan) -> Dict[str, str]:
     private = [s.resource_name for s in plan.network.subnets if s.tier == SubnetTier.PRIVATE]
     counters = {SubnetTier.PUBLIC: 0, SubnetTier.PRIVATE: 0}
     mapping: Dict[str, str] = {}
+    # Google: every machine behind an internal load balancer must be in the
+    # subnet its forwarding rule uses, the tier's first; Google refuses the
+    # instance group otherwise. Its subnets are regional, so spreading them
+    # bought nothing. Found applying for real (ADR 0092).
+    together = (
+        {vm for lb in plan.network.load_balancers if not lb.internet_facing for vm in lb.targets}
+        if plan.target == "gcp" else set()
+    )
     for c in plan.compute:
         pool = public if c.subnet_tier == SubnetTier.PUBLIC else private
         if not pool:  # no subnet of that tier; fall back to any subnet
             pool = [s.resource_name for s in plan.network.subnets]
         if not pool:  # no subnets at all (e.g. a subnet-less plan in a unit test)
+            continue
+        if c.vm_name in together:
+            mapping[c.vm_name] = pool[0]
             continue
         idx = counters[c.subnet_tier] % len(pool)
         counters[c.subnet_tier] += 1

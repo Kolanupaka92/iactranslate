@@ -12,6 +12,9 @@ resource "google_compute_instance" "{{ c.resource_name }}" {
   name         = "{{ vm_slug[c.vm_name] }}"
   machine_type = "{{ c.instance_type }}"
   zone         = var.zone
+  # A new size or subnet is applied by stopping and starting the machine, as on
+  # the other clouds. Without this, Google refuses the change (ADR 0092).
+  allow_stopping_for_update = true
   tags         = ["{{ c.security_group }}"]
 
   boot_disk {

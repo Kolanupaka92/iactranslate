@@ -525,7 +525,7 @@ def _gcp_main(plan: MigrationPlan, target: Target) -> str:
             f"inst_{c.resource_name} = gcp.compute.Instance(",
             f"    {_py_str(c.resource_name)},",
             f"    machine_type={_py_str(c.instance_type)},",
-            "    zone=zone, project=project,",
+            "    zone=zone, project=project, allow_stopping_for_update=True,",
             f"    tags=[{_py_str(c.security_group)}],",
             '    boot_disk={"initialize_params": {"image": '
             f'{_py_str(ref["image"])}, "size": {c.root_volume_gib}, "type": "pd-balanced"}}}},',
