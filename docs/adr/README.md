@@ -100,5 +100,6 @@ Format: [Michael Nygard's ADR template](https://cognitect.com/blog/2011/11/15/do
 | [0090](0090-keep-disks-and-running-servers.md) | Pulumi and Bicep create every data disk; a newer image never replaces a running server | Accepted |
 | [0091](0091-adopt-without-moving.md) | An adopted AWS server keeps its network, security groups, image and boot disk; only EC2 ids are adopted | Accepted |
 | [0092](0092-second-real-deployment.md) | Second real deployment: Google internal LB machines share a subnet; Google machines may stop to resize | Accepted |
+| [0093](0093-aws-disks-suse-on-oracle-and-running-the-output.md) | AWS disks encrypted and kept in every renderer; distinct CloudFormation ids; SUSE on Oracle; CI runs Pulumi, CDK and Bicep | Accepted |
 
 See also the [Architecture & Design](../architecture.md) overview.

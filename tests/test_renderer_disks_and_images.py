@@ -115,3 +115,43 @@ def test_oracle_asks_for_images_that_fit_the_shape():
     assert len(lookups) == 2
     assert all(re.search(r'^  shape\s+= "([\w.]+)"$', b, re.M).group(1) in used for b in lookups)
     assert all(re.search(r'^  state\s+= "AVAILABLE"$', b, re.M) for b in lookups)
+
+
+@pytest.mark.parametrize("renderer", ["cloudformation", "cdk"])
+def test_machines_whose_names_differ_only_in_punctuation_are_all_kept(renderer):
+    names = ["uat cache 01", "uat-cache-01", "UAT_CACHE_01", "uat.cache.01", "uatcache01"]
+    files = _files("aws", renderer, *(_vm(n) for n in names))
+    if renderer == "cloudformation":
+        template = json.loads(next(c for n, c in files.items() if n.endswith(".json")))
+        servers = [k for k, r in template["Resources"].items() if r["Type"] == "AWS::EC2::Instance"]
+        assert servers[0] == "InstanceUatCache01"
+    else:
+        code = _code(files)
+        servers = re.findall(r"ec2\.CfnInstance\(\s*self, '(\w+)'", code)
+        assert len(set(re.findall(r"^\s*(inst_\w+) = ec2\.CfnInstance\(", code, re.M))) == len(names)
+    assert len(set(servers)) == len(servers) == len(names)
+
+
+@pytest.mark.parametrize("renderer", ["pulumi", "cloudformation", "cdk"])
+def test_every_aws_disk_is_encrypted_and_data_outlives_its_server(renderer):
+    files = _files("aws", renderer, _vm("db01", disks=(60, *SIZES)))
+    code = _code(files)
+    if renderer == "pulumi":
+        assert re.search(r'root_block_device=\{[^}]*"encrypted": True', code)
+        assert code.count("encrypted=True") == len(SIZES)  # separate volumes, never deleted with it
+    elif renderer == "cloudformation":
+        template = json.loads(next(c for n, c in files.items() if n.endswith(".json")))
+        (server,) = [r for r in template["Resources"].values() if r["Type"] == "AWS::EC2::Instance"]
+        disks = [d["Ebs"] for d in server["Properties"]["BlockDeviceMappings"]]
+        assert all(d["Encrypted"] is True for d in disks) and len(disks) == 1 + len(SIZES)
+        assert all(d["DeleteOnTermination"] is False for d in disks[1:])
+    else:
+        assert code.count("encrypted=True") == 1 + len(SIZES)
+        assert code.count("delete_on_termination=False") == len(SIZES)
+
+
+def test_suse_on_oracle_gets_an_image_that_exists_and_says_so():
+    c = build_migration_plan([_vm("s", "SUSE Linux Enterprise Server 15 SP5")], "x", get_target("oci")).compute[0]
+    assert c.image_key == "oracle-linux-9" and "OS substituted" in c.reason
+    images = _files("oci", "terraform", _vm("s", "SUSE Linux Enterprise Server 15 SP5"))["images.tf"]
+    assert "SUSE" not in images and 'operating_system         = "Oracle Linux"' in images

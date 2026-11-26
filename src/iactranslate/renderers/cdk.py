@@ -26,7 +26,7 @@ from typing import Dict, List
 from ..graph import EdgeKind, InfrastructureGraph, NodeKind, build_graph
 from ..models import MigrationPlan, stack_name, terraform_safe_name
 from ..targets.base import Target
-from .cloudformation import _ami_dynamic_ref, _ami_parameter_name, _cid
+from .cloudformation import _ami_dynamic_ref, _ami_parameter_name, _cid, instance_cids
 
 
 class RendererNotSupportedError(ValueError):
@@ -187,10 +187,11 @@ def _stack_py(graph: InfrastructureGraph, plan: MigrationPlan, target: Target) -
             add(")")
             add("")
 
+    iid_of = instance_cids([n.name for n in graph.nodes_of(NodeKind.INSTANCE)])
     instance_var_by_name: Dict[str, str] = {}
     for c in plan.compute:
         inst = next(n for n in graph.nodes_of(NodeKind.INSTANCE) if n.name == c.vm_name)
-        ivar = _var("inst", inst.name)
+        ivar = "inst_" + iid_of[inst.name]
         instance_var_by_name[inst.name] = ivar
         key = inst.attributes["image_key"]
         dyn = _ami_dynamic_ref(key)
@@ -205,7 +206,7 @@ def _stack_py(graph: InfrastructureGraph, plan: MigrationPlan, target: Target) -
             "        ec2.CfnInstance.BlockDeviceMappingProperty(\n"
             "            device_name='/dev/xvda',\n"
             "            ebs=ec2.CfnInstance.EbsProperty("
-            f"volume_size={inst.attributes['root_volume_gib']}, volume_type='gp3'),\n"
+            f"volume_size={inst.attributes['root_volume_gib']}, volume_type='gp3', encrypted=True),\n"
             "        ),"
         ]
         for i, size in enumerate(inst.attributes.get("extra_volumes_gib") or []):
@@ -213,12 +214,14 @@ def _stack_py(graph: InfrastructureGraph, plan: MigrationPlan, target: Target) -
             block_devices.append(
                 "        ec2.CfnInstance.BlockDeviceMappingProperty(\n"
                 f"            device_name='/dev/xvd{dev}',\n"
-                f"            ebs=ec2.CfnInstance.EbsProperty(volume_size={size}, volume_type='gp3'),\n"
+                # Encrypted, and outlives its instance (ADR 0093).
+                f"            ebs=ec2.CfnInstance.EbsProperty(volume_size={size}, volume_type='gp3', "
+                "encrypted=True, delete_on_termination=False),\n"
                 "        ),"
             )
 
         add(f"{ivar} = ec2.CfnInstance(")
-        add(f"    self, {_py_str(_cid('Instance', inst.name))},")
+        add(f"    self, {_py_str(iid_of[inst.name])},")
         add(f"    instance_type={_py_str(inst.attributes['instance_type'])},")
         add(f"    image_id={image_expr},")
         if subnet_var:

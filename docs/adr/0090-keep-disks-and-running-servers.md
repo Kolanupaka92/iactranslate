@@ -52,7 +52,7 @@ a load balancer in them: wrong argument types and names. Fixed.
   replacement alone doesn't cover deleting the stack, which is intended.
 - CI doesn't run Pulumi or CDK yet, so this could come back.
 - Bicep was checked as text only: its compiler isn't installed here.
-- **Found, not fixed:**
+- **Found, not fixed** (all but the last fixed in ADR 0093; the last in ADR 0091):
   - Oracle publishes no SUSE image, so the lookup for a SUSE machine finds nothing
     and the whole plan fails.
   - Root disks from Pulumi, CloudFormation and CDK on AWS aren't encrypted, and

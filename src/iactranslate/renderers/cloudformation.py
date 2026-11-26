@@ -49,6 +49,26 @@ def _cid(prefix: str, name: str) -> str:
     return prefix + camel
 
 
+def instance_cids(names: List[str]) -> Dict[str, str]:
+    """A distinct logical id per machine, in plan order.
+
+    `_cid` drops punctuation, so "uat cache 01" and "uat-cache-01" both became
+    `InstanceUatCache01`: CloudFormation silently kept one machine of the two and
+    CDK refused to build (ADR 0093). The first keeps the plain id, so a stack
+    that already holds it isn't renamed; later ones get a number.
+    """
+    out: Dict[str, str] = {}
+    used = set()
+    for name in names:
+        base = candidate = _cid("Instance", name)
+        n = 2
+        while candidate in used:
+            candidate, n = f"{base}N{n}", n + 1
+        used.add(candidate)
+        out[name] = candidate
+    return out
+
+
 def _ami_dynamic_ref(image_key: str) -> Optional[str]:
     path = _SSM_IMAGE_PARAMS.get(image_key)
     return f"{{{{resolve:ssm:{path}}}}}" if path else None
@@ -207,8 +227,9 @@ def _build_template(graph: InfrastructureGraph, plan: MigrationPlan) -> Dict[str
 
     instance_ids: List[str] = []
     instance_id_by_name: Dict[str, str] = {}
+    iid_of = instance_cids([n.name for n in graph.nodes_of(NodeKind.INSTANCE)])
     for inst in graph.nodes_of(NodeKind.INSTANCE):
-        iid = _cid("Instance", inst.name)
+        iid = iid_of[inst.name]
         instance_ids.append(iid)
         instance_id_by_name[inst.name] = iid
         key = inst.attributes["image_key"]
@@ -220,16 +241,20 @@ def _build_template(graph: InfrastructureGraph, plan: MigrationPlan) -> Dict[str
         subnet_ref = subnet_id_by_node[placed_in[0].target] if placed_in else None
         sg_refs = [sg_id_by_node[e.target] for e in secured_by if e.target in sg_id_by_node]
 
+        # Encrypted, as Terraform's are, and data disks outlive their instance:
+        # a volume made at launch is otherwise deleted when it ends (ADR 0093).
         block_devices = [
             {
                 "DeviceName": "/dev/xvda",
-                "Ebs": {"VolumeSize": inst.attributes["root_volume_gib"], "VolumeType": "gp3"},
+                "Ebs": {"VolumeSize": inst.attributes["root_volume_gib"], "VolumeType": "gp3",
+                        "Encrypted": True},
             }
         ]
         for i, size in enumerate(inst.attributes.get("extra_volumes_gib") or []):
             block_devices.append({
                 "DeviceName": f"/dev/xvd{chr(ord('f') + i)}",
-                "Ebs": {"VolumeSize": size, "VolumeType": "gp3"},
+                "Ebs": {"VolumeSize": size, "VolumeType": "gp3", "Encrypted": True,
+                        "DeleteOnTermination": False},
             })
 
         resources[iid] = {

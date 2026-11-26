@@ -151,7 +151,8 @@ def _aws_main(plan: MigrationPlan, target: Target) -> str:
             f"    ami=ami_{ami_var}.id,",
             f"    subnet_id=subnet_{subnet_res}.id,",
             f"    vpc_security_group_ids=[{sg_ref}],",
-            f'    root_block_device={{"volume_size": {c.root_volume_gib}, "volume_type": "gp3"}},',
+            # Encrypted, as Terraform's are (ADR 0093).
+            f'    root_block_device={{"volume_size": {c.root_volume_gib}, "volume_type": "gp3", "encrypted": True}},',
             f'    tags={{"Name": {_py_str(c.vm_name)}, "Tier": {_py_str(c.tier.value)}, '
             f'"Environment": {_py_str(c.environment.value)}}},',
             # A newer image must not replace a running server (ADR 0090).
