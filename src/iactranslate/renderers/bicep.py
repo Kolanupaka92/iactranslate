@@ -152,6 +152,11 @@ def _resources_bicep(graph: InfrastructureGraph, plan: MigrationPlan, target: Ta
                 "        }",
             ]
 
+        # A load balancer can't name its own parts through itself (BCP079), so
+        # rules point at them by resource id. Found by compiling (ADR 0093).
+        def part(kind: str, name: str, lb_name: str = lb.name) -> str:
+            return f"resourceId('Microsoft.Network/loadBalancers/{kind}', {_str(lb_name)}, {_str(name)})"
+
         probes = []
         rules = []
         for listener in lb.attributes["listeners"]:
@@ -172,9 +177,9 @@ def _resources_bicep(graph: InfrastructureGraph, plan: MigrationPlan, target: Ta
                 "      {\n"
                 f"        name: {_str(rule_name)}\n"
                 "        properties: {\n"
-                f"          frontendIPConfiguration: {{ id: {lb_var}.properties.frontendIPConfigurations[0].id }}\n"
-                f"          backendAddressPool: {{ id: {lb_var}.properties.backendAddressPools[0].id }}\n"
-                f"          probe: {{ id: {lb_var}.properties.probes[{len(probes) - 1}].id }}\n"
+                f"          frontendIPConfiguration: {{ id: {part('frontendIPConfigurations', 'frontend')} }}\n"
+                f"          backendAddressPool: {{ id: {part('backendAddressPools', 'backendPool')} }}\n"
+                f"          probe: {{ id: {part('probes', probe_name)} }}\n"
                 "          protocol: 'Tcp'\n"
                 f"          frontendPort: {listener['listener_port']}\n"
                 f"          backendPort: {listener['target_port']}\n"
@@ -195,11 +200,12 @@ def _resources_bicep(graph: InfrastructureGraph, plan: MigrationPlan, target: Ta
             "      }",
             "    ]",
             "    backendAddressPools: [ { name: 'backendPool' } ]",
+            # Bicep separates array items by new lines, not commas.
             "    probes: [",
-            ",\n".join(probes),
+            "\n".join(probes),
             "    ]",
             "    loadBalancingRules: [",
-            ",\n".join(rules),
+            "\n".join(rules),
             "    ]",
             "  }",
             "}",

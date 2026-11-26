@@ -22,6 +22,10 @@ Running the output for the last one found a fifth, worse than the others:
 overwrote the other: 23 of 25 machines on the realistic estate. CDK refused to
 build the same estate.
 
+And **the Bicep output had never compiled.** Its load balancer named its own
+parts through itself, which Bicep forbids (BCP079), and separated array items
+with commas across lines (BCP238). Every inventory with a load balancer failed.
+
 ## Decision
 
 - **Every AWS disk is encrypted** in Pulumi, CloudFormation and CDK, with AWS's
@@ -34,6 +38,9 @@ build the same estate.
   Python variable names follow the same ids.
 - **On Oracle, a SUSE machine gets Oracle Linux 9**, and the plan says it was
   substituted, as for any other OS without an image.
+- **Bicep load balancer rules refer to their parts by `resourceId`**, and array
+  items are separated by new lines. All five inventories compile without errors
+  or warnings.
 - **A CI job runs the output in its own tools:** every Pulumi program against the
   real Pulumi libraries with mocked clouds, CDK synthesis on Node 22, and `bicep
   build`. Versions are pinned; the Bicep binary is checked against its published
@@ -47,4 +54,6 @@ build the same estate.
   disks; moving the data across is manual. A new stack is unaffected.
 - A SUSE workload on Oracle needs testing on Oracle Linux before it moves, as the
   plan says.
-- Pulumi on three clouds and CDK were run locally; Bicep runs first in CI.
+- Run locally and in CI: Pulumi on three clouds, CDK and Bicep, on three
+  inventories each. Compiling isn't deploying: none of these has been applied to a
+  real cloud.
