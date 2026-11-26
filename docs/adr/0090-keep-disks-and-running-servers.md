@@ -61,4 +61,4 @@ a load balancer in them: wrong argument types and names. Fixed.
     it deletes them.
   - **Adopting a live AWS instance can still propose replacing it.** It is placed in
     a generated subnet and given an encrypted root disk, and the provider replaces an
-    instance for either. Found by reading, not reproduced.
+    instance for either. Found by reading, not reproduced. Fixed in ADR 0091.

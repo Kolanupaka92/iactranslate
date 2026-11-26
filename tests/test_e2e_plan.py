@@ -181,6 +181,36 @@ def test_a_newer_image_replaces_nothing_that_is_running(tmp_path, target, layout
     assert result.returncode == 0, (result.stdout + result.stderr)[-4000:]
 
 
+@needs_tofu
+@pytest.mark.parametrize("layout", LAYOUTS)
+def test_an_adopted_server_is_never_moved(tmp_path, layout):
+    """Deploy, then let the new network's subnets and security group change. An
+    adopted server keeps its own; a new one follows (ADR 0091). Mocked providers
+    can't import, so the adopted server is deployed instead."""
+    source = tmp_path / "in.csv"
+    source.write_text("Instance Name,InstanceId,InstanceType,Platform,VolumeSize\n"
+                      "app01,i-0123456789abcdef0,m5.large,linux,40\napp02,,m5.large,linux,40\n")
+    out = _generate(tmp_path, "aws", layout, "acme", str(source))
+    (out / "imports.tf").unlink()
+
+    def network(old_or_new):
+        return "".join(f'  override_resource {{\n    target = {r}\n    values = {{ id = "{p}-0{old_or_new}" }}\n  }}\n'
+                       for r, p in (("aws_subnet.private_0", "subnet"), ("aws_subnet.private_1", "subnet"),
+                                    ("aws_security_group.app_sg", "sg")))
+
+    def at(vm):
+        return f'aws_instance.adopted["{vm}"]' if layout == "terraform-foreach" and vm == "app01" else (
+            f'aws_instance.vm["{vm}"]' if layout == "terraform-foreach" else f"aws_instance.{vm}")
+
+    checks = "".join(
+        f'  assert {{\n    condition     = {at(vm)}.subnet_id == "subnet-0{want}" && '
+        f'tolist({at(vm)}.vpc_security_group_ids)[0] == "sg-0{want}"\n    error_message = "{vm}"\n  }}\n'
+        for vm, want in (("app01", "old"), ("app02", "new")))
+    result = _plan(out, lambda out: f'run "deploy" {{\n  command = apply\n{network("old")}}}\n'
+                                    f'run "later" {{\n  command = plan\n{network("new")}{checks}}}\n')
+    assert result.returncode == 0, (result.stdout + result.stderr)[-4000:]
+
+
 # --- the aligner itself, without tofu --------------------------------------------------
 
 

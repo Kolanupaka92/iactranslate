@@ -15,7 +15,7 @@ from ..evidence import sizing_decision
 from ..models import ComputePlan, Environment, NormalizedVM, Tier
 from ..pricing import monthly_cost
 from ..sizing import effective_demand, fit
-from ..targets.base import STEADY_CPU_TIERS, Target, is_undersized
+from ..targets.base import CAP_BROWNFIELD_IMPORT, STEADY_CPU_TIERS, Target, is_undersized
 from .base import LLMProvider
 
 _MIN_ROOT_GIB = 30
@@ -65,6 +65,22 @@ def _decision_reason(vm, demand, spec, tier, overridden: bool, suggested: str,
     elif overridden:
         reason += f" Catalog guardrail: model suggestion '{suggested}' is not a real type."
     return reason
+
+
+#: An EC2 instance id: the only kind the AWS target can adopt.
+_EC2_ID = re.compile(r"^i-(?:[0-9a-f]{8}|[0-9a-f]{17})$")
+
+
+def adoptable(target: Target, external_id: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
+    """(the id to adopt, or what to say when one was given and can't be)."""
+    if not external_id:
+        return None, None
+    if CAP_BROWNFIELD_IMPORT in target.capabilities and _EC2_ID.match(external_id):
+        return external_id, None
+    return None, (
+        f"Not adopted: '{external_id}' isn't a server {target.name} can take over, "
+        "so a new one is planned."
+    )
 
 
 _VERSION_RE = re.compile(r"(\d+(?:\.\d+)?)")
@@ -182,6 +198,18 @@ def build_compute_plans(
         root_gib, extra_gib, disk_note = _root_and_extra(vm, target.min_boot_gib(image_key))
         if disk_note:
             reason += f" {disk_note}"
+        external_id, adopt_note = adoptable(target, vm.external_id)
+        if adopt_note:
+            reason += f" {adopt_note}"
+        if external_id:
+            reason += (
+                f" Adopts the running server {external_id}: it stays in its own network with "
+                "its own security groups, image and disks, so nothing replaces it. A "
+                "different instance type is applied in place, which restarts it."
+            )
+            if extra_gib:
+                reason += " Its data disks are already attached; none are created."
+                extra_gib = []
         cost, price_source = monthly_cost(
             target.name, instance_type, region, target.cost_of(instance_type), live_pricing
         )
@@ -226,7 +254,7 @@ def build_compute_plans(
                     if overridden and suggestion.instance_type != instance_type
                     else [],
                 ),
-                external_id=vm.external_id,
+                external_id=external_id,
             )
         )
     _ensure_unique_resource_names(plans)

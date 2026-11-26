@@ -177,12 +177,17 @@ def _migrate_from_classic(plan: MigrationPlan, classic: Dict[str, str],
     by machine label) or a `data` map (keyed by volume label) moves to that
     map's entry. A cloud can't gain a per-machine resource the file forgets.
     """
-    maps = {(t, n) for t, n in _declared(for_each) if n in ("vm", "data")}
+    maps = {(t, n) for t, n in _declared(for_each) if n in ("vm", "adopted", "data")}
     machines = {c.resource_name for c in plan.compute}
+    # An adopted server is in its own map (ADR 0091). Moving it to `vm` would
+    # name an address that doesn't exist, and the server would be destroyed.
+    adopted = {c.resource_name for c in plan.compute if c.external_id}
     volumes = {v["resource_name"] for v in data_volumes(plan.compute)}
     blocks = []
     for rtype, label in _declared(classic):
-        if (rtype, "vm") in maps and label in machines:
+        if (rtype, "adopted") in maps and label in adopted:
+            blocks.append((f"{rtype}.{label}", f'{rtype}.adopted["{label}"]'))
+        elif (rtype, "vm") in maps and label in machines:
             blocks.append((f"{rtype}.{label}", f'{rtype}.vm["{label}"]'))
         elif (rtype, "data") in maps and label in volumes:
             blocks.append((f"{rtype}.{label}", f'{rtype}.data["{label}"]'))
@@ -333,7 +338,8 @@ def build_files(
         # How other resources address a machine's instance: its own label in
         # the classic layout, its map key in the for_each one.
         "instance_addr": {
-            c.vm_name: (f'vm["{c.resource_name}"]' if for_each else c.resource_name)
+            c.vm_name: (f'{"adopted" if c.external_id else "vm"}["{c.resource_name}"]'
+                        if for_each else c.resource_name)
             for c in plan.compute
         },
     }

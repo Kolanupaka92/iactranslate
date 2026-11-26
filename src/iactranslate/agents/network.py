@@ -42,7 +42,10 @@ def _plan_load_balancers(
     sg_by_name: Dict[str, SecurityGroup] = {sg.name: sg for sg in security_groups}
     groups: Dict[Tuple[Tier, Environment, SubnetTier], List[ComputePlan]] = defaultdict(list)
     for c in compute:
-        groups[(c.tier, c.environment, c.subnet_tier)].append(c)
+        # An adopted server stays in its own network, and a load balancer here
+        # can't reach it (ADR 0091).
+        if not c.external_id:
+            groups[(c.tier, c.environment, c.subnet_tier)].append(c)
 
     load_balancers: List[LoadBalancerPlan] = []
     for (tier, environment, subnet_tier), members in sorted(

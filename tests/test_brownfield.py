@@ -10,7 +10,7 @@ def _cloud_csv(tmp_path, with_ids=True):
     p = tmp_path / "fleet.csv"
     header = "InstanceId,Name,InstanceType,Platform,VolumeSize" if with_ids else "Name,InstanceType,Platform,VolumeSize"
     rows = (
-        ["i-0abc,web-1,m5.large,Ubuntu 22.04,80", "i-0def,db-1,r5.xlarge,Windows Server 2022,200"]
+        ["i-0abc0abc,web-1,m5.large,Ubuntu 22.04,80", "i-0def0def,db-1,r5.xlarge,Windows Server 2022,200"]
         if with_ids else
         ["web-1,m5.large,Ubuntu 22.04,80", "db-1,r5.xlarge,Windows Server 2022,200"]
     )
@@ -21,8 +21,8 @@ def _cloud_csv(tmp_path, with_ids=True):
 def test_cloud_source_captures_external_id(tmp_path):
     vms = normalize(resolve_source(_cloud_csv(tmp_path)).parse(_cloud_csv(tmp_path)))
     by = {v.vm_name: v for v in vms}
-    assert by["web-1"].external_id == "i-0abc"
-    assert by["db-1"].external_id == "i-0def"
+    assert by["web-1"].external_id == "i-0abc0abc"
+    assert by["db-1"].external_id == "i-0def0def"
 
 
 def test_imports_tf_generated_for_brownfield(tmp_path):
@@ -32,7 +32,7 @@ def test_imports_tf_generated_for_brownfield(tmp_path):
     assert "imports.tf" in files
     imports = files["imports.tf"]
     assert "import {" in imports
-    assert 'id = "i-0abc"' in imports
+    assert 'id = "i-0abc0abc"' in imports
     assert "aws_instance." in imports
     # One import block per adopted workload.
     assert imports.count("import {") == 2
@@ -52,4 +52,4 @@ def test_external_id_flows_to_compute_plan(tmp_path):
     vms = normalize(resolve_source(_cloud_csv(tmp_path)).parse(_cloud_csv(tmp_path)))
     plan = build_migration_plan(vms, "bf", get_target("aws"))
     ids = {c.vm_name: c.external_id for c in plan.compute}
-    assert ids["web-1"] == "i-0abc"
+    assert ids["web-1"] == "i-0abc0abc"

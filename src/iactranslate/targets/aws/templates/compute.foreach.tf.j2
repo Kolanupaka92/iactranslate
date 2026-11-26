@@ -6,9 +6,8 @@
 # once per machine. Keys are the same labels the classic layout uses, so
 # `aws_instance.vm["prod_web_01"]` is the classic `aws_instance.prod_web_01`.
 
-locals {
-  vms = {
-{% for c in compute %}
+{% macro rows(machines) %}
+{% for c in machines %}
     "{{ c.resource_name }}" = {
       name          = "{{ c.vm_name }}"
       ami           = lookup(var.ami_overrides, "{{ c.image_key }}", data.aws_ami.{{ image_refs[c.image_key].resource }}.id)
@@ -23,11 +22,26 @@ locals {
       environment   = "{{ c.environment.value }}"
     }
 {% endfor %}
-  }
+{% endmacro %}
+locals {
+  vms = {
+{{ rows(compute | rejectattr("external_id") | list) }}  }
+{% if compute | selectattr("external_id") | list %}
+  # Adopted servers (imports.tf), a resource of their own because they ignore
+  # more: they keep their own network, security groups and boot disk (ADR 0091).
+  adopted = {
+{{ rows(compute | selectattr("external_id") | list) }}  }
+  # Every instance by key, for disks.
+  instances = merge(aws_instance.vm, aws_instance.adopted)
+{% else %}
+  # Every instance by key, for disks.
+  instances = aws_instance.vm
+{% endif %}
 }
 
-resource "aws_instance" "vm" {
-  for_each = local.vms
+{% macro instance(name, rows, ignored) %}
+resource "aws_instance" "{{ name }}" {
+  for_each = local.{{ rows }}
 
 {% if identity_roles %}
   iam_instance_profile   = each.value.profile
@@ -60,6 +74,12 @@ resource "aws_instance" "vm" {
     # images.tf finds the newest image on every run. Without this, each one its
     # vendor publishes would replace this server and its boot disk. To rebuild
     # on a newer image on purpose: terraform apply -replace=<address>
-    ignore_changes = [ami]
+    ignore_changes = [{{ ignored }}]
   }
 }
+{% endmacro %}
+{{ instance("vm", "vms", "ami") }}
+{% if compute | selectattr("external_id") | list %}
+
+{{ instance("adopted", "adopted", "ami, subnet_id, vpc_security_group_ids, root_block_device") }}
+{% endif %}

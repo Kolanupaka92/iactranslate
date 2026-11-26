@@ -157,7 +157,7 @@ def test_references_follow_the_layout(foreach):
     # whose whole job is to name them.
     code = "\n".join(line for n, b in foreach.items() if n != "migrate-from-classic.tf"
                      for line in b.splitlines() if not line.lstrip().startswith("#"))
-    assert not re.search(r"aws_instance\.(?!vm\[)[a-z]", code)
+    assert not re.search(r"aws_instance\.(?!vm\b|adopted\b)[a-z]", code)
 
 
 def test_the_migration_file_moves_every_classic_machine_and_disk(classic, foreach):
@@ -177,7 +177,7 @@ def test_brownfield_imports_target_the_map_entry():
            for i, v in enumerate(vms)]
     files = render("terraform-foreach", build_migration_plan(vms, "x", get_target("aws")),
                    get_target("aws"))
-    assert re.search(r'to = aws_instance\.vm\["[a-z0-9_]+"\]\n  id = "i-0123456789abcdef0"',
+    assert re.search(r'to = aws_instance\.adopted\["[a-z0-9_]+"\]\n  id = "i-0123456789abcdef0"',
                      files["imports.tf"])
 
 

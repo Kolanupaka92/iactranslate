@@ -32,7 +32,14 @@ resource "aws_instance" "{{ c.resource_name }}" {
     # images.tf finds the newest image on every run. Without this, each one its
     # vendor publishes would replace this server and its boot disk. To rebuild
     # on a newer image on purpose: terraform apply -replace=<address>
+{% if c.external_id %}
+    # Adopted (imports.tf): it keeps its own network, security groups and boot
+    # disk. A new subnet or disk encryption would replace it, and security groups
+    # from another network can't be attached (ADR 0091).
+    ignore_changes = [ami, subnet_id, vpc_security_group_ids, root_block_device]
+{% else %}
     ignore_changes = [ami]
+{% endif %}
   }
 }
 

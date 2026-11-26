@@ -76,7 +76,7 @@ def test_pulumi_still_adopts_an_existing_instance():
     vm = _vm("a").model_copy(update={"external_id": "i-0123456789abcdef0"})
     program = _files("aws", "pulumi", vm)["__main__.py"]
     compile(program, "__main__.py", "exec")
-    assert 'ignore_changes=["ami"], import_="i-0123456789abcdef0"' in program.replace("'", '"')
+    assert '"subnetId"' in program and 'import_="i-0123456789abcdef0"' in program.replace("'", '"')
 
 
 def test_bicep_disks_have_their_own_luns_and_survive_the_machine():

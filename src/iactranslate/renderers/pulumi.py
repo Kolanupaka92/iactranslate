@@ -37,6 +37,11 @@ def _ingress_block(rule) -> str:
     )
 
 
+#: What an adopted server keeps as it is.
+_ADOPTED_IGNORES = ('["ami", "instanceType", "subnetId", "vpcSecurityGroupIds", '
+                    '"rootBlockDevice", "tags", "tagsAll"]')
+
+
 def _aws_main(plan: MigrationPlan, target: Target) -> str:
     net = plan.network
     subnet_of = assign_subnets(plan)
@@ -150,9 +155,14 @@ def _aws_main(plan: MigrationPlan, target: Target) -> str:
             f'    tags={{"Name": {_py_str(c.vm_name)}, "Tier": {_py_str(c.tier.value)}, '
             f'"Environment": {_py_str(c.environment.value)}}},',
             # A newer image must not replace a running server (ADR 0090).
-            '    opts=pulumi.ResourceOptions(provider=provider, ignore_changes=["ami"]'
-            # Brownfield: adopt the existing instance rather than recreate it.
-            + (f", import_={_py_str(c.external_id)}" if c.external_id else "") + "),",
+            '    opts=pulumi.ResourceOptions(provider=provider, '
+            + (
+                # Brownfield: adopt the running server as it is. Pulumi refuses an
+                # import whose inputs differ, so everything that may is ignored;
+                # resize it afterwards on purpose (ADR 0091).
+                f"ignore_changes={_ADOPTED_IGNORES}, import_={_py_str(c.external_id)}),"
+                if c.external_id else 'ignore_changes=["ami"]),'
+            ),
             ")",
         ]
 
