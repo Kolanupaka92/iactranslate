@@ -101,5 +101,6 @@ Format: [Michael Nygard's ADR template](https://cognitect.com/blog/2011/11/15/do
 | [0091](0091-adopt-without-moving.md) | An adopted AWS server keeps its network, security groups, image and boot disk; only EC2 ids are adopted | Accepted |
 | [0092](0092-second-real-deployment.md) | Second real deployment: Google internal LB machines share a subnet; Google machines may stop to resize | Accepted |
 | [0093](0093-aws-disks-suse-on-oracle-and-running-the-output.md) | AWS disks encrypted and kept in every renderer; distinct CloudFormation ids; Bicep compiles; SUSE on Oracle; CI runs Pulumi, CDK and Bicep | Accepted |
+| [0094](0094-https-only-with-a-certificate.md) | AWS HTTPS listeners only with a certificate, TLS 1.2+; README covers `aws login` with Terraform | Accepted |
 
 See also the [Architecture & Design](../architecture.md) overview.

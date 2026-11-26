@@ -118,8 +118,12 @@ def _plan(out, runs=lambda out: 'run "plan" {\n  command = plan\n}\n'):
     mocks = "".join(f'mock_provider "{p}" {{\n{MOCKS.get(p, "")}}}\n' for p in providers)
     if "@OCI_IMAGE@" in mocks:
         mocks = mocks.replace("@OCI_IMAGE@", _oci_image(out))
-    # The one input the operator always supplies.
-    key = f'variables {{\n  admin_ssh_public_key = "{_ssh_key()}"\n}}\n' if "admin_ssh_public_key" in text else ""
+    inputs = {}
+    if "admin_ssh_public_key" in text:
+        inputs["admin_ssh_public_key"] = _ssh_key()  # the one input the operator always supplies
+    if 'check "https_certificate"' in text:  # so the HTTPS listeners are planned too
+        inputs["acm_certificate_arn"] = f"arn:aws:acm:us-east-1:123456789012:certificate/{_UUID}"
+    key = "variables {\n" + "".join(f'  {k} = "{v}"\n' for k, v in inputs.items()) + "}\n" if inputs else ""
     (out / "plan.tftest.hcl").write_text(mocks + key + runs(out))
     return _run(["test", "-no-color"], out)
 

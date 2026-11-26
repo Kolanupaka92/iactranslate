@@ -49,6 +49,11 @@ def _cid(prefix: str, name: str) -> str:
     return prefix + camel
 
 
+#: The parameter that turns on HTTPS listeners, and the condition it sets.
+CERT_PARAM = "AcmCertificateArn"
+HAS_CERT = "HasCertificate"
+
+
 def instance_cids(names: List[str]) -> Dict[str, str]:
     """A distinct logical id per machine, in plan order.
 
@@ -81,6 +86,7 @@ def _ami_parameter_name(image_key: str) -> str:
 def _build_template(graph: InfrastructureGraph, plan: MigrationPlan) -> Dict[str, object]:
     resources: Dict[str, object] = {}
     parameters: Dict[str, object] = {}
+    conditions: Dict[str, object] = {}
     outputs: Dict[str, object] = {}
 
     vpc_node = graph.nodes_of(NodeKind.VPC)[0]
@@ -323,6 +329,19 @@ def _build_template(graph: InfrastructureGraph, plan: MigrationPlan) -> Dict[str
                     "DefaultActions": [{"Type": "forward", "TargetGroupArn": {"Ref": tg_id}}],
                 },
             }
+            if listener["protocol"] == "HTTPS":
+                # Only with a certificate: AWS refuses an HTTPS listener without
+                # one, and none can be known when this is generated (ADR 0094).
+                parameters[CERT_PARAM] = {
+                    "Type": "String", "Default": "",
+                    "Description": "ACM certificate ARN. Empty: no HTTPS listeners, HTTP only.",
+                }
+                conditions[HAS_CERT] = {"Fn::Not": [{"Fn::Equals": [{"Ref": CERT_PARAM}, ""]}]}
+                resources[listener_id]["Condition"] = HAS_CERT
+                resources[listener_id]["Properties"].update({
+                    "SslPolicy": "ELBSecurityPolicy-TLS13-1-2-2021-06",
+                    "Certificates": [{"CertificateArn": {"Ref": CERT_PARAM}}],
+                })
         outputs[f"{lb_id}DnsName"] = {"Value": {"Fn::GetAtt": [lb_id, "DNSName"]}}
 
     outputs["VpcId"] = {"Value": {"Ref": vpc_id}}
@@ -338,6 +357,8 @@ def _build_template(graph: InfrastructureGraph, plan: MigrationPlan) -> Dict[str
     }
     if parameters:
         template["Parameters"] = parameters
+    if conditions:
+        template["Conditions"] = conditions
     template["Resources"] = resources
     template["Outputs"] = outputs
     return template
@@ -358,11 +379,10 @@ def _readme(plan: MigrationPlan, image_keys: List[str]) -> str:
         if any(listener.protocol == "HTTPS" for listener in lb.listeners)
     ]
     https_note = (
-        "\n**HTTPS listeners need a certificate.** "
-        f"{', '.join(https_lbs)} {'has' if len(https_lbs) == 1 else 'have'} an HTTPS listener "
-        "with no ACM certificate ARN (none is knowable at generation time) — add "
-        "`Certificates: [{CertificateArn: ...}]` to that `AWS::ElasticLoadBalancingV2::Listener` "
-        "before deploying, or the listener will fail to create.\n"
+        "\n**HTTPS needs a certificate.** "
+        f"{', '.join(https_lbs)} {'has' if len(https_lbs) == 1 else 'have'} an HTTPS listener, "
+        f"created only when the `{CERT_PARAM}` parameter holds an ACM certificate ARN "
+        "(none is knowable at generation time). Left empty, the load balancers serve HTTP only.\n"
         if https_lbs else ""
     )
     return (

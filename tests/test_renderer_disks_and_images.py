@@ -155,3 +155,51 @@ def test_suse_on_oracle_gets_an_image_that_exists_and_says_so():
     assert c.image_key == "oracle-linux-9" and "OS substituted" in c.reason
     images = _files("oci", "terraform", _vm("s", "SUSE Linux Enterprise Server 15 SP5"))["images.tf"]
     assert "SUSE" not in images and 'operating_system         = "Oracle Linux"' in images
+
+
+def _web():
+    return [_vm("prod-web-01"), _vm("prod-web-02")]
+
+
+@pytest.mark.parametrize("layout", ["terraform", "terraform-foreach"])
+def test_terraform_creates_https_only_with_a_certificate(layout):
+    files = _files("aws", layout, *_web())
+    lb = files["loadbalancer.tf"]
+    https = lb.split('"aws_lb_listener" "production_web_lb_443" {')[1].split("\n}")[0]
+    assert 'count = var.acm_certificate_arn == "" ? 0 : 1' in https
+    assert "ELBSecurityPolicy-TLS13-1-2-2021-06" in https and "2016-08" not in lb
+    assert "to   = aws_lb_listener.production_web_lb_443[0]" in lb
+    assert 'check "https_certificate"' in lb and "acm_certificate_arn" in files["README.md"]
+    http = lb.split('"aws_lb_listener" "production_web_lb_80" {')[1].split("\n}")[0]
+    assert "count" not in http
+
+
+def test_no_certificate_check_without_https():
+    files = _files("aws", "terraform", _vm("prod-app-01"), _vm("prod-app-02"))
+    assert "https_certificate" not in files["loadbalancer.tf"]
+
+
+def test_pulumi_creates_https_only_with_a_certificate():
+    program = _files("aws", "pulumi", *_web())["__main__.py"]
+    compile(program, "__main__.py", "exec")
+    block = program.split("if acm_certificate_arn:\n")[1].split("\nelse:")[0]
+    assert "port=443" in block and "TLS13" in block and "pulumi.log.warn(" in program
+
+
+@pytest.mark.parametrize("renderer", ["cloudformation", "cdk"])
+def test_cloudformation_and_cdk_create_https_only_with_a_certificate(renderer):
+    files = _files("aws", renderer, *_web())
+    if renderer == "cloudformation":
+        t = json.loads(next(c for n, c in files.items() if n.endswith(".json")))
+        assert t["Parameters"]["AcmCertificateArn"]["Default"] == ""
+        https = [r for r in t["Resources"].values()
+                 if r["Type"] == "AWS::ElasticLoadBalancingV2::Listener" and r["Properties"]["Protocol"] == "HTTPS"]
+        assert https and all(r["Condition"] == "HasCertificate" for r in https)
+        assert "HasCertificate" in t["Conditions"]
+        http = [r for r in t["Resources"].values()
+                if r["Type"] == "AWS::ElasticLoadBalancingV2::Listener" and r["Properties"]["Protocol"] == "HTTP"]
+        assert http and all("Condition" not in r for r in http)
+    else:
+        code = _code(files)
+        assert code.count("CfnCondition(self, 'HasCertificate'") == 1
+        assert code.count(".cfn_options.condition = has_cert") == 1

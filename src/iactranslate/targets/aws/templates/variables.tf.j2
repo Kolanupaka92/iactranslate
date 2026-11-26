@@ -24,9 +24,9 @@ variable "ami_overrides" {
 {% if has_https_listener %}
 variable "acm_certificate_arn" {
   description = <<-EOT
-    Required for HTTPS load balancer listeners (loadbalancer.tf) - no ACM
-    certificate can be known at generation time. Request/import one in ACM
-    and set its ARN here before deploying.
+    Turns on the HTTPS load balancer listeners (loadbalancer.tf). No ACM
+    certificate can be known at generation time; request or import one in ACM
+    and set its ARN here. Left empty, the listeners are HTTP only.
   EOT
   type    = string
   default = ""

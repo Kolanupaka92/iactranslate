@@ -52,6 +52,21 @@ is silently falling back to local state.
 
 ## Before you apply
 
+0. **Signing in with `aws login`?** Terraform can't read its sessions yet. Add a
+   profile that asks the AWS CLI for them, and use that profile for Terraform:
+
+   ```ini
+   # ~/.aws/config
+   [profile terraform]
+   credential_process = aws configure export-credentials --profile <your profile> --format process
+   ```
+
+   Then `AWS_PROFILE=terraform terraform plan`. No key is stored.
+{% if has_https_listener %}
+0. **HTTPS needs a certificate.** Set `acm_certificate_arn` to an ACM certificate
+   to serve HTTPS. Until then the load balancers listen on HTTP only, and
+   `terraform plan` warns about it.
+{% endif %}
 1. **AMIs resolve automatically.** `images.tf` looks up the latest matching AMI per
    detected OS via `aws_ami` data sources — no IDs to fill in. To pin a specific/golden
    image, set `ami_overrides` in `terraform.tfvars`. A running server keeps the image it

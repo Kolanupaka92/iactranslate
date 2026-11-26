@@ -226,12 +226,13 @@ def _aws_main(plan: MigrationPlan, target: Target) -> str:
                         "    opts=opts,",
                         ")",
                     ]
+                https = listener.protocol == "HTTPS"
                 listener_kwargs = (
-                    ['    ssl_policy="ELBSecurityPolicy-2016-08",', "    certificate_arn=acm_certificate_arn,"]
-                    if listener.protocol == "HTTPS"
-                    else []
+                    ['    ssl_policy="ELBSecurityPolicy-TLS13-1-2-2021-06",',
+                     "    certificate_arn=acm_certificate_arn,"]
+                    if https else []
                 )
-                lines += [
+                body = [
                     "aws.lb.Listener(",
                     f"    {_py_str(lb.resource_name + '-' + str(listener.listener_port))},",
                     f"    load_balancer_arn=lb_{lb.resource_name}.arn,",
@@ -242,6 +243,13 @@ def _aws_main(plan: MigrationPlan, target: Target) -> str:
                     "    opts=opts,",
                     ")",
                 ]
+                if https:
+                    # AWS refuses an HTTPS listener without a certificate (ADR 0094).
+                    body = ["if acm_certificate_arn:"] + ["    " + b for b in body] + [
+                        "else:",
+                        f'    pulumi.log.warn("No HTTPS on {lb.name}: set acmCertificateArn to serve it.")',
+                    ]
+                lines += body
 
     lines += [
         "",
