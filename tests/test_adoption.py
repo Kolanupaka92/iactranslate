@@ -11,7 +11,8 @@ from iactranslate.renderers import render
 from iactranslate.targets import get_target, list_targets
 
 ID = "i-0123456789abcdef0"
-KEEPS = "ignore_changes = [ami, subnet_id, vpc_security_group_ids, root_block_device]"
+KEEPS = ("ignore_changes = [ami, subnet_id, vpc_security_group_ids, root_block_device, "
+         "associate_public_ip_address]")
 
 
 def _vm(name, external_id=None, disks=(40,)):

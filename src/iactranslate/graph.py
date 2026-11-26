@@ -108,8 +108,17 @@ def assign_subnets(plan: MigrationPlan) -> Dict[str, str]:
         {vm for lb in plan.network.load_balancers if not lb.internet_facing for vm in lb.targets}
         if plan.target == "gcp" else set()
     )
+    # AWS: a machine behind a public load balancer goes in a private subnet and
+    # out through NAT. In a public subnet without its own address it can't reach
+    # the internet at all, and with one it can be reached around the load
+    # balancer. Found deploying for real (ADR 0095).
+    behind_public_lb = (
+        {vm for lb in plan.network.load_balancers if lb.internet_facing for vm in lb.targets}
+        if plan.target == "aws" else set()
+    )
     for c in plan.compute:
-        pool = public if c.subnet_tier == SubnetTier.PUBLIC else private
+        tier = SubnetTier.PRIVATE if c.vm_name in behind_public_lb and private else c.subnet_tier
+        pool = public if tier == SubnetTier.PUBLIC else private
         if not pool:  # no subnet of that tier; fall back to any subnet
             pool = [s.resource_name for s in plan.network.subnets]
         if not pool:  # no subnets at all (e.g. a subnet-less plan in a unit test)
@@ -117,8 +126,8 @@ def assign_subnets(plan: MigrationPlan) -> Dict[str, str]:
         if c.vm_name in together:
             mapping[c.vm_name] = pool[0]
             continue
-        idx = counters[c.subnet_tier] % len(pool)
-        counters[c.subnet_tier] += 1
+        idx = counters[tier] % len(pool)
+        counters[tier] += 1
         mapping[c.vm_name] = pool[idx]
     return mapping
 

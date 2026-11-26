@@ -151,12 +151,16 @@ def plan_network(
         for sg_name in used
     ]
 
-    needs_private = any(c.subnet_tier == SubnetTier.PRIVATE for c in compute)
+    load_balancers = _plan_load_balancers(compute, security_groups)
+    needs_private = any(c.subnet_tier == SubnetTier.PRIVATE for c in compute) or (
+        # On AWS, machines behind a public load balancer are private (ADR 0095).
+        target.name == "aws" and any(lb.internet_facing for lb in load_balancers)
+    )
     return NetworkPlan(
         vpc_cidr=vpc_cidr,
         subnets=subnets,
         security_groups=security_groups,
-        load_balancers=_plan_load_balancers(compute, security_groups),
+        load_balancers=load_balancers,
         internet_gateway=True,
         nat_gateway=needs_private,
     )

@@ -134,7 +134,8 @@ def _build_template(graph: InfrastructureGraph, plan: MigrationPlan) -> Dict[str
                         {"Fn::GetAZs": ""},
                     ]
                 },
-                "MapPublicIpOnLaunch": is_public,
+                # Each machine says whether it gets a public address (ADR 0095).
+                "MapPublicIpOnLaunch": False,
                 "Tags": [
                     {"Key": "Name", "Value": subnet.name},
                     {"Key": "Tier", "Value": subnet.attributes["tier"]},
@@ -281,6 +282,14 @@ def _build_template(graph: InfrastructureGraph, plan: MigrationPlan) -> Dict[str
                 ],
             },
         }
+        if inst.attributes["public_ip"] and subnet_ref:
+            # Only a machine with no load balancer in front gets its own public address (ADR 0095).
+            props = resources[iid]["Properties"]
+            props["NetworkInterfaces"] = [{
+                "DeviceIndex": "0", "AssociatePublicIpAddress": True,
+                "SubnetId": {"Ref": subnet_ref}, "GroupSet": props.pop("SecurityGroupIds"),
+            }]
+            props.pop("SubnetId")
         resources[iid]["Properties"] = {
             k: v for k, v in resources[iid]["Properties"].items() if v is not None
         }

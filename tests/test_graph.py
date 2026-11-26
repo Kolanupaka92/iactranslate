@@ -93,8 +93,9 @@ def test_graph_serializes():
 
 def test_instances_spread_across_subnets_of_the_same_tier():
     """Regression: instances of one tier must not all collapse onto a single
-    subnet when more than one subnet of that tier exists (ADR 0016)."""
-    plan, g = _graph()
+    subnet when more than one subnet of that tier exists (ADR 0016). Azure: on
+    AWS, web machines behind a public load balancer are private (ADR 0095)."""
+    plan, g = _graph(target="azure")
     public_subnets = {n.id for n in g.nodes_of(NodeKind.SUBNET) if n.attributes["tier"] == "public"}
     used_public_subnets = {
         e.target

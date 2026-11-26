@@ -28,7 +28,9 @@ resource "aws_subnet" "{{ subnet.resource_name }}" {
   vpc_id                  = aws_vpc.main.id
   cidr_block              = "{{ subnet.cidr }}"
   availability_zone       = data.aws_availability_zones.available.names[{{ subnet.availability_zone_index }}]
-  map_public_ip_on_launch = {{ "true" if subnet.tier == SubnetTier.PUBLIC else "false" }}
+  # Each machine says whether it gets a public address (compute.tf). Handing one
+  # to every machine here gave those behind a load balancer a way around it.
+  map_public_ip_on_launch = false
 
   tags = {
     Name = "${var.project_name}-{{ subnet.name }}"

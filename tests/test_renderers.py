@@ -187,8 +187,9 @@ def test_cloudformation_instances_reference_valid_logical_ids(rvtools_path):
         if res["Type"] != "AWS::EC2::Instance":
             continue
         props = res["Properties"]
-        assert props["SubnetId"]["Ref"] in resources
-        for sg_ref in props["SecurityGroupIds"]:
+        nic = (props.get("NetworkInterfaces") or [props])[0]  # a public machine's is on its interface
+        assert nic["SubnetId"]["Ref"] in resources
+        for sg_ref in nic.get("GroupSet") or nic["SecurityGroupIds"]:
             assert sg_ref["Ref"] in resources
         assert props["BlockDeviceMappings"][0]["Ebs"]["VolumeSize"] >= 8
 

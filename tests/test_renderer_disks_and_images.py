@@ -203,3 +203,56 @@ def test_cloudformation_and_cdk_create_https_only_with_a_certificate(renderer):
         code = _code(files)
         assert code.count("CfnCondition(self, 'HasCertificate'") == 1
         assert code.count(".cfn_options.condition = has_cert") == 1
+
+
+def _estate():
+    # Two web machines behind a load balancer, one public on its own, one private.
+    return [_vm("prod-web-01"), _vm("prod-web-02"), _vm("dev-web-01"), _vm("prod-app-01")]
+
+
+@pytest.mark.parametrize("layout", ["terraform", "terraform-foreach"])
+def test_aws_gives_a_public_address_only_to_an_unfronted_public_machine(layout):
+    files = _files("aws", layout, *_estate())
+    assert "map_public_ip_on_launch = false" in files["networking.tf"]
+    assert "map_public_ip_on_launch = true" not in files["networking.tf"]
+    compute = files["compute.tf"]
+    if layout == "terraform":
+        def public(vm):
+            block = compute.split(f'"aws_instance" "{vm}" {{')[1].split("\n}")[0]
+            return re.search(r"associate_public_ip_address = (\w+)", block).group(1)
+    else:
+        def public(vm):
+            return re.search(rf'"{vm}" = \{{[^}}]*?public_ip\s+= (\w+)', compute, re.S).group(1)
+    assert [public(v) for v in ("prod_web_01", "prod_web_02", "dev_web_01", "prod_app_01")] == \
+        ["false", "false", "true", "false"]
+
+
+@pytest.mark.parametrize("renderer", ["pulumi", "cloudformation", "cdk"])
+def test_every_aws_renderer_follows_the_same_rule(renderer):
+    files = _files("aws", renderer, *_estate())
+    code = _code(files)
+    if renderer == "pulumi":
+        assert "map_public_ip_on_launch=False" in code and "map_public_ip_on_launch=True" not in code
+        assert sorted(re.findall(r"associate_public_ip_address=(\w+)", code)) == ["False", "False", "False", "True"]
+    elif renderer == "cloudformation":
+        t = json.loads(next(c for n, c in files.items() if n.endswith(".json")))
+        subnets = [r for r in t["Resources"].values() if r["Type"] == "AWS::EC2::Subnet"]
+        assert all(s["Properties"]["MapPublicIpOnLaunch"] is False for s in subnets)
+        public = {r["Properties"]["Tags"][0]["Value"] for r in t["Resources"].values()
+                  if r["Type"] == "AWS::EC2::Instance" and "NetworkInterfaces" in r["Properties"]}
+        assert public == {"dev-web-01"}
+    else:
+        assert "map_public_ip_on_launch=False" in code and code.count("associate_public_ip_address=True") == 1
+
+
+def test_aws_puts_machines_behind_a_public_load_balancer_in_private_subnets():
+    from iactranslate.graph import assign_subnets
+    plan = build_migration_plan([_vm("prod-web-01"), _vm("prod-web-02"), _vm("dev-web-01")], "x", get_target("aws"))
+    subnet_of = assign_subnets(plan)
+    assert {subnet_of["prod-web-01"], subnet_of["prod-web-02"]} == {"private_0", "private_1"}  # still across zones
+    assert subnet_of["dev-web-01"].startswith("public")  # on its own: public, with its own address
+    assert plan.network.nat_gateway  # their way out
+    lb = _files("aws", "terraform", _vm("prod-web-01"), _vm("prod-web-02"))["loadbalancer.tf"]
+    assert re.search(r"subnets = \[\s*aws_subnet\.public_0\.id,\s*aws_subnet\.public_1\.id,", lb)
+    other = build_migration_plan([_vm("prod-web-01"), _vm("prod-web-02")], "x", get_target("azure"))
+    assert all(s.startswith("public") for s in assign_subnets(other).values())  # other clouds unchanged

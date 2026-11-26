@@ -102,7 +102,8 @@ def _stack_py(graph: InfrastructureGraph, plan: MigrationPlan, target: Target) -
             f"    availability_zone=Stack.of(self).availability_zones"
             f"[{subnet.attributes['availability_zone_index']}],"
         )
-        add(f"    map_public_ip_on_launch={is_public},")
+        # Each machine says whether it gets a public address (ADR 0095).
+        add("    map_public_ip_on_launch=False,")
         add(")")
         add(f"Tags.of({svar}).add('Name', {_py_str(subnet.name)})")
         add(f"Tags.of({svar}).add('Tier', {_py_str(subnet.attributes['tier'])})")
@@ -224,9 +225,16 @@ def _stack_py(graph: InfrastructureGraph, plan: MigrationPlan, target: Target) -
         add(f"    self, {_py_str(iid_of[inst.name])},")
         add(f"    instance_type={_py_str(inst.attributes['instance_type'])},")
         add(f"    image_id={image_expr},")
-        if subnet_var:
-            add(f"    subnet_id={subnet_var}.attr_subnet_id,")
-        add(f"    security_group_ids=[{', '.join(f'{v}.attr_group_id' for v in sg_vars)}],")
+        groups = f"[{', '.join(f'{v}.attr_group_id' for v in sg_vars)}]"
+        if inst.attributes["public_ip"] and subnet_var:
+            # Only a machine with no load balancer in front gets its own public address (ADR 0095).
+            add("    network_interfaces=[ec2.CfnInstance.NetworkInterfaceProperty(")
+            add(f"        device_index='0', associate_public_ip_address=True, subnet_id={subnet_var}.attr_subnet_id,")
+            add(f"        group_set={groups})],")
+        else:
+            if subnet_var:
+                add(f"    subnet_id={subnet_var}.attr_subnet_id,")
+            add(f"    security_group_ids={groups},")
         add("    block_device_mappings=[")
         for bd in block_devices:
             add(bd)

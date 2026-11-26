@@ -13,7 +13,7 @@ from typing import Dict, List
 
 from ..generator.renderer import data_volumes
 from ..graph import assign_subnets, public_instances
-from ..models import MigrationPlan, SubnetTier, resource_prefix, terraform_safe_name
+from ..models import MigrationPlan, resource_prefix, terraform_safe_name
 from ..targets.base import Target
 
 
@@ -39,7 +39,7 @@ def _ingress_block(rule) -> str:
 
 #: What an adopted server keeps as it is.
 _ADOPTED_IGNORES = ('["ami", "instanceType", "subnetId", "vpcSecurityGroupIds", '
-                    '"rootBlockDevice", "tags", "tagsAll"]')
+                    '"rootBlockDevice", "associatePublicIpAddress", "tags", "tagsAll"]')
 
 
 def _aws_main(plan: MigrationPlan, target: Target) -> str:
@@ -89,14 +89,14 @@ def _aws_main(plan: MigrationPlan, target: Target) -> str:
 
     lines.append("")
     for s in net.subnets:
-        public = s.tier == SubnetTier.PUBLIC
         lines += [
             f"subnet_{s.resource_name} = aws.ec2.Subnet(",
             f"    {_py_str(s.resource_name)},",
             "    vpc_id=vpc.id,",
             f"    cidr_block={_py_str(s.cidr)},",
             f"    availability_zone=azs.names[{s.availability_zone_index}],",
-            f"    map_public_ip_on_launch={public},",
+            # Each machine says whether it gets a public address (ADR 0095).
+            "    map_public_ip_on_launch=False,",
             f'    tags={{"Name": {_py_str(s.name)}, "Tier": {_py_str(s.tier.value)}}},',
             "    opts=opts,",
             ")",
@@ -137,6 +137,7 @@ def _aws_main(plan: MigrationPlan, target: Target) -> str:
             ")",
         ]
 
+    public_aws = public_instances(plan)
     # Instances.
     lines += ["", "# --- Instances -----------------------------------------------------------"]
     for c in plan.compute:
@@ -150,6 +151,7 @@ def _aws_main(plan: MigrationPlan, target: Target) -> str:
             f"    instance_type={_py_str(c.instance_type)},",
             f"    ami=ami_{ami_var}.id,",
             f"    subnet_id=subnet_{subnet_res}.id,",
+            f"    associate_public_ip_address={c.vm_name in public_aws},",
             f"    vpc_security_group_ids=[{sg_ref}],",
             # Encrypted, as Terraform's are (ADR 0093).
             f'    root_block_device={{"volume_size": {c.root_volume_gib}, "volume_type": "gp3", "encrypted": True}},',
