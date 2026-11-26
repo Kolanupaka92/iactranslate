@@ -114,9 +114,12 @@ jobs:
             "pulumi-gcp==7.38.0" "aws-cdk-lib==2.278.0" "constructs==10.8.1"
       - name: Install Bicep
         run: |
-          curl -fsSL -o /usr/local/bin/bicep https://github.com/Azure/bicep/releases/download/v0.49.2/bicep-linux-x64
-          echo "0ab9de90c2493f206f8281bae74f9ee2d5ed3605548dab1adf41fef185e1f7c5  /usr/local/bin/bicep" | sha256sum -c -
-          chmod +x /usr/local/bin/bicep
+          mkdir -p "$RUNNER_TEMP/bin"
+          curl -fsSL -o "$RUNNER_TEMP/bin/bicep" https://github.com/Azure/bicep/releases/download/v0.49.2/bicep-linux-x64
+          echo "0ab9de90c2493f206f8281bae74f9ee2d5ed3605548dab1adf41fef185e1f7c5  $RUNNER_TEMP/bin/bicep" | sha256sum -c -
+          chmod +x "$RUNNER_TEMP/bin/bicep"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/bin/bicep" --version
       - name: Generate test fixtures
         run: python scripts/make_fixtures.py
       - name: Run the generated Pulumi, CDK and Bicep
