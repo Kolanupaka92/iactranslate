@@ -343,6 +343,30 @@ def _azure_main(plan: MigrationPlan, target: Target) -> str:
             ")",
         ]
 
+    # Private machines' way out, as in Terraform (ADR 0100).
+    if net.nat_gateway:
+        lines += [
+            "nat_ip = azure.network.PublicIp(",
+            '    "nat",',
+            f"    name={_py_str(prefix + '-nat-ip')},",
+            "    resource_group_name=rg.name, location=rg.location,",
+            '    allocation_method="Static", sku="Standard",',
+            ")",
+            "nat = azure.network.NatGateway(",
+            '    "nat",',
+            f"    name={_py_str(prefix + '-nat')},",
+            "    resource_group_name=rg.name, location=rg.location,",
+            '    sku_name="Standard",',
+            ")",
+            'azure.network.NatGatewayPublicIpAssociation("nat", nat_gateway_id=nat.id, public_ip_address_id=nat_ip.id)',
+        ]
+        for s in net.subnets:
+            if s.tier == SubnetTier.PRIVATE:
+                lines.append(
+                    f"azure.network.SubnetNatGatewayAssociation({_py_str(s.resource_name)}, "
+                    f"subnet_id=subnet_{s.resource_name}.id, nat_gateway_id=nat.id)"
+                )
+
     # NSGs with security rules.
     for sg in net.security_groups:
         rules = []
@@ -430,6 +454,17 @@ def _azure_main(plan: MigrationPlan, target: Target) -> str:
             for vm_name in lb.targets:
                 backend_pool_ref_by_vm_name[vm_name] = f"pool_{lb.resource_name}.id"
 
+    # One identity per tier with no role assignments, as Terraform's (ADR 0057, 0100).
+    lines += ["", "# --- Identities (one per tier, no roles) ----------------------------------"]
+    for tier in sorted({c.tier.value for c in plan.compute}):
+        lines += [
+            f"id_{tier} = azure.authorization.UserAssignedIdentity(",
+            f"    {_py_str('id_' + tier)},",
+            f"    name={_py_str(prefix + '-' + tier)},",
+            "    resource_group_name=rg.name, location=rg.location,",
+            ")",
+        ]
+
     public_vms = public_instances(plan)
     for c in plan.compute:
         ref = target.image_reference(c.image_key)
@@ -495,6 +530,7 @@ def _azure_main(plan: MigrationPlan, target: Target) -> str:
             # which Azure refuses; Windows allows 15 characters (ADR 0099).
             f"    name={_py_str(slugs[c.resource_name])},",
             *([f"    computer_name={_py_str(windows_computer_name(slugs[c.resource_name]))},"] if is_windows else []),
+            f'    identity={{"type": "UserAssigned", "identity_ids": [id_{c.tier.value}.id]}},',
             "    resource_group_name=rg.name, location=rg.location,",
             f"    size={_py_str(c.instance_type)},",
             "    admin_username=admin_username,",

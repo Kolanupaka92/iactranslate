@@ -56,6 +56,7 @@ MOCKS = {
         "subnet": f"{_NET}/virtualNetworks/v/subnets/s",
         "virtual_network": f"{_NET}/virtualNetworks/v",
         "public_ip": f"{_NET}/publicIPAddresses/p",
+        "nat_gateway": f"{_NET}/natGateways/n",
         "lb": f"{_NET}/loadBalancers/l",
         "lb_backend_address_pool": f"{_NET}/loadBalancers/l/backendAddressPools/b",
         "lb_probe": f"{_NET}/loadBalancers/l/probes/p",

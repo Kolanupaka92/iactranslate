@@ -13,6 +13,11 @@ from typing import Dict, List
 from ..base import InstanceSpec
 
 INSTANCE_CATALOG: List[InstanceSpec] = [
+    # 1-vCPU sizes, read from the Azure Retail Prices API on 2026-11-27. Without
+    # them a 1-vCPU machine was sized to 2 vCPUs (ADR 0100). Free Trial
+    # subscriptions can't get them (KI-077).
+    InstanceSpec("Standard_B1s", 1, 1.0, "B", 0.0104, shared_cpu=True),
+    InstanceSpec("Standard_B1ms", 1, 2.0, "B", 0.0207, shared_cpu=True),
     InstanceSpec("Standard_B2s", 2, 4.0, "B", 0.0416, shared_cpu=True),
     InstanceSpec("Standard_D2as_v5", 2, 8.0, "Das_v5", 0.086),
     InstanceSpec("Standard_D4as_v5", 4, 16.0, "Das_v5", 0.172),

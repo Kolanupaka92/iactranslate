@@ -59,7 +59,7 @@ MOP ([Deploying](deploying.md)) links here by ID.
 | [KI-073](#ki-073) | Restore check: `postgres` can't read the app's tables | Workaround |
 | [KI-074](#ki-074) | Pulumi Google: Windows silent after an early restart | Fixed |
 | [KI-075](#ki-075) | Google public load balancer: different address for HTTP and HTTPS | Fixed |
-| [KI-076](#ki-076) | Azure: private machines may have no way out | Open |
+| [KI-076](#ki-076) | Azure: private machines may have no way out | Fixed |
 | [KI-077](#ki-077) | Azure Free Trial: small sizes not available | Workaround |
 | [KI-078](#ki-078) | Azure Free Trial: 4 vCPUs in a region | Workaround |
 | [KI-079](#ki-079) | Azure: A1_v2 can't boot current images | Workaround |
@@ -71,6 +71,9 @@ MOP ([Deploying](deploying.md)) links here by ID.
 | [KI-085](#ki-085) | Pulumi Azure: name longer than maximum length 24 | Fixed |
 | [KI-086](#ki-086) | Bicep what-if lists Azure's defaults as changes | By design |
 | [KI-087](#ki-087) | Machines whose names clean up alike share one cloud name | Fixed |
+| [KI-088](#ki-088) | Red Hat on Azure: load balancer marks it unhealthy | Workaround |
+| [KI-089](#ki-089) | Azure internal load balancer: a machine can't reach itself through it | By design |
+| [KI-090](#ki-090) | Cost estimate leaves out NAT | Open |
 
 ---
 
@@ -328,13 +331,14 @@ MOP ([Deploying](deploying.md)) links here by ID.
 
 - **Symptom (expected):** private Azure machines can't install updates.
 - **Cause:** the Azure output has no NAT gateway, so a machine relies on Azure's default outbound access, which Microsoft is retiring for new networks.
-- **Seen so far:** not the problem. On 27 Nov 2026 machines behind the public load balancer reached the internet through its address, and the subnets still showed `defaultOutboundAccess: True`. A machine with no public load balancer in front wasn't tested.
-- **Status:** Open (ADR 0099).
+- **Seen so far:** not the problem yet. On 27 Nov 2026 machines behind the public load balancer reached the internet through its address, and the subnets still showed `defaultOutboundAccess: True`.
+- **Fix:** private machines go out through a NAT gateway with its own address, as on AWS and Google. Existing deployments gain it on the next apply, and their outbound address changes to the NAT's.
+- **Status:** Fixed (ADR 0100). Proven 27 Nov 2026 in Terraform, Bicep and Pulumi: private Red Hat and Ubuntu machines reached the internet from the NAT's address.
 
 ### KI-077
 **Azure Free Trial: small sizes not available.**
 
-- **Symptom:** `SkuNotAvailable: The requested VM size for resource 'Following SKUs have failed for Capacity Restrictions: Standard_B1ms' is currently not available in location 'eastus'.` Seen for Standard_B1ms and Standard_B1s in eastus, westus2, centralus, eastus2, westus3, southcentralus, northcentralus and canadacentral.
+- **Symptom:** `SkuNotAvailable: The requested VM size for resource 'Following SKUs have failed for Capacity Restrictions: Standard_B1ms' is currently not available in location 'eastus'.` Seen for Standard_B1ms and Standard_B1s in eastus, westus2, centralus, eastus2, westus3, southcentralus, northcentralus and canadacentral, and for Standard_DS1_v2 and Standard_F1s in westus2.
 - **Workaround:** on a Free Trial, use Standard_D2as_v5, which had capacity, or upgrade the subscription to pay-as-you-go (the credit stays). Check one size cheaply first: `az vm create` a single machine with no public address and delete its group.
 - **Status:** Workaround. Seen 27 Nov 2026.
 
@@ -374,7 +378,7 @@ MOP ([Deploying](deploying.md)) links here by ID.
 
 - **Symptom:** `az vm show -g <group> -n <linux machine> --query identity.type` is empty, while Windows machines show `UserAssigned`.
 - **Fix:** Linux machines get their tier's identity in both Terraform layouts. It is added in place.
-- **Status:** Fixed (ADR 0099). Proven 27 Nov 2026. Bicep and Pulumi give Azure machines no identity yet.
+- **Status:** Fixed (ADR 0099). Proven 27 Nov 2026. Bicep and Pulumi give machines their identity too since ADR 0100, proven the same day.
 
 ### KI-083
 **Bicep: subnets refused, "Another operation ... in progress".**
@@ -399,6 +403,29 @@ MOP ([Deploying](deploying.md)) links here by ID.
 - **Cause:** Pulumi named resources itself: label plus a random suffix.
 - **Fix:** every named Azure resource is named as in Terraform.
 - **Status:** Fixed (ADR 0099). Proven 27 Nov 2026. A stack from before the fix renames everything: destroy it and deploy again.
+
+### KI-088
+**Red Hat on Azure: load balancer marks it unhealthy.**
+
+- **Symptom:** the load balancer sends nothing to a Red Hat machine; from another machine, `curl http://<its address>:<port>` gets no answer though the service runs (`curl localhost:<port>` works).
+- **Cause:** Azure's Red Hat images run firewalld, which allows only ssh, cockpit and dhcpv6-client. Azure's own network allows the port.
+- **Workaround:** open the application's port in the machine: `firewall-cmd --permanent --add-port=<port>/tcp && firewall-cmd --reload`. A migrated server keeps its own firewall rules; this is for new builds.
+- **Status:** Workaround. Seen 27 Nov 2026.
+
+### KI-089
+**Azure internal load balancer: a machine can't reach itself through it.**
+
+- **Symptom:** from a machine behind an internal load balancer, some calls to the balancer's address get no answer, and the rest come from the other machines.
+- **Cause:** Azure doesn't send a machine's own call back to it through its internal load balancer.
+- **What to do:** test from another machine, or count only the answers. On 27 Nov 2026 each machine reached the other through the balancer.
+- **Status:** By design.
+
+### KI-090
+**Cost estimate leaves out NAT.**
+
+- **Symptom:** the estimate has no NAT line, though the output creates a NAT gateway for private machines.
+- **Cause:** NAT isn't priced for any cloud. On Azure it is about $36 a month (gateway and address); on AWS a NAT gateway is about $33 a month plus data.
+- **Status:** Open (ADR 0100).
 
 ### KI-086
 **Bicep what-if lists Azure's defaults as changes.**

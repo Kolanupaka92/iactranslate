@@ -107,5 +107,6 @@ Format: [Michael Nygard's ADR template](https://cognitect.com/blog/2011/11/15/do
 | [0097](0097-pulumi-on-google-deployed.md) | Pulumi on Google deployed; Google-valid names; Pulumi builds Terraform's routing and NAT on AWS and Google | Accepted |
 | [0098](0098-one-address-and-service-accounts-on-google.md) | Google public load balancer: one address for every port; Pulumi's Google machines get Terraform's service accounts | Accepted |
 | [0099](0099-first-real-azure-deployment.md) | First real Azure deployment: Terraform, Bicep and Pulumi proven on a Free Trial; six fixes | Accepted |
+| [0100](0100-azure-nat-identities-and-small-sizes.md) | Azure: NAT gateway for private machines, identities in Bicep and Pulumi, 1-vCPU sizes; internal load balancer and Red Hat proven | Accepted |
 
 See also the [Architecture & Design](../architecture.md) overview.

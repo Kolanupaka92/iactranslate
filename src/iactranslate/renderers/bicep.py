@@ -82,6 +82,25 @@ def _resources_bicep(graph: InfrastructureGraph, plan: MigrationPlan, target: Ta
     vpc = graph.nodes_of(NodeKind.VPC)[0]
     vnet_id = _id(f"vnet-{plan.project_name}")
     subnets = graph.nodes_of(NodeKind.SUBNET)
+    # Private machines' way out, as in Terraform (ADR 0100).
+    nat = plan.network.nat_gateway
+    if nat:
+        lines += [
+            "resource natIp 'Microsoft.Network/publicIPAddresses@2023-05-01' = {",
+            f"  name: {_str(resource_prefix(plan.project_name) + '-nat-ip')}",
+            "  location: location",
+            "  sku: { name: 'Standard' }",
+            "  properties: { publicIPAllocationMethod: 'Static' }",
+            "}",
+            "",
+            "resource natGateway 'Microsoft.Network/natGateways@2023-05-01' = {",
+            f"  name: {_str(resource_prefix(plan.project_name) + '-nat')}",
+            "  location: location",
+            "  sku: { name: 'Standard' }",
+            "  properties: { publicIpAddresses: [ { id: natIp.id } ] }",
+            "}",
+            "",
+        ]
     # Subnets are declared inside the network. As separate resources Azure
     # creates them at once and refuses ("Another operation on this or dependent
     # resource is in progress"), and redeploying the network would delete them
@@ -95,8 +114,9 @@ def _resources_bicep(graph: InfrastructureGraph, plan: MigrationPlan, target: Ta
         "    subnets: [",
     ]
     for s in subnets:
+        via_nat = ", natGateway: { id: natGateway.id }" if nat and s.attributes["tier"] == "private" else ""
         lines.append(
-            f"      {{ name: {_str(s.name)}, properties: {{ addressPrefix: {_str(s.attributes['cidr'])} }} }}"
+            f"      {{ name: {_str(s.name)}, properties: {{ addressPrefix: {_str(s.attributes['cidr'])}{via_nat} }} }}"
         )
     lines += ["    ]", "  }", "}", ""]
 
@@ -219,6 +239,18 @@ def _resources_bicep(graph: InfrastructureGraph, plan: MigrationPlan, target: Ta
             if target_node is not None:
                 backend_pool_ref_by_vm_name[target_node.name] = f"{lb_var}.properties.backendAddressPools[0].id"
 
+    # One identity per tier with no role assignments, as Terraform's (ADR 0057, 0100).
+    id_of_tier: Dict[str, str] = {}
+    for tier in sorted({c.tier.value for c in plan.compute}):
+        id_of_tier[tier] = _id(f"id-{tier}")
+        lines += [
+            f"resource {id_of_tier[tier]} 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {{",
+            f"  name: {_str(resource_prefix(plan.project_name) + '-' + tier)}",
+            "  location: location",
+            "}",
+            "",
+        ]
+
     for c in plan.compute:
         inst = next(n for n in graph.nodes_of(NodeKind.INSTANCE) if n.name == c.vm_name)
         placed_in = graph.out_edges(inst.id, EdgeKind.PLACED_IN)
@@ -300,6 +332,10 @@ def _resources_bicep(graph: InfrastructureGraph, plan: MigrationPlan, target: Ta
             # Azure refuses underscores in machine names, as Terraform's do (ADR 0099).
             f"  name: {_str(slugs[c.resource_name])}",
             "  location: location",
+            "  identity: {",
+            "    type: 'UserAssigned'",
+            f"    userAssignedIdentities: {{ '${{{id_of_tier[c.tier.value]}.id}}': {{}} }}",
+            "  }",
             "  properties: {",
             f"    hardwareProfile: {{ vmSize: {_str(c.instance_type)} }}",
             *os_profile,

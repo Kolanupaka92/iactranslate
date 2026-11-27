@@ -112,3 +112,50 @@ def test_names_that_never_clashed_do_not_change():  # existing deployments keep 
     from iactranslate.generator.renderer import machine_slugs
     plan = _plan(_vm("Prod Web 01"), _vm("prod-db-01"))
     assert machine_slugs(plan.compute) == {"prod_web_01": "prod-web-01", "prod_db_01": "prod-db-01"}
+
+
+# --- second round: the gaps ADR 0099 left (ADR 0100) ---------------------------------
+
+APP = [_vm("prod-app-01", "Red Hat Enterprise Linux 9"), _vm("prod-app-02")]
+
+
+def test_bicep_and_pulumi_give_every_azure_machine_its_tiers_identity():
+    plan = _plan(*ESTATE, _vm("prod-db-01"))
+    bicep = render("bicep", plan, AZ)["resources.bicep"]
+    tiers = {c.tier.value for c in plan.compute}
+    assert bicep.count("Microsoft.ManagedIdentity/userAssignedIdentities@") == len(tiers)
+    assert bicep.count("userAssignedIdentities: {") == len(plan.compute)
+    program = render("pulumi", plan, AZ)["__main__.py"]
+    assert program.count("azure.authorization.UserAssignedIdentity(") == len(tiers)
+    assert program.count('identity={"type": "UserAssigned"') == len(plan.compute)
+
+
+@pytest.mark.parametrize("renderer", ["terraform", "terraform-foreach", "bicep", "pulumi"])
+def test_private_azure_machines_go_out_through_a_nat_gateway(renderer):
+    plan = _plan(*APP)
+    assert plan.network.nat_gateway
+    text = "\n".join(render(renderer, plan, AZ).values())
+    private = [s for s in plan.network.subnets if s.tier.value == "private"]
+    if renderer == "bicep":
+        assert text.count("natGateway: { id: natGateway.id }") == len(private)
+    elif renderer == "pulumi":
+        assert text.count("azure.network.NatGateway(") == 1
+        assert text.count("azure.network.SubnetNatGatewayAssociation(") == len(private)
+    else:
+        assert text.count('resource "azurerm_nat_gateway" "main"') == 1
+        assert text.count('resource "azurerm_subnet_nat_gateway_association"') == len(private)
+
+
+@pytest.mark.parametrize("renderer", ["terraform", "bicep", "pulumi"])
+def test_no_nat_gateway_when_no_machine_is_private(renderer):
+    plan = _plan(_vm("prod-web-01"), _vm("prod-web-02"))
+    assert not plan.network.nat_gateway
+    text = "\n".join(render(renderer, plan, AZ).values())
+    assert "azurerm_nat_gateway" not in text and "natGateways@" not in text and "NatGateway(" not in text
+
+
+@pytest.mark.parametrize("cpu,memory,size", [(1, 1, "Standard_B1s"), (1, 2, "Standard_B1ms"), (2, 4, "Standard_B2s")])
+def test_one_vcpu_machines_are_not_sized_up_on_azure(cpu, memory, size):
+    vm = NormalizedVM(vm_name="prod-app-01", resource_name="prod_app_01", cpu=cpu, memory_gib=memory,
+                      disks_gib=[30], os=UBUNTU)
+    assert _plan(vm).compute[0].instance_type == size

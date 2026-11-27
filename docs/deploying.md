@@ -20,9 +20,9 @@ in [Known issues](known-issues.md) by the error text.
 | [MOP-AWS-ADOPT](#mop-aws-adopt--adopt-running-aws-servers) | AWS | Terraform, adopting running servers | Yes, 27 Nov 2026 (ADR 0091) |
 | [MOP-GCP-TF](#mop-gcp-tf--google-cloud-with-terraform) | Google Cloud | Terraform / OpenTofu | Yes, 24 and 26 Nov 2026 (ADR 0084, 0092) |
 | [MOP-GCP-PULUMI](#mop-gcp-pulumi--google-cloud-with-pulumi) | Google Cloud | Pulumi (Python) | Yes, 27 Nov 2026 (ADR 0097, 0098) |
-| [MOP-AZ-TF](#mop-az-tf--azure-with-terraform) | Azure | Terraform / OpenTofu | Yes, 27 Nov 2026 (ADR 0099) |
-| [MOP-AZ-BICEP](#mop-az-bicep--azure-with-bicep) | Azure | Bicep | Yes, 27 Nov 2026 (ADR 0099) |
-| [MOP-AZ-PULUMI](#mop-az-pulumi--azure-with-pulumi) | Azure | Pulumi (Python) | Yes, 27 Nov 2026 (ADR 0099) |
+| [MOP-AZ-TF](#mop-az-tf--azure-with-terraform) | Azure | Terraform / OpenTofu | Yes, 27 Nov 2026 (ADR 0099, 0100) |
+| [MOP-AZ-BICEP](#mop-az-bicep--azure-with-bicep) | Azure | Bicep | Yes, 27 Nov 2026 (ADR 0099, 0100) |
+| [MOP-AZ-PULUMI](#mop-az-pulumi--azure-with-pulumi) | Azure | Pulumi (Python) | Yes, 27 Nov 2026 (ADR 0099, 0100) |
 | [MOP-OCI-TF](#mop-oci-tf--oracle-cloud-with-terraform) | Oracle Cloud | Terraform / OpenTofu | No |
 | [MOP-DO-TF](#mop-do-tf--digitalocean-with-terraform) | DigitalOcean | Terraform / OpenTofu | No |
 | [MOP-NTNX-TF](#mop-ntnx-tf--nutanix-ahv-with-terraform) | Nutanix AHV | Terraform / OpenTofu | No |
@@ -188,7 +188,7 @@ These apply to every MOP below.
 
 ## MOP-AZ-TF — Azure with Terraform
 
-**Run for real:** yes, 27 Nov 2026, on a Free Trial: two machines behind the public load balancer, internet access and the Windows data disk proven (ADR 0099). The internal load balancer and Red Hat weren't covered.
+**Run for real:** yes, 27 Nov 2026, on a Free Trial, twice: Ubuntu and Windows behind the public load balancer (ADR 0099), then private Red Hat and Ubuntu behind the internal load balancer, out through NAT (ADR 0100).
 
 1. `az login`; `az account set --subscription <id>`. On a new subscription, register what the output uses (free, creates nothing): `az provider register -n Microsoft.Compute --wait`, and the same for `Microsoft.Network` and `Microsoft.ManagedIdentity`.
 2. Check limits: `az vm list-usage --location <location> -o table`. A Free Trial allows 4 vCPUs and no small B-series sizes ([KI-077](known-issues.md#ki-077), [KI-078](known-issues.md#ki-078)).
@@ -199,12 +199,14 @@ These apply to every MOP below.
    - `az vm list -d -g <group> -o table`: machines behind a load balancer have no public address.
    - Inside a machine, without SSH: `az vm run-command invoke -g <group> -n <vm> --command-id RunShellScript --scripts 'curl -s -o /dev/null -w "%{http_code}" https://www.microsoft.com'` (Windows: `RunPowerShellScript` with `Invoke-WebRequest`). 200 means it reaches the internet.
    - Put a page on each web machine (nginx, or IIS with `Install-WindowsFeature Web-Server`) and request the load balancer's address several times: both machines should answer.
+   - Private machines: the address they go out from (`curl -s https://api.ipify.org`) is the NAT's, `az network public-ip show -g <group> -n <project>-nat-ip`.
+   - Internal load balancer: run a listener on the app port in each machine (`python3 -m http.server <port>`), then call the balancer's private address from each machine. Each should reach the other; calls that land on the caller fail ([KI-089](known-issues.md#ki-089)). Red Hat needs the port opened in its own firewall ([KI-088](known-issues.md#ki-088)).
    - `az vm show -g <group> -n <vm> --query identity.type` → `UserAssigned` on every machine.
 7. `terraform destroy`; then `az group exists -n <group>` → `false`. Azure's own `NetworkWatcherRG` stays, at no cost.
 
 ## MOP-AZ-BICEP — Azure with Bicep
 
-**Run for real:** yes, 27 Nov 2026: deployed, redeployed with no change, load balancer, internet access and data disk proven (ADR 0099).
+**Run for real:** yes, 27 Nov 2026, twice: public and internal load balancers, NAT, identities, internet access and data disks proven; redeploying changed nothing (ADR 0099, 0100).
 
 1. Sign in as MOP-AZ-TF step 1.
 2. `az bicep build --file main.bicep` and read any warnings.
@@ -219,7 +221,7 @@ These apply to every MOP below.
 
 ## MOP-AZ-PULUMI — Azure with Pulumi
 
-**Run for real:** yes, 27 Nov 2026: 25 resources, preview afterwards unchanged, load balancer, internet access and data disk proven (ADR 0099).
+**Run for real:** yes, 27 Nov 2026, twice: 25 and 28 resources, previews afterwards unchanged; public and internal load balancers, NAT, identities, internet access and data disks proven (ADR 0099, 0100).
 
 1. Sign in as MOP-AZ-TF steps 1 and 2, and export `ARM_SUBSCRIPTION_ID`. Python environment and state as MOP-AWS-PULUMI steps 2 and 3.
 2. `pulumi config set azure:location <location>`; `pulumi config set adminSshPublicKey "<key>"`; `pulumi config set --secret adminPassword <password>`.
