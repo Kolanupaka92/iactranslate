@@ -26,6 +26,8 @@ MOP ([Deploying](deploying.md)) links here by ID.
 | [KI-013](#ki-013) | Adopting a running AWS server replaces it | Fixed |
 | [KI-014](#ki-014) | CentOS 7 finds no AWS image | Fixed |
 | [KI-015](#ki-015) | SUSE takes a bring-your-own-subscription image | Fixed |
+| [KI-016](#ki-016) | Adopting a server deletes its tags and replaces its role | Fixed |
+| [KI-017](#ki-017) | Boot disk note misleading (adopted servers, tool minimum) | Fixed |
 | [KI-020](#ki-020) | CloudFormation/CDK boot disk small and unencrypted, extra disk | Fixed |
 | [KI-021](#ki-021) | CloudFormation drops machines with similar names | Fixed |
 | [KI-022](#ki-022) | CloudFormation/CDK data disks left after deleting the stack | By design |
@@ -126,7 +128,7 @@ MOP ([Deploying](deploying.md)) links here by ID.
 - **Symptom:** `import` plus "must be replaced" for the same server.
 - **Cause:** the configuration put it in a new subnet with an encrypted boot disk; both replace an instance.
 - **Fix:** adopted servers keep their own network, security groups, image, boot disk and address. Never apply a plan that replaces an adopted server.
-- **Status:** Fixed (ADR 0091). Not yet run on a real account.
+- **Status:** Fixed (ADR 0091). Proven on AWS 27 Nov 2026: two servers imported, same ids and launch time, nothing replaced.
 
 ### KI-014
 **CentOS 7 finds no AWS image.**
@@ -143,6 +145,21 @@ MOP ([Deploying](deploying.md)) links here by ID.
 - **Cause:** the image name pattern was too loose.
 - **Fix:** the pattern now matches only `suse-sles-15-spN-vYYYYMMDD-hvm-ssd-x86_64`.
 - **Status:** Fixed (ADR 0096).
+
+### KI-016
+**Adopting a server deletes its tags and replaces its role.**
+
+- **Symptom:** the adoption plan changes `tags` (removing the server's own, such as a cost centre) and sets `iam_instance_profile` to the generated tier role.
+- **Cause:** the generated tags and role were applied to adopted servers as to new ones.
+- **Fix:** adopted servers keep their own tags and role (`ignore_changes`); the project's default tags are only added. Before ADR 0091's update: add `iam_instance_profile, tags` to the adopted server's `ignore_changes`.
+- **Status:** Fixed (ADR 0091). Found 27 Nov 2026 on a real adoption plan.
+
+### KI-017
+**Boot disk note misleading.**
+
+- **Symptom:** an adopted server's plan says "Boot disk raised from 8 to 30 GiB" although its disk isn't changed, and prices 30 GB; or a raise to the tool's own 30 GB minimum is put down to the image.
+- **Fix:** an adopted server is planned and priced at its own boot disk size with no note; the note now says which minimum applied: the image's or the tool's.
+- **Status:** Fixed. Found 27 Nov 2026.
 
 ### KI-020
 **CloudFormation/CDK: boot disk small and unencrypted, plus an extra disk.**

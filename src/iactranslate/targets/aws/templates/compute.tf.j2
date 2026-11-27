@@ -37,8 +37,9 @@ resource "aws_instance" "{{ c.resource_name }}" {
 {% if c.external_id %}
     # Adopted (imports.tf): it keeps its own network, security groups and boot
     # disk. A new subnet or disk encryption would replace it, and security groups
-    # from another network can't be attached (ADR 0091).
-    ignore_changes = [ami, subnet_id, vpc_security_group_ids, root_block_device, associate_public_ip_address]
+    # from another network can't be attached (ADR 0091). It keeps its own role and
+    # tags too: replacing them can break its application or its cost reporting.
+    ignore_changes = [ami, subnet_id, vpc_security_group_ids, root_block_device, associate_public_ip_address, iam_instance_profile, tags]
 {% else %}
     ignore_changes = [ami]
 {% endif %}

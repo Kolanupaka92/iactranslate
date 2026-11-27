@@ -150,9 +150,14 @@ def _root_and_extra(vm: NormalizedVM, image_min_gib: int) -> Tuple[int, List[int
         return floor, [], f"No disk in the inventory: a {floor} GiB boot disk is assumed."
     if disks[0] < image_min_gib:
         return floor, disks[1:], (
-            f"Boot disk raised from {disks[0]} to {floor} GiB, the least this image allows here."
+            f"Boot disk raised from {disks[0]} to {floor} GiB: this image needs at least "
+            f"{image_min_gib} GiB here."
         )
-    return max(floor, disks[0]), disks[1:], None
+    if disks[0] < floor:
+        return floor, disks[1:], (
+            f"Boot disk raised from {disks[0]} to {floor} GiB, the smallest this tool plans."
+        )
+    return disks[0], disks[1:], None
 
 
 def build_compute_plans(
@@ -195,10 +200,15 @@ def build_compute_plans(
         if substitution:
             reason += f" {substitution}"
         family_changed = bool(vm.os) and _os_family(vm.os) != _os_family(image_key)
+        external_id, adopt_note = adoptable(target, vm.external_id)
         root_gib, extra_gib, disk_note = _root_and_extra(vm, target.min_boot_gib(image_key))
+        source_disks = [int(math.ceil(d)) for d in vm.disks_gib if d > 0]
+        if external_id and source_disks:
+            # An adopted server keeps its own boot disk (ADR 0091): plan and price
+            # the one it has, and don't claim to raise it.
+            root_gib, disk_note = max(8, source_disks[0]), None
         if disk_note:
             reason += f" {disk_note}"
-        external_id, adopt_note = adoptable(target, vm.external_id)
         if adopt_note:
             reason += f" {adopt_note}"
         if external_id:

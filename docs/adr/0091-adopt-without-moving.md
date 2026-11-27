@@ -49,7 +49,14 @@ Three more problems were found on the way:
   deliberately with `terraform apply -replace=<address>`.
 - The test fails without the fix and passes with it, in both layouts. A mocked
   provider can't import (OpenTofu crashes), so the test deploys the server first.
-  The import itself is unproven until it runs against a real AWS account.
+- **Proven on AWS, 27 November 2026:** two running servers in the default network,
+  with public addresses and unencrypted 8 GB disks, were imported: "2 to import, 0
+  to destroy". They kept their instance ids and launch time, network, address,
+  security group, disks and tags; a second plan proposed nothing; switching to the
+  `for_each` layout moved them to `adopted[...]` and changed nothing.
+- That run found that adoption still replaced the server's own tags and role. An
+  adopted server now keeps both (`iam_instance_profile`, `tags` ignored), and is
+  planned and priced at its own boot disk size.
 - Not covered: an Arm (Graviton) instance adopted and resized to an x86 type is
   replaced, because the provider replaces on a change of architecture. Every type in
   the catalog is x86.

@@ -17,7 +17,7 @@ in [Known issues](known-issues.md) by the error text.
 | [MOP-AWS-CFN](#mop-aws-cfn--aws-with-cloudformation) | AWS | CloudFormation | Yes, 27 Nov 2026 (ADR 0096) |
 | [MOP-AWS-CDK](#mop-aws-cdk--aws-with-cdk) | AWS | CDK (Python) | Yes, 27 Nov 2026 (ADR 0096) |
 | [MOP-AWS-PULUMI](#mop-aws-pulumi--aws-with-pulumi) | AWS | Pulumi (Python) | Yes, 27 Nov 2026 (ADR 0096) |
-| [MOP-AWS-ADOPT](#mop-aws-adopt--adopt-running-aws-servers) | AWS | Terraform, adopting running servers | No |
+| [MOP-AWS-ADOPT](#mop-aws-adopt--adopt-running-aws-servers) | AWS | Terraform, adopting running servers | Yes, 27 Nov 2026 (ADR 0091) |
 | [MOP-GCP-TF](#mop-gcp-tf--google-cloud-with-terraform) | Google Cloud | Terraform / OpenTofu | Yes, 24 and 26 Nov 2026 (ADR 0084, 0092) |
 | [MOP-GCP-PULUMI](#mop-gcp-pulumi--google-cloud-with-pulumi) | Google Cloud | Pulumi (Python) | No |
 | [MOP-AZ-TF](#mop-az-tf--azure-with-terraform) | Azure | Terraform / OpenTofu | No |
@@ -136,14 +136,19 @@ These apply to every MOP below.
 
 ## MOP-AWS-ADOPT — adopt running AWS servers
 
-**Run for real:** no. The test that a mocked deploy doesn't move them passes (ADR 0091).
+**Run for real:** yes, 27 Nov 2026: two running servers in a default network, with public addresses and unencrypted 8 GB disks, adopted, checked and switched to the `for_each` layout without being touched (ADR 0091).
 
-1. Export the fleet with **EC2 instance ids** (`InstanceId` column). Other ids are not adopted, and the plan says so.
-2. Generate. `imports.tf` holds one `import` block per server.
-3. `terraform plan`. **Every adopted server must say "will be imported" and nothing about it may say "must be replaced".** Stop if one does.
-4. Expect in-place changes only: instance type (stops and starts the server) and tags.
-5. Apply. Adopted servers keep their own network, security groups, image and boot disk; the generated network is for new servers.
-6. Moving an adopted server into the new network is a replacement. Do it deliberately, one server at a time: `terraform apply -replace=<address>`.
+1. Export the fleet with **EC2 instance ids**, as `Instance Name,InstanceId,InstanceType,Platform,VolumeSize`:
+   ```bash
+   aws ec2 describe-instances --query 'Reservations[].Instances[].[Tags[?Key==`Name`]|[0].Value,InstanceId,InstanceType]' --output text
+   ```
+   Other ids are not adopted, and the plan says so.
+2. Generate. `imports.tf` holds one `import` block per server. Sign in as MOP-AWS-TF step 1.
+3. `terraform plan -out=adopt.tfplan`. **Every adopted server must be imported, and nothing may say "must be replaced" or "will be destroyed".** Stop if anything does ([KI-013](known-issues.md#ki-013)).
+4. Read each adopted server's changes: `terraform show -json adopt.tfplan`. Expect only `user_data_replace_on_change` (Terraform's own setting) and, if the size changes, `instance_type` (stops and starts the server). Its network, security groups, image, boot disk, public address, role and tags stay as they are ([KI-016](known-issues.md#ki-016)).
+5. `terraform apply adopt.tfplan`. Then check the same servers survived: the same instance ids and **the same launch time** (`aws ec2 describe-instances --instance-ids …`), and `terraform plan` → "No changes".
+6. The generated network, load balancers and roles are for new servers. Moving an adopted server into it is a replacement: do it deliberately, one at a time, `terraform apply -replace=<address>`.
+7. **`terraform destroy` deletes adopted servers too.** To stop managing one without deleting it: `terraform state rm <address>`, then remove its `import` block and resource.
 
 ---
 

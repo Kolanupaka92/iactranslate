@@ -12,7 +12,7 @@ from iactranslate.targets import get_target, list_targets
 
 ID = "i-0123456789abcdef0"
 KEEPS = ("ignore_changes = [ami, subnet_id, vpc_security_group_ids, root_block_device, "
-         "associate_public_ip_address]")
+         "associate_public_ip_address, iam_instance_profile, tags]")
 
 
 def _vm(name, external_id=None, disks=(40,)):
@@ -91,3 +91,19 @@ def test_switching_layouts_moves_an_adopted_server_to_its_own_map():
     assert moves["aws_instance.prod_app_02"] == 'aws_instance.vm["prod_app_02"]'
     declared = set(re.findall(r'^resource "aws_instance" "(\w+)"', files["compute.tf"], re.M))
     assert {m.split("[")[0].split(".")[1] for m in moves.values() if m.startswith("aws_instance")} <= declared
+
+
+def test_an_adopted_server_keeps_its_own_boot_disk_size_in_the_plan():
+    c = _plan(_vm("prod-app-01", ID, disks=(8,))).compute[0]
+    assert c.root_volume_gib == 8 and "Boot disk raised" not in c.reason
+    new = _plan(_vm("prod-app-01", disks=(8,))).compute[0]
+    assert new.root_volume_gib == 30 and "raised from 8 to 30 GiB" in new.reason
+
+
+def test_the_reason_names_what_set_the_minimum():
+    from iactranslate.models import NormalizedVM
+    win = NormalizedVM(vm_name="w", cpu=2, memory_gib=8, disks_gib=[20], os="Windows Server 2022")
+    c = build_migration_plan([win], "x", get_target("gcp")).compute[0]
+    assert "this image needs at least 50 GiB" in c.reason
+    lin = _plan(_vm("prod-app-01", disks=(20,))).compute[0]
+    assert "the smallest this tool plans" in lin.reason

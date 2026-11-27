@@ -39,7 +39,7 @@ def _ingress_block(rule) -> str:
 
 #: What an adopted server keeps as it is.
 _ADOPTED_IGNORES = ('["ami", "instanceType", "subnetId", "vpcSecurityGroupIds", '
-                    '"rootBlockDevice", "associatePublicIpAddress", "tags", "tagsAll"]')
+                    '"rootBlockDevice", "associatePublicIpAddress", "iamInstanceProfile", "tags", "tagsAll"]')
 
 
 def _aws_main(plan: MigrationPlan, target: Target) -> str:

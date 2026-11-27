@@ -84,5 +84,5 @@ resource "aws_instance" "{{ name }}" {
 {{ instance("vm", "vms", "ami") }}
 {% if compute | selectattr("external_id") | list %}
 
-{{ instance("adopted", "adopted", "ami, subnet_id, vpc_security_group_ids, root_block_device, associate_public_ip_address") }}
+{{ instance("adopted", "adopted", "ami, subnet_id, vpc_security_group_ids, root_block_device, associate_public_ip_address, iam_instance_profile, tags") }}
 {% endif %}
