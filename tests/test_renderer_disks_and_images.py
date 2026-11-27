@@ -47,7 +47,7 @@ def test_pulumi_attaches_each_disk_to_its_own_machine(target):
               "gcp": "gcp.compute.AttachedDisk("}[target]
     blocks = [b.split("\n)")[0] for b in program.split(attach)[1:]]
     assert [re.search(r"inst_(\w+)", b).group(1) for b in blocks] == ["db01", "db01", "web01"]
-    assert len({re.search(r'"(\w+)"', b).group(1) for b in blocks}) == 3
+    assert len({re.search(r'"([\w-]+)"', b).group(1) for b in blocks}) == 3
 
 
 @pytest.mark.parametrize("target", PULUMI)
@@ -298,3 +298,29 @@ def test_pulumi_aws_load_balancer_names_are_ones_aws_accepts():
     for kind in ("aws.lb.LoadBalancer(", "aws.lb.TargetGroup("):
         names = re.findall(r'\n    name="([^"]+)",', "".join(b.split("\n)")[0] for b in program.split(kind)[1:]))
         assert names and all(re.fullmatch(r"[A-Za-z0-9-]{1,32}", n) for n in names), (kind, names)
+
+
+def test_pulumi_aws_routes_like_terraform():  # without it nothing reached the public load balancer
+    program = _files("aws", "pulumi", _vm("prod-web-01"), _vm("prod-web-02"), _vm("prod-app-01"))["__main__.py"]
+    compile(program, "__main__.py", "exec")
+    assert '"gateway_id": igw.id' in program and '"nat_gateway_id": nat.id' in program
+    assert program.count("aws.ec2.RouteTableAssociation(") == 4  # two public, two private subnets
+    assert "aws.ec2.NatGateway(" in program and "depends_on=[igw]" in program
+
+
+def test_pulumi_gcp_gives_private_machines_a_way_out():
+    program = _files("gcp", "pulumi", _vm("prod-app-01"), _vm("prod-app-02"))["__main__.py"]
+    assert "gcp.compute.Router(" in program
+    assert 'source_subnetwork_ip_ranges_to_nat="ALL_SUBNETWORKS_ALL_IP_RANGES"' in program
+
+
+def test_every_pulumi_gcp_resource_names_its_project_and_a_name_google_accepts():
+    program = _files("gcp", "pulumi", _vm("Prod_Web 01"), _vm("prod-web-02"), _vm("prod-app-01", disks=(30, 10)),
+                     _vm("prod-app-02"))["__main__.py"]
+    for m in re.finditer(r"gcp\.compute\.(\w+)\((.*?)\n\)", program, re.S):
+        if m.group(1) != "RouterNat":
+            assert "project=project" in m.group(2), m.group(1)
+        label = re.match(r'\s*(?:#[^\n]*\n\s*)?"([^"]+)"', m.group(2))
+        if label:
+            assert re.fullmatch(r"[a-z][-a-z0-9]{0,54}", label.group(1)), label.group(1)
+    assert 'name="prod-web-01"' in program  # the machine's own name, as Terraform's

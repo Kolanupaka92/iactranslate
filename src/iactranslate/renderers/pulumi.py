@@ -9,11 +9,12 @@ syntactically valid Python (compiled in tests).
 """
 from __future__ import annotations
 
+import re
 from typing import Dict, List
 
-from ..generator.renderer import data_volumes
+from ..generator.renderer import _rfc1035_slug, data_volumes
 from ..graph import assign_subnets, public_instances
-from ..models import MigrationPlan, resource_prefix, terraform_safe_name
+from ..models import MigrationPlan, SubnetTier, resource_prefix, terraform_safe_name
 from ..targets.base import Target
 
 
@@ -101,6 +102,35 @@ def _aws_main(plan: MigrationPlan, target: Target) -> str:
             "    opts=opts,",
             ")",
         ]
+
+    # Routing, as Terraform's: public subnets out through the internet gateway,
+    # private ones through NAT. Without it nothing could reach the public load
+    # balancer and private machines had no way out (ADR 0097).
+    lines += ["", "# --- Routing ---------------------------------------------------------------"]
+    public = [sn for sn in net.subnets if sn.tier == SubnetTier.PUBLIC]
+    private = [sn for sn in net.subnets if sn.tier == SubnetTier.PRIVATE]
+    if net.internet_gateway:
+        lines += [
+            'rt_public = aws.ec2.RouteTable("public", vpc_id=vpc.id,',
+            '    routes=[{"cidr_block": "0.0.0.0/0", "gateway_id": igw.id}],',
+            f'    tags={{"Name": {_py_str(plan.project_name + "-public-rt")}}}, opts=opts)',
+        ]
+        lines += [f'aws.ec2.RouteTableAssociation("{sn.resource_name}", subnet_id=subnet_{sn.resource_name}.id, '
+                  'route_table_id=rt_public.id, opts=opts)' for sn in public]
+    if net.nat_gateway and public and private:
+        lines += [
+            'nat_eip = aws.ec2.Eip("nat", domain="vpc",',
+            f'    tags={{"Name": {_py_str(plan.project_name + "-nat-eip")}}}, opts=opts)',
+            f'nat = aws.ec2.NatGateway("nat", allocation_id=nat_eip.id, subnet_id=subnet_{public[0].resource_name}.id,',
+            f'    tags={{"Name": {_py_str(plan.project_name + "-nat")}}},',
+            "    opts=pulumi.ResourceOptions(provider=provider"
+            + (", depends_on=[igw]" if net.internet_gateway else "") + "))",
+            'rt_private = aws.ec2.RouteTable("private", vpc_id=vpc.id,',
+            '    routes=[{"cidr_block": "0.0.0.0/0", "nat_gateway_id": nat.id}],',
+            f'    tags={{"Name": {_py_str(plan.project_name + "-private-rt")}}}, opts=opts)',
+        ]
+        lines += [f'aws.ec2.RouteTableAssociation("{sn.resource_name}", subnet_id=subnet_{sn.resource_name}.id, '
+                  'route_table_id=rt_private.id, opts=opts)' for sn in private]
 
     lines += ["", "# --- Security groups -----------------------------------------------------"]
     for sg in net.security_groups:
@@ -482,6 +512,19 @@ def _azure_main(plan: MigrationPlan, target: Target) -> str:
     return "\n".join(lines)
 
 
+def _gname(label: str) -> str:
+    """A Pulumi resource name Google accepts.
+
+    Pulumi names a resource after it, plus a hyphen and seven characters, and
+    Google allows only lowercase letters, digits and hyphens, starting with a
+    letter, up to 63. Labels like `public_0` were refused (ADR 0097).
+    """
+    name = re.sub(r"[^a-z0-9-]+", "-", label.lower()).strip("-") or "r"
+    if not name[0].isalpha():
+        name = "r-" + name
+    return name[:55].rstrip("-")
+
+
 def _gcp_main(plan: MigrationPlan, target: Target) -> str:
     net = plan.network
     subnet_of = assign_subnets(plan)
@@ -506,11 +549,21 @@ def _gcp_main(plan: MigrationPlan, target: Target) -> str:
     for s in net.subnets:
         lines += [
             f"subnet_{s.resource_name} = gcp.compute.Subnetwork(",
-            f"    {_py_str(s.resource_name)},",
+            f"    {_py_str(_gname(s.resource_name))},",
             f"    ip_cidr_range={_py_str(s.cidr)},",
             "    region=region, network=network.id,",
             "    private_ip_google_access=True, project=project,",
             ")",
+        ]
+
+    if net.nat_gateway:
+        # Private machines' way out, as Terraform's router and NAT (ADR 0097).
+        lines += [
+            'router = gcp.compute.Router("router", region=region, network=network.id, project=project)',
+            'gcp.compute.RouterNat("nat", router=router.name, region=region, project=project,',
+            '    nat_ip_allocate_option="AUTO_ONLY",',
+            '    source_subnetwork_ip_ranges_to_nat="ALL_SUBNETWORKS_ALL_IP_RANGES")',
+            "",
         ]
 
     # A firewall per security group, scoped to its tag.
@@ -521,7 +574,7 @@ def _gcp_main(plan: MigrationPlan, target: Target) -> str:
         src_ranges = ", ".join(_py_str(c) for c in srcs)
         lines += [
             f"fw_{sg.resource_name} = gcp.compute.Firewall(",
-            f"    {_py_str(sg.resource_name)},",
+            f"    {_py_str(_gname(sg.resource_name))},",
             "    network=network.name, project=project,",
             '    allows=[{"protocol": "tcp", "ports": [' + ports + "]}],",
             f"    source_ranges=[{src_ranges}],",
@@ -538,7 +591,9 @@ def _gcp_main(plan: MigrationPlan, target: Target) -> str:
         access = "[{}]" if c.vm_name in public_vms else "[]"  # [{}] = one ephemeral external IP
         lines += [
             f"inst_{c.resource_name} = gcp.compute.Instance(",
-            f"    {_py_str(c.resource_name)},",
+            f"    {_py_str(_gname(c.resource_name))},",
+            # The machine's own name, as Terraform gives it (ADR 0097).
+            f"    name={_py_str(_rfc1035_slug(c.vm_name))},",
             f"    machine_type={_py_str(c.instance_type)},",
             "    zone=zone, project=project, allow_stopping_for_update=True,",
             f"    tags=[{_py_str(c.security_group)}],",
@@ -562,12 +617,12 @@ def _gcp_main(plan: MigrationPlan, target: Target) -> str:
         disk = f"disk_{v['resource_name']}"
         lines += [
             f"{disk} = gcp.compute.Disk(",
-            f"    {_py_str(v['resource_name'])},",
+            f"    {_py_str(_gname(v['resource_name']))},",
             f'    zone=zone, project=project, size={v["size"]}, type="pd-balanced",',
             ")",
             "gcp.compute.AttachedDisk(",
-            f"    {_py_str(v['resource_name'])},",
-            f"    disk={disk}.id, instance=inst_{v['instance_resource']}.id,",
+            f"    {_py_str(_gname(v['resource_name']))},",
+            f"    disk={disk}.id, instance=inst_{v['instance_resource']}.id, zone=zone, project=project,",
             ")",
         ]
 
@@ -580,12 +635,12 @@ def _gcp_main(plan: MigrationPlan, target: Target) -> str:
             if lb.internet_facing:
                 lines += [
                     f"hc_{lb.resource_name} = gcp.compute.HttpHealthCheck(",
-                    f"    {_py_str(lb.resource_name)},",
+                    f"    {_py_str(_gname(lb.resource_name))},",
                     f"    request_path={_py_str(lb.health_check_path)}, port={lb.listeners[0].target_port},",
                     "    project=project,",
                     ")",
                     f"pool_{lb.resource_name} = gcp.compute.TargetPool(",
-                    f"    {_py_str(lb.resource_name)},",
+                    f"    {_py_str(_gname(lb.resource_name))},",
                     "    region=region, project=project,",
                     f"    health_checks=hc_{lb.resource_name}.self_link,",
                     f"    instances=[{member_refs}],",
@@ -594,7 +649,7 @@ def _gcp_main(plan: MigrationPlan, target: Target) -> str:
                 for listener in lb.listeners:
                     lines += [
                         "gcp.compute.ForwardingRule(",
-                        f"    {_py_str(f'{lb.resource_name}-{listener.listener_port}')},",
+                        f"    {_py_str(_gname(f'{lb.resource_name}-{listener.listener_port}'))},",
                         "    region=region, project=project,",
                         f'    port_range={_py_str(str(listener.listener_port))},',
                         f"    target=pool_{lb.resource_name}.self_link,",
@@ -603,17 +658,17 @@ def _gcp_main(plan: MigrationPlan, target: Target) -> str:
             else:
                 lines += [
                     f"ig_{lb.resource_name} = gcp.compute.InstanceGroup(",
-                    f"    {_py_str(lb.resource_name)},",
+                    f"    {_py_str(_gname(lb.resource_name))},",
                     "    zone=zone, project=project,",
                     f"    instances=[{member_refs}],",
                     ")",
                     f"hc_{lb.resource_name} = gcp.compute.HealthCheck(",
-                    f"    {_py_str(lb.resource_name)},",
+                    f"    {_py_str(_gname(lb.resource_name))},",
                     "    project=project,",
                     f'    tcp_health_check={{"port": {lb.listeners[0].target_port}}},',
                     ")",
                     f"bes_{lb.resource_name} = gcp.compute.RegionBackendService(",
-                    f"    {_py_str(lb.resource_name)},",
+                    f"    {_py_str(_gname(lb.resource_name))},",
                     '    region=region, project=project, protocol="TCP",',
                     '    load_balancing_scheme="INTERNAL",',
                     f"    health_checks=hc_{lb.resource_name}.self_link,",
@@ -622,7 +677,7 @@ def _gcp_main(plan: MigrationPlan, target: Target) -> str:
                 ]
                 lines += [
                     "gcp.compute.Firewall(  # Google's health probes",
-                    f"    {_py_str(f'{lb.resource_name}-probes')},",
+                    f"    {_py_str(_gname(f'{lb.resource_name}-probes'))},",
                     "    network=network.id, project=project,",
                     f'    allows=[{{"protocol": "tcp", "ports": ["{lb.listeners[0].target_port}"]}}],',
                     '    source_ranges=["35.191.0.0/16"],',
@@ -633,7 +688,7 @@ def _gcp_main(plan: MigrationPlan, target: Target) -> str:
                 for listener in lb.listeners:
                     lines += [
                         "gcp.compute.ForwardingRule(",
-                        f"    {_py_str(f'{lb.resource_name}-{listener.listener_port}')},",
+                        f"    {_py_str(_gname(f'{lb.resource_name}-{listener.listener_port}'))},",
                         "    region=region, project=project,",
                         '    load_balancing_scheme="INTERNAL",',
                         "    network=network.id,",

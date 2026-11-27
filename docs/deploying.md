@@ -19,7 +19,7 @@ in [Known issues](known-issues.md) by the error text.
 | [MOP-AWS-PULUMI](#mop-aws-pulumi--aws-with-pulumi) | AWS | Pulumi (Python) | Yes, 27 Nov 2026 (ADR 0096) |
 | [MOP-AWS-ADOPT](#mop-aws-adopt--adopt-running-aws-servers) | AWS | Terraform, adopting running servers | Yes, 27 Nov 2026 (ADR 0091) |
 | [MOP-GCP-TF](#mop-gcp-tf--google-cloud-with-terraform) | Google Cloud | Terraform / OpenTofu | Yes, 24 and 26 Nov 2026 (ADR 0084, 0092) |
-| [MOP-GCP-PULUMI](#mop-gcp-pulumi--google-cloud-with-pulumi) | Google Cloud | Pulumi (Python) | No |
+| [MOP-GCP-PULUMI](#mop-gcp-pulumi--google-cloud-with-pulumi) | Google Cloud | Pulumi (Python) | Yes, 27 Nov 2026 (ADR 0097); Windows unresolved |
 | [MOP-AZ-TF](#mop-az-tf--azure-with-terraform) | Azure | Terraform / OpenTofu | No |
 | [MOP-AZ-BICEP](#mop-az-bicep--azure-with-bicep) | Azure | Bicep | No (compiles in CI) |
 | [MOP-AZ-PULUMI](#mop-az-pulumi--azure-with-pulumi) | Azure | Pulumi (Python) | No |
@@ -124,7 +124,7 @@ These apply to every MOP below.
 
 ## MOP-AWS-PULUMI — AWS with Pulumi
 
-**Run for real:** yes, 27 Nov 2026 (ADR 0096).
+**Run for real:** yes, 27 Nov 2026 (ADR 0096). Its routing was missing then and has been added since (ADR 0097); the fixed routing is not yet proven on AWS: after deploying, check the public load balancer answers.
 
 1. Sign in as MOP-AWS-TF step 1 and use the `-terraform` profile: the Pulumi AWS provider can't read `aws login` sessions either.
 2. **Python environment:** a virtual environment with `pip` in it ([KI-030](known-issues.md#ki-030)), then `pip install -r requirements.txt`.
@@ -174,13 +174,14 @@ These apply to every MOP below.
 
 ## MOP-GCP-PULUMI — Google Cloud with Pulumi
 
-**Run for real:** no. The program runs against the real Pulumi libraries with mocked clouds in CI.
+**Run for real:** yes, 27 Nov 2026: 34 resources, both load balancers and NAT proven (ADR 0097). Windows booted, but didn't report after an early restart ([KI-074](known-issues.md#ki-074)).
 
 1. Sign in as MOP-GCP-TF step 1; enable APIs as step 2.
 2. Python environment and state as MOP-AWS-PULUMI steps 2 and 3.
 3. `pulumi config set gcpProject <project>`.
-4. `pulumi preview`, read, `pulumi up`. Verify as MOP-GCP-TF step 6 with `pulumi preview` in place of `terraform plan`.
-5. `pulumi destroy`, `pulumi stack rm`.
+4. `pulumi preview`, read, `pulumi up` (about 90 seconds). Verify as MOP-GCP-TF step 6 with `pulumi preview` in place of `terraform plan`: expect all unchanged.
+5. Windows machines take several minutes on their first boot: don't restart them before "Windows is Ready to use" is on the serial console.
+6. `pulumi destroy`, `pulumi stack rm`.
 
 ---
 

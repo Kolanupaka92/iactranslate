@@ -37,6 +37,9 @@ MOP ([Deploying](deploying.md)) links here by ID.
 | [KI-032](#ki-032) | Pulumi Azure/Google load balancer program won't run | Fixed |
 | [KI-033](#ki-033) | Pulumi, Bicep: data disks missing | Fixed |
 | [KI-034](#ki-034) | Bicep doesn't compile (BCP079, BCP238) | Fixed |
+| [KI-035](#ki-035) | Pulumi Google: every resource name refused | Fixed |
+| [KI-036](#ki-036) | Pulumi Google: attached disk has no project | Fixed |
+| [KI-037](#ki-037) | Pulumi: no routing or NAT (AWS, Google) | Fixed |
 | [KI-040](#ki-040) | Google: `cloud-platform scope is required but not consented` | Workaround |
 | [KI-041](#ki-041) | Google internal load balancer: instance in wrong subnetwork | Fixed |
 | [KI-042](#ki-042) | Google: changing a machine requires stopping it | Fixed |
@@ -53,6 +56,9 @@ MOP ([Deploying](deploying.md)) links here by ID.
 | [KI-071](#ki-071) | Hosted service: Google sign-in fails in an embedded browser | Workaround |
 | [KI-072](#ki-072) | Hosted service: live database had a public address | Fixed |
 | [KI-073](#ki-073) | Restore check: `postgres` can't read the app's tables | Workaround |
+| [KI-074](#ki-074) | Pulumi Google: Windows silent after an early restart | Open |
+| [KI-075](#ki-075) | Google public load balancer: different address for HTTP and HTTPS | Open |
+| [KI-076](#ki-076) | Azure: private machines may have no way out | Open |
 
 ---
 
@@ -231,6 +237,28 @@ MOP ([Deploying](deploying.md)) links here by ID.
 - **Fix:** `resourceId(…)` references; new-line separated items.
 - **Status:** Fixed (ADR 0093). `bicep build` runs in CI.
 
+### KI-035
+**Pulumi Google: every resource name refused.**
+
+- **Message:** `"name" ("public_0-98aea84") doesn't match regexp "^(?:[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?)$"`
+- **Cause:** Pulumi names a resource after its label, which had underscores.
+- **Fix:** lowercase, hyphenated labels; machines get Terraform's names.
+- **Status:** Fixed (ADR 0097). Seen 27 Nov 2026.
+
+### KI-036
+**Pulumi Google: attached disk has no project.**
+
+- **Message:** `Failed to retrieve project, pid: , err: project: required field is not set`
+- **Status:** Fixed (ADR 0097).
+
+### KI-037
+**Pulumi: no routing or NAT.**
+
+- **Symptom:** on AWS the public load balancer can't be reached and private machines can't reach the internet; on Google private machines can't.
+- **Cause:** Pulumi didn't build Terraform's route tables, NAT gateway, or Google's router and NAT.
+- **Fix:** it does now. Proven on Google 27 Nov 2026; on AWS tested against the Pulumi library only.
+- **Status:** Fixed (ADR 0097).
+
 ## Google Cloud
 
 ### KI-040
@@ -348,3 +376,26 @@ MOP ([Deploying](deploying.md)) links here by ID.
 - **Cause:** on Cloud SQL, `postgres` isn't a superuser, and the tables belong to `iacapp`.
 - **Fix:** set a new password for `iacapp` on the **restored** instance only and connect as `iacapp` (MOP 8 step 4).
 - **Status:** Workaround. Seen 27 Nov 2026, rehearsing MOP 8.
+
+### KI-074
+**Pulumi Google: Windows silent after an early restart.**
+
+- **Symptom:** both Windows machines booted and started Google's agent, were restarted 90 seconds after creation for a test, and then printed nothing past the Windows Boot Manager, through a second restart.
+- **Likely causes:** restarting during Windows' first-boot setup; or no service account (Pulumi's machines have none, Terraform's do), which the agent logged as missing credentials.
+- **Workaround:** don't restart a new Windows machine until "Windows is Ready to use" is on its serial console.
+- **Status:** Open. Seen 27 Nov 2026.
+
+### KI-075
+**Google public load balancer: different address for HTTP and HTTPS.**
+
+- **Symptom:** port 80 and port 443 have different IP addresses, so one web address can't point at both.
+- **Cause:** each forwarding rule takes its own ephemeral address; they should share one reserved address.
+- **Status:** Open. Seen 27 Nov 2026, in Terraform and Pulumi.
+
+### KI-076
+**Azure: private machines may have no way out to the internet.**
+
+- **Symptom (expected, not seen):** private Azure machines can't install updates.
+- **Cause:** the Azure output has no NAT gateway, and as far as I know Azure stopped giving new networks default outbound access in 2025. Not verified: Azure hasn't been deployed for real.
+- **Status:** Open. Check on the first Azure deployment.
+
