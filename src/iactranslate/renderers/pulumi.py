@@ -9,6 +9,7 @@ syntactically valid Python (compiled in tests).
 """
 from __future__ import annotations
 
+import hashlib
 import re
 from typing import Dict, List
 
@@ -525,6 +526,17 @@ def _gname(label: str) -> str:
     return name[:55].rstrip("-")
 
 
+def _gcp_account_id(project_name: str, tier: str) -> str:
+    """A service account id Google accepts (6 to 30 characters), as Terraform's."""
+    slug = _rfc1035_slug(resource_prefix(project_name))
+    room = 29 - len(tier)
+    if len(slug) > room:
+        digest = hashlib.md5(slug.encode()).hexdigest()[:4]  # nosec B324: a name, not security
+        slug = f"{slug[:room - 5].rstrip('-')}-{digest}"
+    account = f"{slug}-{tier}"
+    return account if len(account) >= 6 else f"{account}-sa"
+
+
 def _gcp_main(plan: MigrationPlan, target: Target) -> str:
     net = plan.network
     subnet_of = assign_subnets(plan)
@@ -582,6 +594,20 @@ def _gcp_main(plan: MigrationPlan, target: Target) -> str:
             ")",
         ]
 
+    # A service account per tier with no roles, as Terraform's default identity
+    # (ADR 0057). Without one, Google's agent on the machine has no credentials
+    # (ADR 0098).
+    lines += ["", "# --- Service accounts (one per tier, no roles) ----------------------------"]
+    for tier in sorted({c.tier.value for c in plan.compute}):
+        lines += [
+            f"sa_{tier} = gcp.serviceaccount.Account(",
+            f"    {_py_str(_gname(tier + '-sa'))},",
+            f"    account_id={_py_str(_gcp_account_id(plan.project_name, tier))},",
+            f"    display_name={_py_str(f'{tier} tier ({plan.project_name})')},",
+            "    project=project,",
+            ")",
+        ]
+
     public_vms = public_instances(plan)
     for c in plan.compute:
         ref = target.image_reference(c.image_key)
@@ -594,6 +620,7 @@ def _gcp_main(plan: MigrationPlan, target: Target) -> str:
             f"    {_py_str(_gname(c.resource_name))},",
             # The machine's own name, as Terraform gives it (ADR 0097).
             f"    name={_py_str(_rfc1035_slug(c.vm_name))},",
+            f'    service_account={{"email": sa_{c.tier.value}.email, "scopes": ["cloud-platform"]}},',
             f"    machine_type={_py_str(c.instance_type)},",
             "    zone=zone, project=project, allow_stopping_for_update=True,",
             f"    tags=[{_py_str(c.security_group)}],",
@@ -639,6 +666,11 @@ def _gcp_main(plan: MigrationPlan, target: Target) -> str:
                     f"    request_path={_py_str(lb.health_check_path)}, port={lb.listeners[0].target_port},",
                     "    project=project,",
                     ")",
+                    # One address for every port (ADR 0098).
+                    f"addr_{lb.resource_name} = gcp.compute.Address(",
+                    f"    {_py_str(_gname(lb.resource_name + '-ip'))},",
+                    "    region=region, project=project,",
+                    ")",
                     f"pool_{lb.resource_name} = gcp.compute.TargetPool(",
                     f"    {_py_str(_gname(lb.resource_name))},",
                     "    region=region, project=project,",
@@ -651,6 +683,7 @@ def _gcp_main(plan: MigrationPlan, target: Target) -> str:
                         "gcp.compute.ForwardingRule(",
                         f"    {_py_str(_gname(f'{lb.resource_name}-{listener.listener_port}'))},",
                         "    region=region, project=project,",
+                        f"    ip_address=addr_{lb.resource_name}.address,",
                         f'    port_range={_py_str(str(listener.listener_port))},',
                         f"    target=pool_{lb.resource_name}.self_link,",
                         ")",

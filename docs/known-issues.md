@@ -46,6 +46,7 @@ MOP ([Deploying](deploying.md)) links here by ID.
 | [KI-043](#ki-043) | Google internal load balancer backends never healthy | Fixed |
 | [KI-044](#ki-044) | Google data disks detached on a later run | Fixed |
 | [KI-045](#ki-045) | Google: a new project's APIs are off | Workaround |
+| [KI-046](#ki-046) | Google sign-in for tools never completes | Workaround |
 | [KI-050](#ki-050) | Boot disk smaller than the image | Fixed |
 | [KI-051](#ki-051) | Oracle: one OCPU counted as one vCPU | Fixed |
 | [KI-052](#ki-052) | Oracle: no SUSE image, plan fails | Fixed |
@@ -56,8 +57,8 @@ MOP ([Deploying](deploying.md)) links here by ID.
 | [KI-071](#ki-071) | Hosted service: Google sign-in fails in an embedded browser | Workaround |
 | [KI-072](#ki-072) | Hosted service: live database had a public address | Fixed |
 | [KI-073](#ki-073) | Restore check: `postgres` can't read the app's tables | Workaround |
-| [KI-074](#ki-074) | Pulumi Google: Windows silent after an early restart | Open |
-| [KI-075](#ki-075) | Google public load balancer: different address for HTTP and HTTPS | Open |
+| [KI-074](#ki-074) | Pulumi Google: Windows silent after an early restart | Fixed |
+| [KI-075](#ki-075) | Google public load balancer: different address for HTTP and HTTPS | Fixed |
 | [KI-076](#ki-076) | Azure: private machines may have no way out | Open |
 
 ---
@@ -302,6 +303,13 @@ MOP ([Deploying](deploying.md)) links here by ID.
 - **Fix:** `gcloud services enable compute.googleapis.com iam.googleapis.com --project <project>`.
 - **Status:** Workaround. The README says so.
 
+### KI-046
+**Google sign-in for tools never completes.**
+
+- **Symptom:** `gcloud auth application-default login` keeps waiting after you approve in the browser; or the `--no-launch-browser` variant fails.
+- **Workaround:** for a session, give tools the short-lived credential `gcloud` already has: `GOOGLE_OAUTH_ACCESS_TOKEN="$(gcloud auth print-access-token)" terraform plan` (or `pulumi up`). It lasts an hour and isn't saved.
+- **Status:** Workaround. Seen 27 Nov 2026.
+
 ## Any cloud
 
 ### KI-050
@@ -382,15 +390,16 @@ MOP ([Deploying](deploying.md)) links here by ID.
 
 - **Symptom:** both Windows machines booted and started Google's agent, were restarted 90 seconds after creation for a test, and then printed nothing past the Windows Boot Manager, through a second restart.
 - **Likely causes:** restarting during Windows' first-boot setup; or no service account (Pulumi's machines have none, Terraform's do), which the agent logged as missing credentials.
-- **Workaround:** don't restart a new Windows machine until "Windows is Ready to use" is on its serial console.
-- **Status:** Open. Seen 27 Nov 2026.
+- **Fix:** Pulumi's machines get a service account per tier, as Terraform's; and don't restart a new Windows machine until its serial console shows Google's startup script runner ("Running metadata script runner … for \"startup\" event"). Newer images don't print "Windows is Ready to use".
+- **Status:** Fixed (ADR 0098). Proven 27 Nov 2026: after a restart once booted, both Windows machines ran their scripts within 30 seconds.
 
 ### KI-075
 **Google public load balancer: different address for HTTP and HTTPS.**
 
 - **Symptom:** port 80 and port 443 have different IP addresses, so one web address can't point at both.
-- **Cause:** each forwarding rule takes its own ephemeral address; they should share one reserved address.
-- **Status:** Open. Seen 27 Nov 2026, in Terraform and Pulumi.
+- **Cause:** each forwarding rule took its own ephemeral address.
+- **Fix:** one reserved address for every port. Existing deployments get a new public address once: update DNS.
+- **Status:** Fixed (ADR 0098). Proven 27 Nov 2026 in Terraform and Pulumi.
 
 ### KI-076
 **Azure: private machines may have no way out to the internet.**

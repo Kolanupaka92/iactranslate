@@ -136,3 +136,26 @@ def test_google_may_stop_a_machine_to_resize_it(layout):  # refused otherwise, o
     assert compute.count("allow_stopping_for_update = true") == compute.count('resource "google_compute_instance"')
     program = render("pulumi", _plan("gcp", _vm("a"), _vm("b")), get_target("gcp"))["__main__.py"]
     assert program.count("allow_stopping_for_update=True") == program.count("gcp.compute.Instance(") == 2
+
+
+@pytest.mark.parametrize("layout", LAYOUTS)
+def test_google_public_load_balancer_has_one_address_for_every_port(layout):  # one web name, HTTP and HTTPS
+    plan = _plan("gcp", _vm("prod-web-01"), _vm("prod-web-02"))
+    text = render(layout, plan, get_target("gcp"))["loadbalancer.tf"]
+    assert text.count('resource "google_compute_address"') == 1
+    rules = re.findall(r'"google_compute_forwarding_rule" "\w+" \{(.*?)^}', text, re.S | re.M)
+    assert len(rules) == 2 and all("ip_address = google_compute_address.production_web_lb.address" in r for r in rules)
+    program = render("pulumi", plan, get_target("gcp"))["__main__.py"]
+    assert program.count("gcp.compute.Address(") == 1
+    assert program.count("ip_address=addr_production_web_lb.address,") == 2
+
+
+@pytest.mark.parametrize("name", ["x", "proof2", "n" * 60, "Acme Migration"])
+def test_pulumi_google_machines_have_a_service_account_google_accepts(name):
+    t = get_target("gcp")
+    vms = [_vm("prod-web-01"), _vm("prod-db-01"), _vm("prod-app-01")]
+    program = render("pulumi", build_migration_plan(vms, name, t), t)["__main__.py"]
+    ids = re.findall(r'account_id="([^"]+)"', program)
+    assert len(ids) == len(set(ids)) == 3
+    assert all(re.fullmatch(r"[a-z][-a-z0-9]{4,28}[a-z0-9]", i) for i in ids), ids
+    assert program.count('"scopes": ["cloud-platform"]') == program.count("gcp.compute.Instance(") == 3

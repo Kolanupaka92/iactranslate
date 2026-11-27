@@ -19,7 +19,7 @@ in [Known issues](known-issues.md) by the error text.
 | [MOP-AWS-PULUMI](#mop-aws-pulumi--aws-with-pulumi) | AWS | Pulumi (Python) | Yes, 27 Nov 2026 (ADR 0096) |
 | [MOP-AWS-ADOPT](#mop-aws-adopt--adopt-running-aws-servers) | AWS | Terraform, adopting running servers | Yes, 27 Nov 2026 (ADR 0091) |
 | [MOP-GCP-TF](#mop-gcp-tf--google-cloud-with-terraform) | Google Cloud | Terraform / OpenTofu | Yes, 24 and 26 Nov 2026 (ADR 0084, 0092) |
-| [MOP-GCP-PULUMI](#mop-gcp-pulumi--google-cloud-with-pulumi) | Google Cloud | Pulumi (Python) | Yes, 27 Nov 2026 (ADR 0097); Windows unresolved |
+| [MOP-GCP-PULUMI](#mop-gcp-pulumi--google-cloud-with-pulumi) | Google Cloud | Pulumi (Python) | Yes, 27 Nov 2026 (ADR 0097, 0098) |
 | [MOP-AZ-TF](#mop-az-tf--azure-with-terraform) | Azure | Terraform / OpenTofu | No |
 | [MOP-AZ-BICEP](#mop-az-bicep--azure-with-bicep) | Azure | Bicep | No (compiles in CI) |
 | [MOP-AZ-PULUMI](#mop-az-pulumi--azure-with-pulumi) | Azure | Pulumi (Python) | No |
@@ -156,7 +156,7 @@ These apply to every MOP below.
 
 **Run for real:** yes, twice: 16 resources (ADR 0084), then 37 with Windows, data disks and both load balancers (ADR 0092).
 
-1. **Sign in for Terraform:** `gcloud auth application-default login`. Tick the Google Cloud box on the consent page ([KI-040](known-issues.md#ki-040)).
+1. **Sign in for Terraform:** `gcloud auth application-default login`. Tick the Google Cloud box on the consent page ([KI-040](known-issues.md#ki-040)). If it never completes, use [KI-046](known-issues.md#ki-046).
 2. **Use a separate project for trials.** Turn on the APIs a new project has off:
    ```bash
    gcloud services enable compute.googleapis.com iam.googleapis.com --project <project>
@@ -168,19 +168,20 @@ These apply to every MOP below.
    - `terraform plan` → "No changes" (a stale output value only is fine: `terraform apply -refresh-only`).
    - Machines behind a load balancer have no external address.
    - Internal load balancer backends healthy: `gcloud compute backend-services get-health <name> --region <region>`.
-   - Windows: `gcloud compute instances get-serial-port-output <vm> --zone <zone>`.
+   - HTTP and HTTPS share one public address: `gcloud compute forwarding-rules list`.
+   - Windows: `gcloud compute instances get-serial-port-output <vm> --zone <zone>` shows `Running metadata script runner`.
 7. **Destroy:** `terraform destroy`; then list instances, disks, networks, firewall rules, forwarding rules, target pools, routers, instance groups, backend services and health checks. All empty.
 8. When finished: `gcloud auth application-default revoke`.
 
 ## MOP-GCP-PULUMI — Google Cloud with Pulumi
 
-**Run for real:** yes, 27 Nov 2026: 34 resources, both load balancers and NAT proven (ADR 0097). Windows booted, but didn't report after an early restart ([KI-074](known-issues.md#ki-074)).
+**Run for real:** yes, 27 Nov 2026: 38 resources, both load balancers on one public address, NAT, and Windows proven (ADR 0097, 0098).
 
 1. Sign in as MOP-GCP-TF step 1; enable APIs as step 2.
 2. Python environment and state as MOP-AWS-PULUMI steps 2 and 3.
 3. `pulumi config set gcpProject <project>`.
 4. `pulumi preview`, read, `pulumi up` (about 90 seconds). Verify as MOP-GCP-TF step 6 with `pulumi preview` in place of `terraform plan`: expect all unchanged.
-5. Windows machines take several minutes on their first boot: don't restart them before "Windows is Ready to use" is on the serial console.
+5. Windows machines take a few minutes on their first boot: don't restart them before the serial console shows `Running metadata script runner … for "startup" event`.
 6. `pulumi destroy`, `pulumi stack rm`.
 
 ---

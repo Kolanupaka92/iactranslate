@@ -105,5 +105,6 @@ Format: [Michael Nygard's ADR template](https://cognitect.com/blog/2011/11/15/do
 | [0095](0095-first-real-aws-deployment.md) | First real AWS deployment: only unfronted public machines get an address; on AWS, machines behind a public LB are private behind NAT | Accepted |
 | [0096](0096-cloudformation-cdk-and-pulumi-deployed.md) | CloudFormation, CDK and Pulumi deployed for real: boot disk mapped where the image boots, SUSE and CentOS images, Pulumi LB names | Accepted |
 | [0097](0097-pulumi-on-google-deployed.md) | Pulumi on Google deployed; Google-valid names; Pulumi builds Terraform's routing and NAT on AWS and Google | Accepted |
+| [0098](0098-one-address-and-service-accounts-on-google.md) | Google public load balancer: one address for every port; Pulumi's Google machines get Terraform's service accounts | Accepted |
 
 See also the [Architecture & Design](../architecture.md) overview.

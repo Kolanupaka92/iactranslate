@@ -27,6 +27,13 @@ resource "google_compute_firewall" "lb_probes" {
 {% endif %}
 {% for lb in network.load_balancers %}
 {% if lb.internet_facing %}
+# One address for every port, so one web name serves HTTP and HTTPS. Each
+# forwarding rule otherwise takes its own (ADR 0098).
+resource "google_compute_address" "{{ lb.resource_name }}" {
+  name   = "{{ lb.name }}-ip"
+  region = var.region
+}
+
 resource "google_compute_http_health_check" "{{ lb.resource_name }}" {
   # Legacy target pools only support HTTP health checks, even for TCP traffic —
   # a known GCP Network LB limitation, not a choice made here.
@@ -52,6 +59,7 @@ resource "google_compute_target_pool" "{{ lb.resource_name }}" {
 resource "google_compute_forwarding_rule" "{{ lb.resource_name }}_{{ listener.listener_port }}" {
   name       = "{{ lb.name }}-{{ listener.listener_port }}"
   region     = var.region
+  ip_address = google_compute_address.{{ lb.resource_name }}.address
   port_range = "{{ listener.listener_port }}"
   target     = google_compute_target_pool.{{ lb.resource_name }}.self_link
 }
