@@ -22,7 +22,7 @@ resource "oci_core_instance" "{{ c.resource_name }}" {
 {% else %}
     assign_public_ip = false
 {% endif %}
-    hostname_label   = substr("{{ vm_slug[c.vm_name] }}", 0, 63)
+    hostname_label   = substr("{{ vm_slug[c.resource_name] }}", 0, 63)
   }
 
   source_details {

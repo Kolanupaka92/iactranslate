@@ -9,7 +9,7 @@
 # your licensed Windows template — nothing is substituted.
 {% for c in compute %}
 resource "proxmox_virtual_environment_vm" "{{ c.resource_name }}" {
-  name        = "{{ vm_slug[c.vm_name] }}"
+  name        = "{{ vm_slug[c.resource_name] }}"
   description = "Migrated from {{ c.vm_name }} ({{ c.tier.value }}, {{ c.environment.value }})"
   node_name   = var.node_name
   tags        = concat(["{{ project_slug }}", "{{ c.tier.value }}", "{{ c.environment.value }}"]{% if mandated_tags %}, local.mandated_tags{% endif %})

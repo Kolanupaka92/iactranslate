@@ -18,7 +18,7 @@ locals {
   vms = {
 {% for c in compute %}
     "{{ c.resource_name }}" = {
-      slug  = "{{ vm_slug[c.vm_name] }}"
+      slug  = "{{ vm_slug[c.resource_name] }}"
       size  = "{{ c.instance_type }}"
       image = "{{ image_refs[c.image_key].slug }}"
       tags = [

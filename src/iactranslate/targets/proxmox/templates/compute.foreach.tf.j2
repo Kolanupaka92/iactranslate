@@ -18,7 +18,7 @@ locals {
 {% for c in compute %}
 {% set prefix = network.subnets | selectattr('resource_name', 'equalto', subnet_of[c.vm_name]) | map(attribute='cidr') | first | replace('0/24', '') %}
     "{{ c.resource_name }}" = {
-      slug        = "{{ vm_slug[c.vm_name] }}"
+      slug        = "{{ vm_slug[c.resource_name] }}"
       description = "Migrated from {{ c.vm_name }} ({{ c.tier.value }}, {{ c.environment.value }})"
       tags        = ["{{ project_slug }}", "{{ c.tier.value }}", "{{ c.environment.value }}"]
       template_id = var.{{ image_refs[c.image_key].variable }}

@@ -4,7 +4,7 @@
 locals {
   data_volumes = {
 {% for v in volumes %}
-    "{{ v.resource_name }}" = { vm = "{{ v.instance_resource }}", slug = "{{ vm_slug[v.vm_name] }}", size = {{ v.size }}, lun = {{ v.lun }} }
+    "{{ v.resource_name }}" = { vm = "{{ v.instance_resource }}", slug = "{{ vm_slug[v.instance_resource] }}", size = {{ v.size }}, lun = {{ v.lun }} }
 {% endfor %}
   }
 }

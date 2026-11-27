@@ -20,9 +20,9 @@ in [Known issues](known-issues.md) by the error text.
 | [MOP-AWS-ADOPT](#mop-aws-adopt--adopt-running-aws-servers) | AWS | Terraform, adopting running servers | Yes, 27 Nov 2026 (ADR 0091) |
 | [MOP-GCP-TF](#mop-gcp-tf--google-cloud-with-terraform) | Google Cloud | Terraform / OpenTofu | Yes, 24 and 26 Nov 2026 (ADR 0084, 0092) |
 | [MOP-GCP-PULUMI](#mop-gcp-pulumi--google-cloud-with-pulumi) | Google Cloud | Pulumi (Python) | Yes, 27 Nov 2026 (ADR 0097, 0098) |
-| [MOP-AZ-TF](#mop-az-tf--azure-with-terraform) | Azure | Terraform / OpenTofu | No |
-| [MOP-AZ-BICEP](#mop-az-bicep--azure-with-bicep) | Azure | Bicep | No (compiles in CI) |
-| [MOP-AZ-PULUMI](#mop-az-pulumi--azure-with-pulumi) | Azure | Pulumi (Python) | No |
+| [MOP-AZ-TF](#mop-az-tf--azure-with-terraform) | Azure | Terraform / OpenTofu | Yes, 27 Nov 2026 (ADR 0099) |
+| [MOP-AZ-BICEP](#mop-az-bicep--azure-with-bicep) | Azure | Bicep | Yes, 27 Nov 2026 (ADR 0099) |
+| [MOP-AZ-PULUMI](#mop-az-pulumi--azure-with-pulumi) | Azure | Pulumi (Python) | Yes, 27 Nov 2026 (ADR 0099) |
 | [MOP-OCI-TF](#mop-oci-tf--oracle-cloud-with-terraform) | Oracle Cloud | Terraform / OpenTofu | No |
 | [MOP-DO-TF](#mop-do-tf--digitalocean-with-terraform) | DigitalOcean | Terraform / OpenTofu | No |
 | [MOP-NTNX-TF](#mop-ntnx-tf--nutanix-ahv-with-terraform) | Nutanix AHV | Terraform / OpenTofu | No |
@@ -188,35 +188,45 @@ These apply to every MOP below.
 
 ## MOP-AZ-TF — Azure with Terraform
 
-**Run for real:** no.
+**Run for real:** yes, 27 Nov 2026, on a Free Trial: two machines behind the public load balancer, internet access and the Windows data disk proven (ADR 0099). The internal load balancer and Red Hat weren't covered.
 
-1. `az login`; `az account set --subscription <id>`.
-2. Set `location`, `resource_group_name`, `admin_ssh_public_key` in `terraform.tfvars`. Supply the Windows password from the environment, never from a file: `export TF_VAR_admin_password=...`.
-3. Check vCPU quota: `az vm list-usage --location <location> -o table`.
+1. `az login`; `az account set --subscription <id>`. On a new subscription, register what the output uses (free, creates nothing): `az provider register -n Microsoft.Compute --wait`, and the same for `Microsoft.Network` and `Microsoft.ManagedIdentity`.
+2. Check limits: `az vm list-usage --location <location> -o table`. A Free Trial allows 4 vCPUs and no small B-series sizes ([KI-077](known-issues.md#ki-077), [KI-078](known-issues.md#ki-078)).
+3. Set `location`, `resource_group_name`, `admin_ssh_public_key` in `terraform.tfvars`. Supply the Windows password from the environment, never from a file: `export TF_VAR_admin_password=...`. Export `ARM_SUBSCRIPTION_ID`, and `ARM_SKIP_PROVIDER_REGISTRATION=true` once step 1 is done. Don't reuse a group name you've just deleted ([KI-080](known-issues.md#ki-080)).
 4. `terraform init`, `plan -out`, read, `apply`.
-5. Verify as MOP-AWS-TF step 6, with `az vm list -d -o table` for addresses and `az network lb` for probes.
-6. `terraform destroy`; then `az group show -n <resource group>` should fail (not found).
+5. `terraform plan` again → no changes ([KI-081](known-issues.md#ki-081)).
+6. Verify:
+   - `az vm list -d -g <group> -o table`: machines behind a load balancer have no public address.
+   - Inside a machine, without SSH: `az vm run-command invoke -g <group> -n <vm> --command-id RunShellScript --scripts 'curl -s -o /dev/null -w "%{http_code}" https://www.microsoft.com'` (Windows: `RunPowerShellScript` with `Invoke-WebRequest`). 200 means it reaches the internet.
+   - Put a page on each web machine (nginx, or IIS with `Install-WindowsFeature Web-Server`) and request the load balancer's address several times: both machines should answer.
+   - `az vm show -g <group> -n <vm> --query identity.type` → `UserAssigned` on every machine.
+7. `terraform destroy`; then `az group exists -n <group>` → `false`. Azure's own `NetworkWatcherRG` stays, at no cost.
 
 ## MOP-AZ-BICEP — Azure with Bicep
 
-**Run for real:** no. `bicep build` passes in CI on three inventories (ADR 0093).
+**Run for real:** yes, 27 Nov 2026: deployed, redeployed with no change, load balancer, internet access and data disk proven (ADR 0099).
 
 1. Sign in as MOP-AZ-TF step 1.
 2. `az bicep build --file main.bicep` and read any warnings.
 3. Deploy at subscription scope:
    ```bash
-   az deployment sub create --location <location> --template-file main.bicep --parameters adminSshPublicKey="$(cat ~/.ssh/id_rsa.pub)" adminPassword=<from a secret store>
+   az deployment sub create --location <location> --template-file main.bicep --parameters @<parameters file>
    ```
-4. Run `az deployment sub what-if` with the same arguments again → no changes.
-5. Data disks survive their machine (`deleteOption: Detach`). Delete the resource group to remove everything, including them.
+   Keep the password in a parameters file outside the repository, readable only by you, rather than on the command line.
+4. `az deployment sub what-if` with the same arguments lists Azure's defaults as changes ([KI-086](known-issues.md#ki-086)). The real test is deploying again: the same machines (`az vm list -g <group> --query "[].vmId"`) and nothing broken.
+5. Verify as MOP-AZ-TF step 6.
+6. Data disks survive their machine (`deleteOption: Detach`). Delete the resource group to remove everything, including them: `az group delete -n <group> --yes`, then `az deployment sub delete -n <deployment>`.
 
 ## MOP-AZ-PULUMI — Azure with Pulumi
 
-**Run for real:** no. Runs against the real Pulumi libraries with mocked clouds in CI.
+**Run for real:** yes, 27 Nov 2026: 25 resources, preview afterwards unchanged, load balancer, internet access and data disk proven (ADR 0099).
 
-1. Sign in as MOP-AZ-TF step 1. Python environment and state as MOP-AWS-PULUMI steps 2 and 3.
-2. `pulumi config set adminSshPublicKey "<key>"`; `pulumi config set --secret adminPassword <password>`.
-3. `pulumi preview`, read, `pulumi up`; verify with `pulumi preview`; `pulumi destroy`.
+1. Sign in as MOP-AZ-TF steps 1 and 2, and export `ARM_SUBSCRIPTION_ID`. Python environment and state as MOP-AWS-PULUMI steps 2 and 3.
+2. `pulumi config set azure:location <location>`; `pulumi config set adminSshPublicKey "<key>"`; `pulumi config set --secret adminPassword <password>`.
+3. `pulumi preview`, read, `pulumi up`.
+4. `pulumi preview --diff` → all unchanged.
+5. Verify as MOP-AZ-TF step 6.
+6. `pulumi destroy`, `pulumi stack rm`. A stack from before ADR 0099 renames everything on update: destroy it first ([KI-085](known-issues.md#ki-085)).
 
 ---
 

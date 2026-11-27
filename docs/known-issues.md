@@ -60,6 +60,17 @@ MOP ([Deploying](deploying.md)) links here by ID.
 | [KI-074](#ki-074) | Pulumi Google: Windows silent after an early restart | Fixed |
 | [KI-075](#ki-075) | Google public load balancer: different address for HTTP and HTTPS | Fixed |
 | [KI-076](#ki-076) | Azure: private machines may have no way out | Open |
+| [KI-077](#ki-077) | Azure Free Trial: small sizes not available | Workaround |
+| [KI-078](#ki-078) | Azure Free Trial: 4 vCPUs in a region | Workaround |
+| [KI-079](#ki-079) | Azure: A1_v2 can't boot current images | Workaround |
+| [KI-080](#ki-080) | Azure: "not found" just after creating, in a reused group name | Workaround |
+| [KI-081](#ki-081) | Azure: every plan wants to turn agent updates off | Fixed |
+| [KI-082](#ki-082) | Azure: Linux machines had no identity | Fixed |
+| [KI-083](#ki-083) | Bicep: subnets refused, "Another operation ... in progress" | Fixed |
+| [KI-084](#ki-084) | Azure: computer name refused | Fixed |
+| [KI-085](#ki-085) | Pulumi Azure: name longer than maximum length 24 | Fixed |
+| [KI-086](#ki-086) | Bicep what-if lists Azure's defaults as changes | By design |
+| [KI-087](#ki-087) | Machines whose names clean up alike share one cloud name | Fixed |
 
 ---
 
@@ -310,7 +321,103 @@ MOP ([Deploying](deploying.md)) links here by ID.
 - **Workaround:** for a session, give tools the short-lived credential `gcloud` already has: `GOOGLE_OAUTH_ACCESS_TOKEN="$(gcloud auth print-access-token)" terraform plan` (or `pulumi up`). It lasts an hour and isn't saved.
 - **Status:** Workaround. Seen 27 Nov 2026.
 
+## Azure
+
+### KI-076
+**Azure: private machines may have no way out to the internet.**
+
+- **Symptom (expected):** private Azure machines can't install updates.
+- **Cause:** the Azure output has no NAT gateway, so a machine relies on Azure's default outbound access, which Microsoft is retiring for new networks.
+- **Seen so far:** not the problem. On 27 Nov 2026 machines behind the public load balancer reached the internet through its address, and the subnets still showed `defaultOutboundAccess: True`. A machine with no public load balancer in front wasn't tested.
+- **Status:** Open (ADR 0099).
+
+### KI-077
+**Azure Free Trial: small sizes not available.**
+
+- **Symptom:** `SkuNotAvailable: The requested VM size for resource 'Following SKUs have failed for Capacity Restrictions: Standard_B1ms' is currently not available in location 'eastus'.` Seen for Standard_B1ms and Standard_B1s in eastus, westus2, centralus, eastus2, westus3, southcentralus, northcentralus and canadacentral.
+- **Workaround:** on a Free Trial, use Standard_D2as_v5, which had capacity, or upgrade the subscription to pay-as-you-go (the credit stays). Check one size cheaply first: `az vm create` a single machine with no public address and delete its group.
+- **Status:** Workaround. Seen 27 Nov 2026.
+
+### KI-078
+**Azure Free Trial: 4 vCPUs in a region.**
+
+- **Symptom:** `az vm list-usage --location <region>` shows `cores` and `standardBSFamily` limited to 4, and `PublicIPAddresses` to 3.
+- **Workaround:** keep a test within 4 vCPUs (two 2-vCPU machines), or upgrade and request more.
+- **Status:** Workaround. Seen 27 Nov 2026.
+
+### KI-079
+**Azure: A1_v2 can't boot current images.**
+
+- **Symptom:** `The selected VM size 'Standard_A1_v2' cannot boot Hypervisor Generation '2'.`
+- **Cause:** A-series runs only generation-1 images; the generated output uses generation-2 images.
+- **Workaround:** don't pick A1_v2 by hand; the tool never chooses it.
+- **Status:** Workaround. Seen 27 Nov 2026.
+
+### KI-080
+**Azure: "not found" just after creating, in a reused group name.**
+
+- **Symptom:** Terraform: `Provider produced inconsistent result after apply ... root object was present, but now absent`, or `ResourceNotFound` for a network or load balancer it has just made.
+- **Cause:** the resource group was deleted moments before and created again under the same name; Azure answered from the old one for a while.
+- **Workaround:** delete the group (`az group delete -n <group> --yes`), clear the state, and use a new group name, or wait several minutes.
+- **Status:** Workaround. Seen 27 Nov 2026.
+
+### KI-081
+**Azure: every plan wants to turn agent updates off.**
+
+- **Symptom:** after a clean apply, `terraform plan` shows `vm_agent_platform_updates_enabled = true -> false` on every machine; Pulumi shows `vmAgentPlatformUpdatesEnabled: true => false`.
+- **Cause:** Azure turns the setting on itself.
+- **Fix:** the setting is ignored in Terraform and Pulumi.
+- **Status:** Fixed (ADR 0099). Proven 27 Nov 2026: plans clean afterwards.
+
+### KI-082
+**Azure: Linux machines had no identity.**
+
+- **Symptom:** `az vm show -g <group> -n <linux machine> --query identity.type` is empty, while Windows machines show `UserAssigned`.
+- **Fix:** Linux machines get their tier's identity in both Terraform layouts. It is added in place.
+- **Status:** Fixed (ADR 0099). Proven 27 Nov 2026. Bicep and Pulumi give Azure machines no identity yet.
+
+### KI-083
+**Bicep: subnets refused, "Another operation ... in progress".**
+
+- **Symptom:** `az deployment sub create` fails; the operations show each subnet with `Another operation on this or dependent resource is in progress.`
+- **Cause:** subnets were separate resources, which Azure creates at once on one network and refuses.
+- **Fix:** subnets are declared inside the network, which also stops a redeploy of the network deleting them.
+- **Status:** Fixed (ADR 0099). Proven 27 Nov 2026.
+
+### KI-084
+**Azure: computer name refused.**
+
+- **Symptom:** `Linux host name cannot exceed 64 characters in length or contain the following characters: ... _ ...` or `Windows computer name cannot be more than 15 characters long ...`.
+- **Cause:** Bicep named machines with underscores (`prod_web_01`), and no Azure output limited Windows names to 15 characters.
+- **Fix:** machines are named as in Terraform (`prod-web-01`); a Windows name over 15 characters keeps 10 and gains a 4-character hash (`prod-sql-s-5416`).
+- **Status:** Fixed (ADR 0099). Bicep proven 27 Nov 2026; the 15-character rule is tested, not yet deployed.
+
+### KI-085
+**Pulumi Azure: name longer than maximum length 24.**
+
+- **Symptom:** `could not make instance of 'azure:compute/managedDisk:ManagedDisk': name 'prod_web_02_data_1' plus 7 random chars is longer than maximum length 24`; the same for load balancer probes.
+- **Cause:** Pulumi named resources itself: label plus a random suffix.
+- **Fix:** every named Azure resource is named as in Terraform.
+- **Status:** Fixed (ADR 0099). Proven 27 Nov 2026. A stack from before the fix renames everything: destroy it and deploy again.
+
+### KI-086
+**Bicep what-if lists Azure's defaults as changes.**
+
+- **Symptom:** a second `az deployment sub what-if` shows `Modify` on the load balancer, network cards and machines, with properties such as `idleTimeoutInMinutes: 4` or `sku.tier: Regional` to "Delete".
+- **Cause:** Azure adds defaults the template doesn't state; what-if reports them.
+- **What to do:** nothing. Deploying again changed nothing on 27 Nov 2026: same machines, load balancer still serving.
+- **Status:** By design.
+
 ## Any cloud
+
+### KI-087
+**Machines whose names clean up alike share one cloud name.**
+
+- **Symptom (found in tests, not seen in a cloud):** `bicep build` fails with `BCP121: Resources: "vmDevWeb01", "vmDevWeb012" are defined with this same name`. Terraform and Pulumi would ask the cloud for two machines with one name.
+- **Cause:** `DEV_WEB_01` and `dev web 01` both clean up to `dev-web-01`.
+- **Fix:** the first keeps the name and the next gets its own (`dev-web-01-2`). Names that never clashed are unchanged.
+- **Status:** Fixed (ADR 0099).
+
 
 ### KI-050
 **Boot disk smaller than the image.**
@@ -401,10 +508,4 @@ MOP ([Deploying](deploying.md)) links here by ID.
 - **Fix:** one reserved address for every port. Existing deployments get a new public address once: update DNS.
 - **Status:** Fixed (ADR 0098). Proven 27 Nov 2026 in Terraform and Pulumi.
 
-### KI-076
-**Azure: private machines may have no way out to the internet.**
-
-- **Symptom (expected, not seen):** private Azure machines can't install updates.
-- **Cause:** the Azure output has no NAT gateway, and as far as I know Azure stopped giving new networks default outbound access in 2025. Not verified: Azure hasn't been deployed for real.
-- **Status:** Open. Check on the first Azure deployment.
 

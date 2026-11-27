@@ -11,7 +11,7 @@ locals {
 {% for c in compute %}
     "{{ c.resource_name }}" = {
       name        = "{{ c.vm_name }}"
-      slug        = "{{ vm_slug[c.vm_name] }}"
+      slug        = "{{ vm_slug[c.resource_name] }}"
       windows     = {{ "true" if c.image_key.startswith('windows') else "false" }}
       shape       = "{{ c.instance_type.split('-')[0] }}"
       ocpus       = {{ c.instance_type.split('-')[1].split('x')[0] }}

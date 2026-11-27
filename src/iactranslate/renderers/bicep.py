@@ -22,6 +22,7 @@ from __future__ import annotations
 
 from typing import Dict, List
 
+from ..generator.renderer import machine_slugs, windows_computer_name
 from ..graph import EdgeKind, InfrastructureGraph, NodeKind, build_graph
 from ..models import MigrationPlan, resource_prefix, terraform_safe_name
 from ..targets.base import Target
@@ -63,6 +64,7 @@ def _nsg_rule(rule: dict, priority: int) -> List[str]:
 
 
 def _resources_bicep(graph: InfrastructureGraph, plan: MigrationPlan, target: Target) -> str:
+    slugs = machine_slugs(plan.compute)  # each machine's own cloud name
     is_windows = {c.resource_name: c.image_key.startswith("windows") for c in plan.compute}
 
     lines: List[str] = [
@@ -79,29 +81,27 @@ def _resources_bicep(graph: InfrastructureGraph, plan: MigrationPlan, target: Ta
 
     vpc = graph.nodes_of(NodeKind.VPC)[0]
     vnet_id = _id(f"vnet-{plan.project_name}")
+    subnets = graph.nodes_of(NodeKind.SUBNET)
+    # Subnets are declared inside the network. As separate resources Azure
+    # creates them at once and refuses ("Another operation on this or dependent
+    # resource is in progress"), and redeploying the network would delete them
+    # (ADR 0099).
     lines += [
         f"resource {vnet_id} 'Microsoft.Network/virtualNetworks@2023-05-01' = {{",
         f"  name: {_str(resource_prefix(plan.project_name) + '-vnet')}",
         "  location: location",
         "  properties: {",
         f"    addressSpace: {{ addressPrefixes: [{_str(vpc.attributes['cidr'])}] }}",
-        "  }",
-        "}",
-        "",
+        "    subnets: [",
     ]
+    for s in subnets:
+        lines.append(
+            f"      {{ name: {_str(s.name)}, properties: {{ addressPrefix: {_str(s.attributes['cidr'])} }} }}"
+        )
+    lines += ["    ]", "  }", "}", ""]
 
-    subnet_id_by_node: Dict[str, str] = {}
-    for s in graph.nodes_of(NodeKind.SUBNET):
-        sid = _id(f"subnet-{s.name}")
-        subnet_id_by_node[s.id] = sid
-        lines += [
-            f"resource {sid} 'Microsoft.Network/virtualNetworks/subnets@2023-05-01' = {{",
-            f"  parent: {vnet_id}",
-            f"  name: {_str(s.name)}",
-            f"  properties: {{ addressPrefix: {_str(s.attributes['cidr'])} }}",
-            "}",
-            "",
-        ]
+    # A handle on each subnet that is used; declared at the end, once known.
+    subnet_id_by_node: Dict[str, str] = {s.id: _id(f"subnet-{s.name}") for s in subnets}
 
     sg_id_by_node: Dict[str, str] = {}
     for sg in graph.nodes_of(NodeKind.SECURITY_GROUP):
@@ -276,7 +276,8 @@ def _resources_bicep(graph: InfrastructureGraph, plan: MigrationPlan, target: Ta
         os_profile = (
             [
                 "    osProfile: {",
-                f"      computerName: {_str(c.resource_name)}",
+                # Windows allows 15 characters; longer names are shortened (ADR 0099).
+                f"      computerName: {_str(windows_computer_name(slugs[c.resource_name]))}",
                 "      adminUsername: adminUsername",
                 "      adminPassword: adminPassword",
                 "    }",
@@ -284,7 +285,7 @@ def _resources_bicep(graph: InfrastructureGraph, plan: MigrationPlan, target: Ta
             if windows
             else [
                 "    osProfile: {",
-                f"      computerName: {_str(c.resource_name)}",
+                f"      computerName: {_str(slugs[c.resource_name])}",
                 "      adminUsername: adminUsername",
                 "      linuxConfiguration: {",
                 "        disablePasswordAuthentication: true",
@@ -296,7 +297,8 @@ def _resources_bicep(graph: InfrastructureGraph, plan: MigrationPlan, target: Ta
         )
         lines += [
             f"resource {vm_id} 'Microsoft.Compute/virtualMachines@2023-09-01' = {{",
-            f"  name: {_str(c.resource_name)}",
+            # Azure refuses underscores in machine names, as Terraform's do (ADR 0099).
+            f"  name: {_str(slugs[c.resource_name])}",
             "  location: location",
             "  properties: {",
             f"    hardwareProfile: {{ vmSize: {_str(c.instance_type)} }}",
@@ -322,6 +324,17 @@ def _resources_bicep(graph: InfrastructureGraph, plan: MigrationPlan, target: Ta
             "",
         ]
 
+    body = "\n".join(lines)
+    for s in subnets:
+        sid = subnet_id_by_node[s.id]
+        if f"{sid}.id" in body:
+            lines += [
+                f"resource {sid} 'Microsoft.Network/virtualNetworks/subnets@2023-05-01' existing = {{",
+                f"  parent: {vnet_id}",
+                f"  name: {_str(s.name)}",
+                "}",
+                "",
+            ]
     return "\n".join(lines)
 
 

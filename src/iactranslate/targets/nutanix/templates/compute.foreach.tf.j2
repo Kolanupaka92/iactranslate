@@ -22,7 +22,7 @@ locals {
   vms = {
 {% for c in compute %}
     "{{ c.resource_name }}" = {
-      slug        = "{{ vm_slug[c.vm_name] }}"
+      slug        = "{{ vm_slug[c.resource_name] }}"
       description = "Migrated from {{ c.vm_name }} ({{ c.tier.value }}, {{ c.environment.value }})"
       vcpus       = {{ c.vcpu }}
       memory_mib  = {{ (c.memory_gib * 1024) | int }}

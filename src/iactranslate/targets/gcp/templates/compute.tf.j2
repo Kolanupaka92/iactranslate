@@ -9,7 +9,7 @@ resource "google_compute_instance" "{{ c.resource_name }}" {
     scopes = ["cloud-platform"]
   }
 {% endif %}
-  name         = "{{ vm_slug[c.vm_name] }}"
+  name         = "{{ vm_slug[c.resource_name] }}"
   machine_type = "{{ c.instance_type }}"
   zone         = var.zone
   # A new size or subnet is applied by stopping and starting the machine, as on
@@ -42,7 +42,7 @@ resource "google_compute_instance" "{{ c.resource_name }}" {
   labels = {
     tier        = "{{ c.tier.value }}"
     environment = "{{ c.environment.value }}"
-    source_vm   = "{{ vm_slug[c.vm_name] }}"
+    source_vm   = "{{ vm_slug[c.resource_name] }}"
   }
 
   lifecycle {

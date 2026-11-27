@@ -5,6 +5,7 @@ a mapping of {filename: content} which the packager writes to disk / zips.
 """
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 from collections import OrderedDict, defaultdict
@@ -36,6 +37,38 @@ def _rfc1035_slug(value: str) -> str:
     if not slug or not slug[0].isalpha():
         slug = f"n-{slug}" if slug else "resource"
     return slug[:60].rstrip("-")
+
+
+def machine_slugs(compute) -> Dict[str, str]:
+    """Each machine's cloud name, keyed by its resource name, never shared (ADR 0099).
+
+    A name keeps its usual slug; one that would repeat an earlier machine's
+    ("DEV_WEB_01" and "dev web 01" are both "dev-web-01") takes its own unique
+    resource name instead, so names that never clashed don't change.
+    """
+    taken: Dict[str, str] = {}
+    for c in compute:
+        slug = _rfc1035_slug(c.vm_name)
+        if slug in taken.values():
+            slug = _rfc1035_slug(c.resource_name)
+        base, n = slug, 2
+        while slug in taken.values():
+            slug, n = f"{base[:57]}-{n}", n + 1
+        taken[c.resource_name] = slug
+    return taken
+
+
+def windows_computer_name(vm_name: str) -> str:
+    """A Windows computer name Azure accepts: at most 15 characters (ADR 0099).
+
+    Longer names keep their first 10 characters and gain a short hash, so two
+    long names that start alike still differ.
+    """
+    slug = _rfc1035_slug(vm_name)
+    if len(slug) <= 15:
+        return slug
+    digest = hashlib.md5(slug.encode()).hexdigest()[:4]  # nosec B324: a name, not security
+    return f"{slug[:10].rstrip('-')}-{digest}"
 
 
 def _env(template_dir: Path) -> Environment:
@@ -328,7 +361,10 @@ def build_files(
         "has_https_listener": any(
             listener.protocol == "HTTPS" for lb in plan.network.load_balancers for listener in lb.listeners
         ),
-        "vm_slug": {c.vm_name: _rfc1035_slug(c.vm_name) for c in plan.compute},
+        "vm_slug": machine_slugs(plan.compute),
+        "win_computer_name": {
+            r: windows_computer_name(slug) for r, slug in machine_slugs(plan.compute).items()
+        },
         # Proxmox is the one target that assigns static addresses.
         "static_host_of": (
             _static_hosts(plan.compute, subnet_of) if target.name == "proxmox" else {}

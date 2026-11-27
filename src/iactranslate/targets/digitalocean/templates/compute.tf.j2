@@ -11,7 +11,7 @@
 #    disk. Extra volumes (storage.tf) are real, independently-sized disks.
 {% for c in compute %}
 resource "digitalocean_droplet" "{{ c.resource_name }}" {
-  name     = "{{ vm_slug[c.vm_name] }}"
+  name     = "{{ vm_slug[c.resource_name] }}"
   region   = var.region
   size     = "{{ c.instance_type }}"
   image    = "{{ image_refs[c.image_key].slug }}"
