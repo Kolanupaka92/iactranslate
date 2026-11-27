@@ -8,6 +8,8 @@
 | [`architecture.md`](architecture.md) | **Architecture & Design** — design principles, the canonical model, request-flow diagrams, scope, assumptions, "why not …". |
 | [`adr/`](adr/) | **Architecture Decision Records** — the *why* behind load-bearing decisions. |
 | [`deployment.md`](deployment.md) | **Deployment & Execution** — execution model, the hosted deployment and its step-by-step procedures (MOPs: deploy, roll back, rotate secrets, enable SAML, logs), and the scale-out architecture. |
+| [`deploying.md`](deploying.md) | **Deploying the generated code** — a named MOP per cloud and tool (MOP-AWS-TF, MOP-GCP-TF, …), each saying whether it has been run for real. |
+| [`known-issues.md`](known-issues.md) | **Known issues** — every error seen for real, by ID (KI-001 …): the message, the cause, the fix and its status. Search it for the error text. |
 | [`roadmap.md`](roadmap.md) | **Roadmap** — shipped vs planned. |
 
 The short entry point is the [repo README](../README.md).

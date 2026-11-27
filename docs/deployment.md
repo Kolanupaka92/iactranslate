@@ -185,6 +185,10 @@ iactranslate.com runs as three pieces, deployed separately:
 
 A deploy changes only the image, so all of the above carries over.
 
+These MOPs run the hosted service. Deploying what IaCTranslate generates to a
+customer's cloud is in [Deploying](deploying.md); errors seen are in
+[Known issues](known-issues.md).
+
 ### MOP 1 — Deploy the API
 
 1. Push to `main` and wait for CI to pass. The image exists only if every job
@@ -312,16 +316,36 @@ Restore into a **new** instance first. Restoring over the live one replaces
 everything written since the backup.
 
 1. Find the backup: `gcloud sql backups list --instance iactranslate-db`.
-2. Create an empty instance with the same PostgreSQL version, region and private
-   network, and at least the same disk size.
-3. `gcloud sql backups restore <BACKUP_ID> --backup-instance=iactranslate-db --restore-instance=<new>`.
-4. Check the data there, then either copy back what was lost, or store the new
-   connection URL as a new version of `iactranslate-database-url` (MOP 4) and
-   roll out a revision.
-5. Delete whichever instance is no longer needed, once certain.
+2. Create an empty instance with the same PostgreSQL version and region, and at
+   least the same disk size (**about 11 minutes**):
+   ```bash
+   gcloud sql instances create iactranslate-restore --database-version=POSTGRES_16 --edition=ENTERPRISE --tier=db-f1-micro --region=us-central1 --storage-size=10 --storage-type=SSD --no-backup --no-deletion-protection
+   ```
+   To serve the API from it, add `--network=default --no-assign-ip` so it is private, as the live one should be.
+3. Restore into it (**about 12 minutes**; the live instance keeps running):
+   ```bash
+   gcloud sql backups restore <BACKUP_ID> --backup-instance=iactranslate-db --restore-instance=iactranslate-restore
+   ```
+4. **Check the data.** The tables belong to `iacapp`; the `postgres` user can't
+   read them on Cloud SQL. Set a new password for `iacapp` **on the restored
+   instance only** (`gcloud sql users set-password iacapp --instance iactranslate-restore`),
+   connect with the Cloud SQL connector or Auth Proxy, and count rows in all 12
+   tables (`users`, `projects`, `organizations`, `org_members`, `org_invitations`,
+   `project_members`, `sessions`, `audit`, `jobs`, `email_verifications`,
+   `password_resets`, `oidc_logins`). The newest `created_at` should be just before
+   the backup's time. Don't read the live database's secret to do this.
+5. Then either copy back what was lost, or make the restored instance the live one:
+   set the same `iacapp` password as the live secret, or store a new connection URL
+   as a new version of `iactranslate-database-url` (MOP 4), and roll out a revision.
+6. Delete whichever instance is no longer needed, once certain (**about 2 minutes**).
+
+**Rehearsed 27 November 2026:** the 26 November backup restored into a new
+instance in 12 minutes (23 minutes including creating it). All 12 tables came back,
+74 rows, newest record from 25 November, before the backup. The live instance was
+not touched. Total time with checks about 30 minutes.
 
 Project files aren't in these backups. They're in the workspaces bucket, where
-deleted files can be recovered for 7 days. **This restore hasn't been rehearsed.**
+deleted files can be recovered for 7 days; restoring those hasn't been rehearsed.
 
 ## Reference architecture
 

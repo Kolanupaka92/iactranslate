@@ -674,6 +674,10 @@ OpenTofu, validates aws/azure/gcp output against real providers).
 
 ## 12. Troubleshooting
 
+Errors from deploying the generated code (AWS, Google, Pulumi, Bicep and the rest)
+are in [Known issues](known-issues.md), by ID and message. The table below covers the
+CLI, API and console.
+
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | **CLI**: `unknown target '…'` / `unknown source '…'` | Typo / unsupported name. | Use `aws\|azure\|gcp` and `auto\|vmware\|hyperv\|kubernetes\|generic\|cloud`. |

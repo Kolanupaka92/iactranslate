@@ -29,6 +29,8 @@ PAGES = [
     ("docs/operations-guide.md", "doc-operations-guide", "", "Operations Guide"),
     ("docs/architecture.md", "doc-architecture", "arch-", "Architecture"),
     ("docs/deployment.md", "doc-deployment", "deploy-", "Deployment"),
+    ("docs/deploying.md", "doc-deploying", "mop-", "Deploying"),
+    ("docs/known-issues.md", "doc-known-issues", "ki-", "Known issues"),
     ("docs/roadmap.md", "doc-roadmap", "roadmap-", "Roadmap"),
 ]
 ADR_INDEX = "docs/adr/README.md"
