@@ -344,8 +344,42 @@ instance in 12 minutes (23 minutes including creating it). All 12 tables came ba
 74 rows, newest record from 25 November, before the backup. The live instance was
 not touched. Total time with checks about 30 minutes.
 
-Project files aren't in these backups. They're in the workspaces bucket, where
-deleted files can be recovered for 7 days; restoring those hasn't been rehearsed.
+Project files aren't in these backups. They're in the workspaces bucket: see MOP 9.
+
+### MOP 9 — Recover a deleted project
+
+Deleting a project (or the account that owns it) removes its row from the
+database and its folder from the workspaces bucket,
+`gs://project-c736b433-1b47-40c0-a2c-iactranslate-workspaces`, mounted in the API
+at `/workspaces`. The bucket keeps deleted files for **7 days** (soft delete);
+after that they're gone. Act within the week.
+
+1. **Find the project's folder.** Restore the last backup taken *before* the
+   deletion into a new instance (MOP 8 steps 1–4), connect as `iacapp`, and read
+   the row: `SELECT id, owner, workspace FROM projects WHERE id = '<project id>';`.
+   `workspace` is `/workspaces/<folder>`, which is `gs://…-workspaces/<folder>`.
+2. **See what can be recovered:**
+   ```bash
+   gcloud storage ls --soft-deleted -r "gs://project-c736b433-1b47-40c0-a2c-iactranslate-workspaces/<folder>/**"
+   ```
+   Each line ends `#<generation>`. Empty means past 7 days, or the wrong folder.
+3. **Restore the files** (seconds; nothing else in the bucket is touched):
+   ```bash
+   gcloud storage restore "gs://project-c736b433-1b47-40c0-a2c-iactranslate-workspaces/<folder>/**"
+   ```
+   Then `gcloud storage ls -r ".../<folder>/**"` shows them live again.
+4. **Restore the row:** copy it from the restored instance into the live database
+   (and its `project_members` rows, if it was shared). The live database has no
+   public address, so this needs an in-VPC path: the Auth Proxy with
+   `--private-ip` from a machine on the `default` network, or a one-off Cloud Run
+   job. Don't restore the whole backup over the live database to get one project
+   back: that loses everything written since.
+5. Check the project opens in the console, then delete the restored instance.
+
+**Rehearsed 27 November 2026, files only:** three test files shaped like a
+project (an upload and two generated documents) were deleted and restored from the
+bucket in 4 seconds, identical byte for byte. Step 4, copying a row into the live
+database, has not been rehearsed.
 
 ## Reference architecture
 
