@@ -124,7 +124,7 @@ These apply to every MOP below.
 
 ## MOP-AWS-PULUMI — AWS with Pulumi
 
-**Run for real:** yes, 27 Nov 2026 (ADR 0096). Its routing was missing then and has been added since (ADR 0097); the fixed routing is not yet proven on AWS: after deploying, check the public load balancer answers.
+**Run for real:** yes, 27 Nov 2026 (ADR 0096), and again after its routing was added (ADR 0097): 50 resources, the public load balancer reachable from the internet, private machines out through NAT.
 
 1. Sign in as MOP-AWS-TF step 1 and use the `-terraform` profile: the Pulumi AWS provider can't read `aws login` sessions either.
 2. **Python environment:** a virtual environment with `pip` in it ([KI-030](known-issues.md#ki-030)), then `pip install -r requirements.txt`.

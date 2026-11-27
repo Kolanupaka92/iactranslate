@@ -256,7 +256,7 @@ MOP ([Deploying](deploying.md)) links here by ID.
 
 - **Symptom:** on AWS the public load balancer can't be reached and private machines can't reach the internet; on Google private machines can't.
 - **Cause:** Pulumi didn't build Terraform's route tables, NAT gateway, or Google's router and NAT.
-- **Fix:** it does now. Proven on Google 27 Nov 2026; on AWS tested against the Pulumi library only.
+- **Fix:** it does now. Proven on Google and on AWS, 27 Nov 2026: on AWS the public load balancer answered from the internet and a private machine reached the internet through NAT.
 - **Status:** Fixed (ADR 0097).
 
 ## Google Cloud

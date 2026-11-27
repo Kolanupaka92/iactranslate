@@ -51,8 +51,9 @@ disks, both load balancers) was deployed to the proof project with it.
 
 ## Consequences
 
-- The AWS Pulumi routing is tested against the real Pulumi library and not yet on
-  AWS: the sign-in had expired. Proving it means deploying and requesting the public
-  load balancer's address.
+- **The AWS Pulumi routing was then proven on AWS** the same day: 50 resources in
+  under 3 minutes, no changes on preview, the public route table to the internet
+  gateway and the private one through NAT, the public load balancer answering from
+  the internet, and a private machine with no public address reaching the internet.
 - Open: Windows on Pulumi Google (KI-074), one address per protocol on the Google
   public load balancer (KI-075).
