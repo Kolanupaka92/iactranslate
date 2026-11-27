@@ -22,6 +22,7 @@ from typing import Dict, List, Optional
 
 from ..graph import EdgeKind, InfrastructureGraph, NodeKind, build_graph
 from ..models import MigrationPlan, stack_name
+from ..targets.aws.mapping import root_device
 from ..targets.base import Target
 
 # image_key -> AWS-published SSM public parameter holding the latest AMI id.
@@ -52,6 +53,19 @@ def _cid(prefix: str, name: str) -> str:
 #: The parameter that turns on HTTPS listeners, and the condition it sets.
 CERT_PARAM = "AcmCertificateArn"
 HAS_CERT = "HasCertificate"
+
+
+#: The README note on what deleting a stack leaves behind.
+KEPT_DISKS_NOTE = (
+    "\n**Data disks outlive the stack.** They are kept when their instance ends, so "
+    "data is never lost with a server, and deleting the stack leaves them, still "
+    "billed. To remove them too, list them before deleting the stack, then delete "
+    "them after:\n\n"
+    "```bash\n"
+    "aws ec2 describe-volumes --filters Name=attachment.instance-id,Values=<instance ids> "
+    "--query 'Volumes[?Attachments[0].DeleteOnTermination==`false`].VolumeId'\n"
+    "```\n"
+)
 
 
 def instance_cids(names: List[str]) -> Dict[str, str]:
@@ -252,7 +266,7 @@ def _build_template(graph: InfrastructureGraph, plan: MigrationPlan) -> Dict[str
         # a volume made at launch is otherwise deleted when it ends (ADR 0093).
         block_devices = [
             {
-                "DeviceName": "/dev/xvda",
+                "DeviceName": root_device(inst.attributes["image_key"]),
                 "Ebs": {"VolumeSize": inst.attributes["root_volume_gib"], "VolumeType": "gp3",
                         "Encrypted": True},
             }
@@ -408,6 +422,7 @@ def _readme(plan: MigrationPlan, image_keys: List[str]) -> str:
         + "\n```\n"
         + param_note
         + https_note
+        + KEPT_DISKS_NOTE
     )
 
 

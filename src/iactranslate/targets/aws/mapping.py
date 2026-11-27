@@ -53,8 +53,13 @@ AMI_FILTERS: Dict[str, Dict[str, object]] = {
                      "name": "ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"},
     "rhel-9": {"owners": ["309956199498"], "name": "RHEL-9.*_HVM-*-x86_64-*"},
     "rhel-8": {"owners": ["309956199498"], "name": "RHEL-8.*_HVM-*-x86_64-*"},
-    "sles-15": {"owners": ["013907871322"], "name": "suse-sles-15-sp*-v*-hvm-ssd-x86_64"},
-    "centos-7": {"owners": ["125523088429"], "name": "CentOS Linux 7*x86_64*"},
+    # A service pack digit and an 8-digit date: `sp*-v*` also matched SUSE's
+    # bring-your-own-subscription container-host and ECS builds (ADR 0096).
+    "sles-15": {"owners": ["013907871322"], "name": "suse-sles-15-sp?-v????????-hvm-ssd-x86_64"},
+    # CentOS 7 is end of life and AWS hides its images, so a lookup found none
+    # and the whole plan failed. Rocky Linux is its successor (ADR 0096).
+    "rocky-9": {"owners": ["792107900819"], "name": "Rocky-9-EC2-Base-9.*x86_64"},
+    "centos-7": {"owners": ["792107900819"], "name": "Rocky-9-EC2-Base-9.*x86_64"},
 }
 
 _DEFAULT_AMI = AMI_FILTERS["amazon-linux-2"]
@@ -85,5 +90,15 @@ def image_key(os_string: Optional[str]) -> str:
     if "suse" in s or "sles" in s:
         return "sles-15"
     if "centos" in s:
-        return "centos-7"
+        return "rocky-9"  # stated as a substitution in the plan
     return "amazon-linux-2"
+
+
+def root_device(image_key: str) -> str:
+    """The device an image boots from, read from AWS's images on 2026-11-26.
+
+    A block device mapping only resizes and encrypts the boot disk under this
+    name. Under any other it adds an empty disk and leaves the image's own boot
+    disk as it was: small and unencrypted (ADR 0096).
+    """
+    return "/dev/xvda" if image_key.startswith("amazon-linux") else "/dev/sda1"

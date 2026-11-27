@@ -197,6 +197,9 @@ def _aws_main(plan: MigrationPlan, target: Target) -> str:
             lines += [
                 f"lb_{lb.resource_name} = aws.lb.LoadBalancer(",
                 f"    {_py_str(lb.resource_name)},",
+                # Named as Terraform names it: AWS allows only letters, digits and
+                # hyphens, and Pulumi's default name keeps the label's "_" (ADR 0096).
+                f"    name={_py_str(lb.resource_name.replace('_', '-'))},",
                 f'    internal={not lb.internet_facing},',
                 '    load_balancer_type="application",',
                 f"    security_groups=[sg_{lb_sg}.id],",
@@ -210,6 +213,7 @@ def _aws_main(plan: MigrationPlan, target: Target) -> str:
                 lines += [
                     f"{tg} = aws.lb.TargetGroup(",
                     f"    {_py_str(lb.resource_name + '-' + str(listener.listener_port))},",
+                    f"    name={_py_str((lb.resource_name + '-' + str(listener.listener_port)).replace('_', '-'))},",
                     f"    port={listener.target_port},",
                     f"    protocol={_py_str(listener.protocol)},",
                     "    vpc_id=vpc.id,",

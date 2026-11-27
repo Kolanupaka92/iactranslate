@@ -103,5 +103,6 @@ Format: [Michael Nygard's ADR template](https://cognitect.com/blog/2011/11/15/do
 | [0093](0093-aws-disks-suse-on-oracle-and-running-the-output.md) | AWS disks encrypted and kept in every renderer; distinct CloudFormation ids; Bicep compiles; SUSE on Oracle; CI runs Pulumi, CDK and Bicep | Accepted |
 | [0094](0094-https-only-with-a-certificate.md) | AWS HTTPS listeners only with a certificate, TLS 1.2+; README covers `aws login` with Terraform | Accepted |
 | [0095](0095-first-real-aws-deployment.md) | First real AWS deployment: only unfronted public machines get an address; on AWS, machines behind a public LB are private behind NAT | Accepted |
+| [0096](0096-cloudformation-cdk-and-pulumi-deployed.md) | CloudFormation, CDK and Pulumi deployed for real: boot disk mapped where the image boots, SUSE and CentOS images, Pulumi LB names | Accepted |
 
 See also the [Architecture & Design](../architecture.md) overview.

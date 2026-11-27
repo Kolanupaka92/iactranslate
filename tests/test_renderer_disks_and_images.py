@@ -256,3 +256,45 @@ def test_aws_puts_machines_behind_a_public_load_balancer_in_private_subnets():
     assert re.search(r"subnets = \[\s*aws_subnet\.public_0\.id,\s*aws_subnet\.public_1\.id,", lb)
     other = build_migration_plan([_vm("prod-web-01"), _vm("prod-web-02")], "x", get_target("azure"))
     assert all(s.startswith("public") for s in assign_subnets(other).values())  # other clouds unchanged
+
+
+@pytest.mark.parametrize("os,device", [("Ubuntu 22.04", "/dev/sda1"), ("Windows Server 2022", "/dev/sda1"),
+                                       ("Red Hat Enterprise Linux 9", "/dev/sda1"), ("SUSE 15", "/dev/sda1"),
+                                       ("CentOS 7", "/dev/sda1"), (None, "/dev/xvda")])
+@pytest.mark.parametrize("renderer", ["cloudformation", "cdk"])
+def test_the_boot_disk_is_mapped_where_the_image_boots(renderer, os, device):  # else it's an extra disk
+    files = _files("aws", renderer, _vm("db01", os, (60, 10)))
+    if renderer == "cloudformation":
+        t = json.loads(next(c for n, c in files.items() if n.endswith(".json")))
+        (server,) = [r for r in t["Resources"].values() if r["Type"] == "AWS::EC2::Instance"]
+        disks = server["Properties"]["BlockDeviceMappings"]
+        assert disks[0]["DeviceName"] == device and disks[0]["Ebs"]["VolumeSize"] == 60
+        assert [d["DeviceName"] for d in disks[1:]] == ["/dev/xvdf"]
+    else:
+        assert f"device_name='{device}'" in _code(files)
+
+
+def test_centos_on_aws_gets_rocky_linux_and_says_so():
+    c = build_migration_plan([_vm("c", "CentOS Linux 7 (64-bit)")], "x", get_target("aws")).compute[0]
+    assert c.image_key == "rocky-9" and "OS substituted" in c.reason
+    images = _files("aws", "terraform", _vm("c", "CentOS Linux 7 (64-bit)"))["images.tf"]
+    assert "Rocky-9-EC2-Base-9.*x86_64" in images and "CentOS Linux 7" not in images
+
+
+def test_suse_on_aws_takes_the_standard_image():
+    import fnmatch
+
+    from iactranslate.targets.aws.mapping import AMI_FILTERS
+    pattern = AMI_FILTERS["sles-15"]["name"]
+    assert fnmatch.fnmatch("suse-sles-15-sp6-v20261116-hvm-ssd-x86_64", pattern)
+    for other in ("suse-sles-15-sp7-chost-byos-v20261126-hvm-ssd-x86_64",
+                  "suse-sles-15-sp5-v20261116-ecs-hvm-ssd-x86_64"):
+        assert not fnmatch.fnmatch(other, pattern)
+
+
+def test_pulumi_aws_load_balancer_names_are_ones_aws_accepts():
+    program = _files("aws", "pulumi", _vm("prod-web-01"), _vm("prod-web-02"), _vm("prod-app-01"),
+                     _vm("prod-app-02"))["__main__.py"]
+    for kind in ("aws.lb.LoadBalancer(", "aws.lb.TargetGroup("):
+        names = re.findall(r'\n    name="([^"]+)",', "".join(b.split("\n)")[0] for b in program.split(kind)[1:]))
+        assert names and all(re.fullmatch(r"[A-Za-z0-9-]{1,32}", n) for n in names), (kind, names)

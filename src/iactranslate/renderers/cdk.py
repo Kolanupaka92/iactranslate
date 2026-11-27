@@ -25,8 +25,17 @@ from typing import Dict, List
 
 from ..graph import EdgeKind, InfrastructureGraph, NodeKind, build_graph
 from ..models import MigrationPlan, stack_name, terraform_safe_name
+from ..targets.aws.mapping import root_device
 from ..targets.base import Target
-from .cloudformation import CERT_PARAM, HAS_CERT, _ami_dynamic_ref, _ami_parameter_name, _cid, instance_cids
+from .cloudformation import (
+    CERT_PARAM,
+    HAS_CERT,
+    KEPT_DISKS_NOTE,
+    _ami_dynamic_ref,
+    _ami_parameter_name,
+    _cid,
+    instance_cids,
+)
 
 
 class RendererNotSupportedError(ValueError):
@@ -205,7 +214,7 @@ def _stack_py(graph: InfrastructureGraph, plan: MigrationPlan, target: Target) -
 
         block_devices = [
             "        ec2.CfnInstance.BlockDeviceMappingProperty(\n"
-            "            device_name='/dev/xvda',\n"
+            f"            device_name='{root_device(inst.attributes['image_key'])}',\n"
             "            ebs=ec2.CfnInstance.EbsProperty("
             f"volume_size={inst.attributes['root_volume_gib']}, volume_type='gp3', encrypted=True),\n"
             "        ),"
@@ -348,9 +357,10 @@ def _readme(plan: MigrationPlan) -> str:
         "cdk synth       # review the generated CloudFormation\n"
         "cdk deploy\n"
         "```\n\n"
-        "**Note:** this output is not synthesized locally (no `aws-cdk-lib`/`cdk` "
-        "CLI in this environment) the way the Terraform output is proven with "
-        "`tofu validate`. Run `cdk synth` before deploying to catch any issue.\n"
+        "Synthesized in CI on every change, and deployed to AWS for real on "
+        "26 November 2026 (ADR 0096). Still run `cdk synth` and read it before "
+        "deploying.\n"
+        + KEPT_DISKS_NOTE
     )
 
 
