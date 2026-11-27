@@ -49,7 +49,7 @@ MOP ([Deploying](deploying.md)) links here by ID.
 | [KI-061](#ki-061) | VMware CSV "Provisioned MB" read as no disk | Fixed |
 | [KI-070](#ki-070) | Hosted service: database connections run out | Fixed |
 | [KI-071](#ki-071) | Hosted service: Google sign-in fails in an embedded browser | Workaround |
-| [KI-072](#ki-072) | Hosted service: live database has a public address | Open |
+| [KI-072](#ki-072) | Hosted service: live database had a public address | Fixed |
 | [KI-073](#ki-073) | Restore check: `postgres` can't read the app's tables | Workaround |
 
 ---
@@ -315,12 +315,14 @@ MOP ([Deploying](deploying.md)) links here by ID.
 - **Status:** Workaround. Seen 24 Nov 2026.
 
 ### KI-072
-**The live database has a public address.**
+**The live database had a public address.**
 
 - **Symptom:** `gcloud sql instances describe iactranslate-db` shows `ipv4Enabled: true` and a PRIMARY address, though ADR 0068 says it was removed.
 - **Risk:** no networks are authorized and connections must be encrypted, so only Google's signed-in connectors can reach it. But it isn't what the record says.
-- **Fix:** `gcloud sql instances patch iactranslate-db --no-assign-ip`, after confirming nothing uses the public address.
-- **Status:** Open. Found 27 Nov 2026.
+- **Cause:** ADR 0068's last step (removing the public address) was never run. The audit log shows the private address added on 15 Sep 2026 and no change to the public one until this fix.
+- **Fix:** `gcloud sql instances patch iactranslate-db --no-assign-ip`, after confirming nothing uses it: the API has no Auth Proxy and reaches the database over Direct VPC egress. Took 76 seconds; no errors in the API or database logs; the API kept reaching the database.
+- **Check it stays fixed:** `gcloud sql instances describe iactranslate-db --format='value(settings.ipConfiguration.ipv4Enabled)'` prints `False`.
+- **Status:** Fixed 27 Nov 2026.
 
 ### KI-073
 **Checking a restored database: the `postgres` user can't read the app's tables.**

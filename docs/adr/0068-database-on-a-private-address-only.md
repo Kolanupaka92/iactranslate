@@ -44,6 +44,13 @@ still serving.
 
 ## Consequences
 
+- **Correction, 27 November 2026:** the last step, removing the public address,
+  was not run in September. The audit log shows the private address added and
+  nothing changing the public one. It was found while rehearsing a restore and
+  removed then (`gcloud sql instances patch --no-assign-ip`, 76 seconds, no errors);
+  see Known issues KI-072. Until then the instance kept a public address with no
+  authorized networks and encrypted connections only.
+
 - The instance is reachable only from inside the VPC. Administrative access
   (the account clean-up in this session used the Auth Proxy from a laptop)
   now requires an in-VPC path: a bastion or IAP-tunnelled VM, or the Auth
