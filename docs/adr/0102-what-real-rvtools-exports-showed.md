@@ -56,11 +56,12 @@ sheets. Four were wrong.
   16 TiB. On `houston`, Azure is not, for one boot disk.
 - A disk over the limit is not split. That needs the operating system's
   volume manager, so it is left to the migration team, and the plan says so.
-- **Open:** RVTools' vCPU and vMemory sheets carry CPU (`Overall`, MHz) and
-  memory (`Consumed`, `Active`) use, read when the export ran. They are not read,
-  so all four estates show 0% utilization coverage and are sized to allocation.
-  Using them would cut estimates, but they are a single moment, not a busy
-  period. A separate decision (KI-095).
+- **RVTools' usage figures are not used.** Its vCPU and vMemory sheets carry CPU
+  (`Overall`, MHz) and memory (`Consumed`, `Active`) use from the moment the
+  export ran. Decided on 28 Nov 2026 to keep sizing to allocation: one moment is
+  not a busy period, and a machine sized to it can be too small at its peak. The
+  assessment now asks for use over a busy period from monitoring instead, as
+  utilization columns in a CMDB-style export (KI-095).
 - Seen and fine: names differing only by cluster (`Test` four times) get their
   own names; new "MiB" and older column names both read; 32-bit Windows 2003 and
   2008 are flagged end-of-life.

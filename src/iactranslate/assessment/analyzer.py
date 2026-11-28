@@ -252,8 +252,9 @@ def _check_utilization_coverage(vms: List[NormalizedVM]) -> List[Finding]:
             "Without it, sizing uses allocation (over-provisioned) rather than real demand, inflating cost."
         ),
         recommendation=(
-            "Export CPU/memory utilization (e.g. RVTools vCPU/vMem %, monitoring data) "
-            "for accurate right-sizing."
+            "Add CPU and memory use over a busy period (peak or 95th percentile from "
+            "monitoring) as utilization columns in a CMDB-style export. RVTools' own usage "
+            "figures are one moment and are not used (ADR 0102)."
         ),
         affected=[],
     )]

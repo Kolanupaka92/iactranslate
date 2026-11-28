@@ -78,7 +78,7 @@ MOP ([Deploying](deploying.md)) links here by ID.
 | [KI-092](#ki-092) | RVTools: rows with no VM name disappear | Fixed |
 | [KI-093](#ki-093) | Windows Server 2008 R2 counted twice in the assessment | Fixed |
 | [KI-094](#ki-094) | Azure: os_disk disk_size_gb out of range (0 - 4095) | Fixed |
-| [KI-095](#ki-095) | RVTools: 0% utilization although the export has usage | Open |
+| [KI-095](#ki-095) | RVTools: 0% utilization although the export has usage | By design |
 
 ---
 
@@ -479,9 +479,9 @@ MOP ([Deploying](deploying.md)) links here by ID.
 **RVTools: 0% utilization although the export has usage.**
 
 - **Symptom:** "Little or no utilization data ... Only 0 of 3738 workloads (0%)", for an export whose vCPU and vMemory sheets have `Overall`, `Consumed` and `Active`.
-- **Cause:** those sheets aren't read. Their figures are from the moment the export ran, not a busy period, so using them for sizing needs a decision.
-- **What to do now:** size to allocation (the default), or add utilization from monitoring in a CMDB-style export.
-- **Status:** Open. Awaiting a decision.
+- **Cause:** those sheets aren't read, on purpose. Their figures are from the moment the export ran, not a busy period, and sizing to one moment can leave a machine too small at its peak.
+- **What to do:** machines are sized to what they were given in vCenter. To size to real use, add CPU and memory use over a busy period (peak or 95th percentile from monitoring) as utilization columns in a CMDB-style export.
+- **Status:** By design (decided 28 Nov 2026, ADR 0102).
 
 ### KI-087
 **Machines whose names clean up alike share one cloud name.**

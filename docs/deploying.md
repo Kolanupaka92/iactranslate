@@ -47,7 +47,7 @@ run for real on four real exports, 28 Nov 2026 (ADR 0102).
 5. **Translate, then `tofu validate`.** "disk too large" in the README means the
    data won't fit as is (KI-094).
 
-Utilization from the export isn't used yet (KI-095): sizing is to allocation.
+RVTools' own usage figures are not used, by design (KI-095): sizing is to allocation unless utilization over a busy period is supplied.
 
 ## Before any deployment
 
