@@ -179,6 +179,12 @@ def _cmd_translate(args: argparse.Namespace) -> int:
               + ", ".join(c.vm_name for c in undersized[:5])
               + (f" and {len(undersized) - 5} more" if len(undersized) > 5 else "")
               + ". Resolve before migrating; decisions.json has the detail.")
+    too_big = [c for c in plan.compute if c.disk_too_large]
+    if too_big:
+        print(f"WARNING:    {len(too_big)} VM(s) have a disk larger than {plan.target} accepts: "
+              + ", ".join(c.vm_name for c in too_big[:5])
+              + (f" and {len(too_big) - 5} more" if len(too_big) > 5 else "")
+              + ". Planned at the limit; the data will not fit. decisions.json has the detail.")
     if result.policy and result.policy.warnings:
         print(f"Policy:     {len(result.policy.warnings)} warning(s) (see policy-report.json)")
         for w in result.policy.warnings[:5]:

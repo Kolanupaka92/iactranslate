@@ -280,8 +280,10 @@ def recommend(
             "os": _os_affinity(name, windows_fraction),
             "unsupported": _unsupported_count(target, vms),
             "undersized": sum(1 for c in plan.compute if c.undersized),
-            # A machine can be both; it is still one machine it can't take.
-            "blocked": sum(1 for c in plan.compute if c.os_family_changed or c.undersized),
+            "disk_too_large": sum(1 for c in plan.compute if c.disk_too_large),
+            # A machine can be several; it is still one machine it can't take.
+            "blocked": sum(1 for c in plan.compute
+                           if c.os_family_changed or c.undersized or c.disk_too_large),
         }
 
     # The cost baseline every other cloud is measured against must come from a
@@ -325,6 +327,11 @@ def recommend(
                 f"system {name.upper()} publishes no image for. Its cost figure "
                 f"excludes licensing for machines it cannot host, so it is not "
                 f"comparable to the others."
+            )
+        if r["disk_too_large"]:
+            reasons.append(
+                f"NOT ELIGIBLE: {r['disk_too_large']} of {total} workloads have a disk larger "
+                f"than {name.upper()} accepts. Its cost figure prices those disks at the limit."
             )
         if undersized:
             reasons.append(

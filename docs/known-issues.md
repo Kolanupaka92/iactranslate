@@ -74,6 +74,11 @@ MOP ([Deploying](deploying.md)) links here by ID.
 | [KI-088](#ki-088) | Red Hat on Azure: load balancer marks it unhealthy | Workaround |
 | [KI-089](#ki-089) | Azure internal load balancer: a machine can't reach itself through it | By design |
 | [KI-090](#ki-090) | Cost estimate leaves out NAT | Fixed |
+| [KI-091](#ki-091) | RVTools: templates counted as machines | Fixed |
+| [KI-092](#ki-092) | RVTools: rows with no VM name disappear | Fixed |
+| [KI-093](#ki-093) | Windows Server 2008 R2 counted twice in the assessment | Fixed |
+| [KI-094](#ki-094) | Azure: os_disk disk_size_gb out of range (0 - 4095) | Fixed |
+| [KI-095](#ki-095) | RVTools: 0% utilization although the export has usage | Open |
 
 ---
 
@@ -437,6 +442,46 @@ MOP ([Deploying](deploying.md)) links here by ID.
 - **Status:** By design.
 
 ## Any cloud
+
+### KI-091
+**RVTools: templates counted as machines.**
+
+- **Symptom:** the assessment counts more workloads than the estate runs, and many are powered off. A real export had 388 templates in 1,329 rows.
+- **Cause:** the `Template` and `SRM Placeholder` columns of `vInfo` weren't read, so each template and each SRM placeholder was sized, priced and generated as a server.
+- **Fix:** both are left out, and the assessment names them ("Left out of the estate: 388 templates").
+- **Status:** Fixed (ADR 0102). Seen 28 Nov 2026.
+
+### KI-092
+**RVTools: rows with no VM name disappear.**
+
+- **Symptom:** the assessment counts fewer workloads than `vInfo` has rows, with no message.
+- **Cause:** a row with an empty `VM` cell was skipped without a word.
+- **Fix:** it is still left out, and the assessment names it by its VM UUID ("Left out of the estate: 2 VMs with no name"). Name the VM in vCenter and export again if it is needed.
+- **Status:** Fixed (ADR 0102). Seen 28 Nov 2026.
+
+### KI-093
+**Windows Server 2008 R2 counted twice in the assessment.**
+
+- **Symptom:** "End-of-life OS: Windows Server 2008/R2 [20 affected]" and "Windows Server 2008 R2 [4 affected]" for 16 Windows 2008 and 4 Windows 2008 R2 machines.
+- **Cause:** every label that matched counted the machine.
+- **Fix:** each machine gets the most specific label it matches. The labels are now "Windows Server 2008" and "Windows Server 2008 R2".
+- **Status:** Fixed (ADR 0102).
+
+### KI-094
+**Azure: os_disk disk_size_gb out of range (0 - 4095).**
+
+- **Symptom:** `tofu validate` fails with `Error: expected os_disk.0.disk_size_gb to be in the range (0 - 4095), got 5120`. On AWS a disk over 16 TiB passes `validate` and fails when applied.
+- **Cause:** disks were generated at their source size, whatever the cloud's limit.
+- **Fix:** a disk over the cloud's limit (AWS 16 TiB; Azure 4,095 GiB boot, 32 TiB data; Google 64 TiB; Oracle 32 TiB) is planned at the limit and the machine is flagged "disk too large" everywhere, and that cloud is not eligible. Split the disk, or move the data, before migrating.
+- **Status:** Fixed (ADR 0102). Seen 28 Nov 2026.
+
+### KI-095
+**RVTools: 0% utilization although the export has usage.**
+
+- **Symptom:** "Little or no utilization data ... Only 0 of 3738 workloads (0%)", for an export whose vCPU and vMemory sheets have `Overall`, `Consumed` and `Active`.
+- **Cause:** those sheets aren't read. Their figures are from the moment the export ran, not a busy period, so using them for sizing needs a decision.
+- **What to do now:** size to allocation (the default), or add utilization from monitoring in a CMDB-style export.
+- **Status:** Open. Awaiting a decision.
 
 ### KI-087
 **Machines whose names clean up alike share one cloud name.**

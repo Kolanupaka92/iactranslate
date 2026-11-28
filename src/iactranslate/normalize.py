@@ -232,10 +232,30 @@ def _disambiguate(vms: List[NormalizedVM]) -> List[NormalizedVM]:
     return out
 
 
-def normalize(records: List[Dict[str, object]]) -> List[NormalizedVM]:
+class Inventory(list):
+    """The normalized machines, plus the rows that were left out and why.
+
+    It is a list, so every caller that only wants the machines is unchanged.
+    `excluded` maps a reason ("template", "SRM placeholder", "no name") to the
+    names (or UUIDs) left out, so the assessment can say what it did not count
+    instead of dropping rows silently.
+    """
+
+    def __init__(self, vms=(), excluded: Optional[Dict[str, List[str]]] = None):
+        super().__init__(vms)
+        self.excluded: Dict[str, List[str]] = excluded or {}
+
+
+def normalize(records: List[Dict[str, object]]) -> Inventory:
     seen: Dict[str, NormalizedVM] = {}
+    excluded: Dict[str, List[str]] = {}
     for rec in records:
         name = _safe_str(rec.get("name"))
+        reason = rec.get("exclude")
+        if reason:
+            label = name or _safe_str(rec.get("uuid")) or "(unnamed)"
+            excluded.setdefault(str(reason), []).append(label)
+            continue
         if not name:
             continue
 
@@ -265,4 +285,4 @@ def normalize(records: List[Dict[str, object]]) -> List[NormalizedVM]:
         if existing is None or vm.total_disk_gib > existing.total_disk_gib:
             seen[key] = vm
 
-    return _disambiguate(list(seen.values()))
+    return Inventory(_disambiguate(list(seen.values())), excluded)

@@ -8,7 +8,7 @@ network — so a client can audit each conclusion.
 from __future__ import annotations
 
 import re
-from typing import Callable, List, Tuple
+from typing import Callable, Dict, List, Tuple
 
 from ..display import plural
 from ..models import NormalizedVM
@@ -33,8 +33,8 @@ _CATEGORY_PENALTY_CAP = 30.0
 # End-of-life / legacy OS signatures (substring, case-insensitive) -> label.
 _LEGACY_OS: List[Tuple[str, str]] = [
     ("windows server 2003", "Windows Server 2003"),
-    ("windows server 2008", "Windows Server 2008/R2"),
     ("2008 r2", "Windows Server 2008 R2"),
+    ("windows server 2008", "Windows Server 2008"),
     ("windows server 2012", "Windows Server 2012/R2"),
     ("windows 7", "Windows 7"),
     ("centos", "CentOS (EOL)"),
@@ -112,9 +112,17 @@ def _check_missing_os(vms: List[NormalizedVM]) -> List[Finding]:
 
 
 def _check_legacy_os(vms: List[NormalizedVM]) -> List[Finding]:
+    # Each machine gets the first label it matches, so one running
+    # "Windows Server 2008 R2" is not also counted under "Windows Server 2008".
+    by_label: Dict[str, List[str]] = {}
+    for v in vms:
+        os_name = _os_or_blank(v)
+        label = next((lbl for match, lbl in _LEGACY_OS if match in os_name), None)
+        if label:
+            by_label.setdefault(label, []).append(v.vm_name)
     findings: List[Finding] = []
-    for label_match, label in _LEGACY_OS:
-        hit = [v.vm_name for v in vms if label_match in _os_or_blank(v)]
+    for label in dict.fromkeys(lbl for _, lbl in _LEGACY_OS):
+        hit = by_label.get(label)
         if hit:
             findings.append(Finding(
                 id=f"legacy-os-{re.sub(r'[^a-z0-9]+', '-', label.lower()).strip('-')}",
@@ -122,7 +130,8 @@ def _check_legacy_os(vms: List[NormalizedVM]) -> List[Finding]:
                 severity=Severity.HIGH,
                 title=f"End-of-life OS: {label}",
                 detail=(
-                    f"{plural(len(hit), 'workload')} run {label}, which is past or near end of support. "
+                    f"{plural(len(hit), 'workload')} {'runs' if len(hit) == 1 else 'run'} {label}, "
+                "which is past or near end of support. "
                     "No security patches; some clouds restrict or surcharge these images."
                 ),
                 recommendation="Plan an in-place or post-migration OS upgrade; check extended-support options.",
@@ -287,6 +296,45 @@ _CHECKS: List[Callable[[List[NormalizedVM]], List[Finding]]] = [
 _SEVERITY_ORDER = [Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM, Severity.LOW, Severity.INFO]
 
 
+_EXCLUDED_WHY = {
+    "template": "templates are images to clone from, not running machines",
+    "SRM placeholder": "SRM placeholders stand in for VMs protected at another site",
+    "no name": "rows with no VM name cannot be told apart or named in the cloud",
+}
+
+
+_EXCLUDED_NOUN = {
+    "template": ("template",),
+    "SRM placeholder": ("SRM placeholder",),
+    "no name": ("VM with no name", "VMs with no name"),
+}
+
+
+def _check_excluded(excluded: Dict[str, List[str]]) -> List[Finding]:
+    """Rows the parser left out, so the totals say what they do not include."""
+    findings: List[Finding] = []
+    for reason, names in sorted(excluded.items()):
+        if not names:
+            continue
+        findings.append(Finding(
+            id=f"excluded-{re.sub(r'[^a-z0-9]+', '-', reason.lower()).strip('-')}",
+            category="data-quality",
+            severity=Severity.MEDIUM if reason == "no name" else Severity.LOW,
+            title=f"Left out of the estate: {plural(len(names), *_EXCLUDED_NOUN.get(reason, (reason,)))}",
+            detail=(
+                f"{plural(len(names), 'row')} in the export {'is' if len(names) == 1 else 'are'} "
+                f"not counted, sized or generated: {_EXCLUDED_WHY.get(reason, reason)}."
+            ),
+            recommendation=(
+                "Give these VMs names in vCenter and export again if they are needed."
+                if reason == "no name" else
+                "Nothing to do unless one of these is really a machine to migrate."
+            ),
+            affected=names,
+        ))
+    return findings
+
+
 def _readiness(findings: List[Finding]) -> ReadinessScore:
     """Score 100 minus severity-weighted penalties, capped per category."""
     per_category: dict[str, float] = {}
@@ -315,6 +363,7 @@ def assess(
     findings: List[Finding] = []
     for check in _CHECKS:
         findings.extend(check(vms))
+    findings.extend(_check_excluded(getattr(vms, "excluded", {})))
     # Stable, severity-first ordering for reproducible output.
     findings.sort(key=lambda f: (_SEVERITY_ORDER.index(f.severity), f.id))
 

@@ -48,6 +48,14 @@ def migration_summary(plan: MigrationPlan, vms: Optional[List[NormalizedVM]] = N
             + ", ".join(f"`{c.vm_name}`" for c in undersized)
             + ". Resolve before migrating; see \"Why these instances\"."
         )
+    too_big = [c for c in plan.compute if c.disk_too_large]
+    if too_big:
+        lines.append(
+            f"- **Disk too large:** {plural(len(too_big), 'workload')} with a disk larger than "
+            f"{plan.target} accepts: "
+            + ", ".join(f"`{c.vm_name}`" for c in too_big)
+            + ". Planned at the limit; split or move the data before migrating."
+        )
     if right_sized:
         lines.append(
             f"- **Right-sized from utilization:** {len(right_sized)} of {plan.vm_count} "

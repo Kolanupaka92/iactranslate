@@ -95,6 +95,11 @@ def _sizing_factor(c: ComputePlan) -> FactorScore:
             factor="sizing", score=0.0,
             basis="Does not fit: the target's catalog has no size large enough.",
         )
+    if c.disk_too_large:
+        return FactorScore(
+            factor="sizing", score=0.0,
+            basis="Does not fit: a disk is larger than the target accepts.",
+        )
     if c.right_sized:
         return FactorScore(
             factor="sizing", score=0.9,

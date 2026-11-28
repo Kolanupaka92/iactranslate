@@ -201,6 +201,9 @@ class ComputePlan(BaseModel):
     # True when no size in the target's catalog holds the workload's demand, so
     # `instance_type` is the closest and too small (ADR 0086).
     undersized: bool = False
+    # True when a source disk is larger than the target accepts, so it was
+    # planned at the target's limit and the data will not fit (ADR 0102).
+    disk_too_large: bool = False
     # Brownfield: the running server this plan adopts instead of creating one. Set
     # only when the target can adopt it (ADR 0091).
     external_id: Optional[str] = None

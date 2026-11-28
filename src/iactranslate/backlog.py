@@ -127,6 +127,10 @@ def build_backlog(
                 description.append(
                     f"Warning: {c.instance_type} is too small for this workload, and {plan.target} has no "
                     "size in the catalog that fits. Resolve this before migrating.")
+            if c.disk_too_large:
+                description.append(
+                    f"Warning: a disk is larger than {plan.target} accepts and was planned at the "
+                    "limit. Split or move the data before migrating.")
             if w.validation_checks:
                 description.append("Acceptance criteria: " + "; ".join(w.validation_checks))
             items.append(BacklogItem(

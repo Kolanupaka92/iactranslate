@@ -29,6 +29,26 @@ in [Known issues](known-issues.md) by the error text.
 | [MOP-PVE-TF](#mop-pve-tf--proxmox-ve-with-terraform) | Proxmox VE | Terraform / OpenTofu | No |
 | [MOP-K8S](#mop-k8s--kubernetes-with-kubevirt) | Kubernetes (KubeVirt) | kubectl | No |
 
+Before any of them, the inventory itself: [MOP-RVTOOLS](#mop-rvtools--check-an-rvtools-export-before-using-it),
+run for real on four real exports, 28 Nov 2026 (ADR 0102).
+
+## MOP-RVTOOLS — check an RVTools export before using it
+
+1. **Export everything:** RVTools *Export all to xlsx*. `vInfo` is required;
+   `vDisk` gives each disk (otherwise `Provisioned MiB` is one disk).
+2. **Assess first:** `iactranslate assess export.xlsx`. Check the workload count
+   against vCenter. "Left out of the estate" names templates, SRM placeholders and
+   VMs with no name, none of which is counted (KI-091, KI-092).
+3. **Check the totals against the sheets:** vCPU against the sum of `CPUs`,
+   storage against the sum of `vDisk` `Capacity MiB` / 1024.
+4. **Decide on what is flagged before translating:** powered-off machines,
+   end-of-life systems, and in `recommend`, any cloud marked NOT ELIGIBLE (a disk
+   too large, a machine too large, or no image).
+5. **Translate, then `tofu validate`.** "disk too large" in the README means the
+   data won't fit as is (KI-094).
+
+Utilization from the export isn't used yet (KI-095): sizing is to allocation.
+
 ## Before any deployment
 
 These apply to every MOP below.

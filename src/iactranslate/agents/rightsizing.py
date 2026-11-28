@@ -142,6 +142,47 @@ def _os_family(text: str) -> str:
     return "windows" if "windows" in text.lower() else "linux"
 
 
+# Largest disk each cloud accepts, in GiB: (boot disk, data disk). From each
+# provider's documented limits (ADR 0102). None: no limit this tool plans
+# against (on-premises targets size to their own storage).
+_MAX_DISK_GIB: Dict[str, Tuple[Optional[int], Optional[int]]] = {
+    "aws": (16384, 16384),     # EBS gp3: 16 TiB
+    "azure": (4095, 32767),    # managed OS disk 4 TiB; data disk 32 TiB
+    "gcp": (65536, 65536),     # Persistent Disk: 64 TiB
+    "oci": (32768, 32768),     # boot and block volumes: 32 TiB
+    "digitalocean": (None, 16384),  # volumes: 16 TiB; the boot disk comes with the size
+}
+
+
+def _cap_disks(target_name: str, root_gib: int, extra_gib: List[int]) -> Tuple[int, List[int], Optional[str]]:
+    """Disks no larger than the cloud accepts, and what to say if one was cut.
+
+    A disk over the limit used to be generated as is, which Azure refuses at
+    `validate` (`disk_size_gb to be in the range (0 - 4095), got 5120`) and AWS
+    only when applying. It is planned at the limit instead, so the project still
+    validates, and the machine is flagged: its data does not fit.
+    """
+    max_boot, max_data = _MAX_DISK_GIB.get(target_name, (None, None))
+    notes: List[str] = []
+    if max_boot and root_gib > max_boot:
+        notes.append(f"boot disk {root_gib:,} GiB (largest {max_boot:,})")
+        root_gib = max_boot
+    if max_data:
+        over = [d for d in extra_gib if d > max_data]
+        if over:
+            notes.append(
+                f"{len(over)} data disk{'s' if len(over) > 1 else ''} of "
+                + ", ".join(f"{d:,}" for d in over) + f" GiB (largest {max_data:,})"
+            )
+            extra_gib = [min(d, max_data) for d in extra_gib]
+    if not notes:
+        return root_gib, extra_gib, None
+    return root_gib, extra_gib, (
+        f"Too large for {target_name}: " + "; ".join(notes) + ". Planned at the limit, so the "
+        "data will not fit: split the disk across several, or move the data, before migrating."
+    )
+
+
 def _root_and_extra(vm: NormalizedVM, image_min_gib: int) -> Tuple[int, List[int], Optional[str]]:
     """(boot disk, data disks, what to say if the boot disk isn't the source's)."""
     disks = [int(math.ceil(d)) for d in vm.disks_gib if d > 0]
@@ -209,6 +250,12 @@ def build_compute_plans(
             root_gib, disk_note = max(8, source_disks[0]), None
         if disk_note:
             reason += f" {disk_note}"
+        disk_too_large = False
+        if not external_id:
+            root_gib, extra_gib, cap_note = _cap_disks(target.name, root_gib, extra_gib)
+            if cap_note:
+                disk_too_large = True
+                reason += f" {cap_note}"
         if adopt_note:
             reason += f" {adopt_note}"
         if external_id:
@@ -231,6 +278,7 @@ def build_compute_plans(
                 source_os=vm.os,
                 os_family_changed=family_changed,
                 undersized=undersized,
+                disk_too_large=disk_too_large,
                 instance_type=instance_type,
                 image_key=image_key,
                 vcpu=spec.vcpu if spec else vm.cpu,

@@ -109,5 +109,6 @@ Format: [Michael Nygard's ADR template](https://cognitect.com/blog/2011/11/15/do
 | [0099](0099-first-real-azure-deployment.md) | First real Azure deployment: Terraform, Bicep and Pulumi proven on a Free Trial; six fixes | Accepted |
 | [0100](0100-azure-nat-identities-and-small-sizes.md) | Azure: NAT gateway for private machines, identities in Bicep and Pulumi, 1-vCPU sizes; internal load balancer and Red Hat proven | Accepted |
 | [0101](0101-nat-in-the-cost-estimate.md) | The cost estimate prices NAT on AWS, Azure and Google; Oracle named as not priced | Accepted |
+| [0102](0102-what-real-rvtools-exports-showed.md) | Four real RVTools exports: templates and placeholders left out, one end-of-life label per machine, disk limits per cloud | Accepted |
 
 See also the [Architecture & Design](../architecture.md) overview.

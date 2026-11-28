@@ -86,19 +86,28 @@ def list_renderers() -> List[str]:
 
 
 def undersized_warning(plan: MigrationPlan) -> str:
-    """Markdown naming the workloads no size in the catalog can hold, or ""."""
+    """Markdown naming the workloads that will not fit on the target, or ""."""
     small = [c for c in plan.compute if c.undersized]
-    if not small:
-        return ""
-    rows = "\n".join(
-        f"> - `{c.vm_name}`: {c.instance_type} ({c.vcpu} vCPU / {c.memory_gib:g} GiB) is too small"
-        for c in small
-    )
-    return (
-        f"> **Do not apply as is: {plural(len(small), 'workload')} will not fit.** "
-        f"No {plan.target} size in the catalog is large enough, so the closest was used. "
-        f"`decisions.json` says what each one needs.\n>\n{rows}\n"
-    )
+    big = [c for c in plan.compute if c.disk_too_large]
+    out = ""
+    if small:
+        rows = "\n".join(
+            f"> - `{c.vm_name}`: {c.instance_type} ({c.vcpu} vCPU / {c.memory_gib:g} GiB) is too small"
+            for c in small
+        )
+        out += (
+            f"> **Do not apply as is: {plural(len(small), 'workload')} will not fit.** "
+            f"No {plan.target} size in the catalog is large enough, so the closest was used. "
+            f"`decisions.json` says what each one needs.\n>\n{rows}\n"
+        )
+    if big:
+        rows = "\n".join(f"> - `{c.vm_name}`" for c in big)
+        out += ("\n" if out else "") + (
+            f"> **Do not apply as is: {plural(len(big), 'workload')} with a disk larger than "
+            f"{plan.target} accepts.** Each was planned at the limit, so the data will not fit. "
+            f"`decisions.json` names the disks.\n>\n{rows}\n"
+        )
+    return out
 
 
 def render(

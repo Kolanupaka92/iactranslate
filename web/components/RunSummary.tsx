@@ -95,6 +95,20 @@ export default function RunSummary({ result }: { result: RunResult }) {
         </p>
       ) : null}
 
+      {result.disk_too_large_count ? (
+        <p
+          role="alert"
+          className="rounded-lg border border-red-600/30 bg-red-600/10 px-3 py-2 text-sm text-red-800 dark:text-red-300"
+        >
+          <strong>
+            {result.disk_too_large_count} workload{result.disk_too_large_count === 1 ? " has" : "s have"} a
+            disk larger than this target accepts.
+          </strong>{" "}
+          Each was planned at the limit, so the data won&apos;t fit. Split or move it before applying.
+          Affected rows are marked below.
+        </p>
+      ) : null}
+
       {result.right_sized_count ? (
         <p className="rounded-lg border border-emerald-600/30 bg-emerald-600/10 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-400">
           Right-sized {result.right_sized_count} of {result.vm_count} workloads to observed
@@ -150,6 +164,11 @@ export default function RunSummary({ result }: { result: RunResult }) {
                   {i.undersized ? (
                     <span className="ml-2 font-sans font-medium text-red-800 dark:text-red-300">
                       too small
+                    </span>
+                  ) : null}
+                  {i.disk_too_large ? (
+                    <span className="ml-2 font-sans font-medium text-red-800 dark:text-red-300">
+                      disk too large
                     </span>
                   ) : null}
                 </td>

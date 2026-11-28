@@ -56,6 +56,8 @@ export interface InstanceRow {
   tier: string;
   /** No size in the target's catalog holds it; `instance_type` is too small. */
   undersized?: boolean;
+  /** A disk is larger than the target accepts; it was planned at the limit. */
+  disk_too_large?: boolean;
 }
 
 export interface ConfidenceSummary {
@@ -75,6 +77,7 @@ export interface RunResult {
   pricing_source?: "static" | "live";
   right_sized_count?: number;
   undersized_count?: number;
+  disk_too_large_count?: number;
   /** Workloads whose size rests on measured utilization rather than on what
    *  was allocated. The estate-level honesty signal: when this is low, any
    *  saving shown is unproven, and the UI says so. */

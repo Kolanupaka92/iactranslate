@@ -130,6 +130,10 @@ def _network_by_vm(sheets: Dict[str, pd.DataFrame]) -> Dict[str, Dict[str, objec
     return out
 
 
+def _is_true(value: object) -> bool:
+    return value is True or str(value).strip().lower() in {"true", "yes", "1"}
+
+
 def parse(path: str) -> List[RawVM]:
     sheets = _read_sheets(path)
     vinfo = sheets.get("vinfo")
@@ -152,6 +156,8 @@ def parse(path: str) -> List[RawVM]:
     dc_col = find_column(vinfo, ["Datacenter", "Data Center"])
     provisioned_col = find_column(vinfo, ["Provisioned MiB", "Provisioned MB", "Provisioned"])
     uuid_col = find_column(vinfo, _UUID_COLUMNS)
+    template_col = find_column(vinfo, ["Template"])
+    placeholder_col = find_column(vinfo, ["SRM Placeholder"])
 
     disks = _disks_by_vm(sheets)
     networks = _network_by_vm(sheets)
@@ -159,13 +165,25 @@ def parse(path: str) -> List[RawVM]:
     records: List[RawVM] = []
     for _, row in vinfo.iterrows():
         name = cell(row, name_col)
-        if name is None:
-            continue
-        key = str(name).strip()
-        if not key:
-            continue
+        key = str(name).strip() if name is not None else ""
         raw_uuid = cell(row, uuid_col)
         uuid = str(raw_uuid).strip() if raw_uuid is not None and str(raw_uuid).strip() else None
+        if not key:
+            # A row with no VM name is still a machine vCenter reported. It
+            # used to vanish without a word; normalize() now counts it.
+            if uuid or cell(row, cpu_col) is not None:
+                records.append({"name": None, "uuid": uuid, "exclude": "no name"})
+            continue
+        # A template is a disk image to clone from and an SRM placeholder is
+        # the recovery site's stand-in for a VM protected elsewhere; neither
+        # is a machine to run. One real export had 388 templates in 1,329
+        # rows, each sized, costed and generated as a server.
+        if _is_true(cell(row, template_col)):
+            records.append({"name": key, "uuid": uuid, "exclude": "template"})
+            continue
+        if _is_true(cell(row, placeholder_col)):
+            records.append({"name": key, "uuid": uuid, "exclude": "SRM placeholder"})
+            continue
 
         rec: RawVM = {
             "name": key,
