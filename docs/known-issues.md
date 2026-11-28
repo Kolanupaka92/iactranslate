@@ -73,7 +73,7 @@ MOP ([Deploying](deploying.md)) links here by ID.
 | [KI-087](#ki-087) | Machines whose names clean up alike share one cloud name | Fixed |
 | [KI-088](#ki-088) | Red Hat on Azure: load balancer marks it unhealthy | Workaround |
 | [KI-089](#ki-089) | Azure internal load balancer: a machine can't reach itself through it | By design |
-| [KI-090](#ki-090) | Cost estimate leaves out NAT | Open |
+| [KI-090](#ki-090) | Cost estimate leaves out NAT | Fixed |
 
 ---
 
@@ -424,8 +424,9 @@ MOP ([Deploying](deploying.md)) links here by ID.
 **Cost estimate leaves out NAT.**
 
 - **Symptom:** the estimate has no NAT line, though the output creates a NAT gateway for private machines.
-- **Cause:** NAT isn't priced for any cloud. On Azure it is about $36 a month (gateway and address); on AWS a NAT gateway is about $33 a month plus data.
-- **Status:** Open (ADR 0100).
+- **Cause:** NAT wasn't priced for any cloud. On AWS and Azure it is $36.50 a month (gateway and address), on Google $1.02 a month per machine using it plus $3.65 for its address, plus data processed on all three.
+- **Fix:** the estimate has a NAT line on AWS, Azure and Google. Oracle's NAT is named as not priced, and NAT data processing is named among what the estimate leaves out.
+- **Status:** Fixed (ADR 0101).
 
 ### KI-086
 **Bicep what-if lists Azure's defaults as changes.**

@@ -116,8 +116,8 @@ in CI on `main`.
   winning a Windows-heavy estate on cost precisely because it skips Windows
   licensing for machines it cannot host
   (see [ADR 0038](adr/0038-a-cloud-that-cannot-run-the-estate-is-not-a-candidate.md))
-- ✅ **The whole bill, not just the instances** — storage, Windows licensing and
-  load balancers are priced alongside compute, which was 73% of a realistic AWS
+- ✅ **The whole bill, not just the instances** — storage, Windows licensing,
+  NAT (ADR 0101) and load balancers are priced alongside compute, which was 73% of a realistic AWS
   estate's cost. Every surface (report, README, `main.tf`, CLI, API, budget
   policy) quotes the same total, and the estimate names what it excludes
   (see [ADR 0039](adr/0039-cost-the-whole-bill-not-just-the-instances.md))

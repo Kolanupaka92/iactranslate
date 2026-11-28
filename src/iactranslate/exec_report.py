@@ -193,6 +193,7 @@ def build_executive_report(
          f"{plural(costs.windows_workloads, 'Windows workload')}, license-included"),
         ("Load balancers", costs.load_balancers,
          plural(costs.load_balancer_count, "load balancer")),
+        ("NAT", costs.nat, f"internet access for {plural(costs.nat_machines, 'private machine')}"),
     ]
     breakdown_rows = "\n".join(
         f'<tr><td>{_esc(label)}</td><td class="num">{_money(value)}</td>'

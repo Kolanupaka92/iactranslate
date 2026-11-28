@@ -163,6 +163,7 @@ def _cmd_translate(args: argparse.Namespace) -> int:
               + (f" + storage ${costs.storage:,.2f}" if costs.storage else "")
               + (f" + Windows ${costs.windows_licensing:,.2f}" if costs.windows_licensing else "")
               + (f" + LB ${costs.load_balancers:,.2f}" if costs.load_balancers else "")
+              + (f" + NAT ${costs.nat:,.2f}" if costs.nat else "")
               + ")")
     if args.provider:
         engine = "Claude (Anthropic)" if plan.provider_used == "anthropic" else "rule engine (deterministic)"

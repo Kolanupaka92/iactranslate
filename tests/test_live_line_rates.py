@@ -189,7 +189,7 @@ def test_live_rates_replace_the_catalog_and_say_so(realistic_vms, monkeypatch):
     assert "live rates for storage, Windows licensing, load balancers" in costs.pricing_basis
     assert "no committed-use discount" in costs.pricing_basis
     assert costs.total == round(costs.compute + costs.storage
-                                + costs.windows_licensing + costs.load_balancers, 2)
+                                + costs.windows_licensing + costs.load_balancers + costs.nat, 2)
 
 
 def test_a_missing_live_rate_falls_back_for_that_line_only(realistic_vms, monkeypatch):

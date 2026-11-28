@@ -38,7 +38,7 @@ def test_total_exceeds_compute_because_a_real_bill_has_more_lines(realistic_vms)
 def test_every_line_is_accounted_for(realistic_vms):
     plan = _plan(realistic_vms, "aws")
     costs = estimate_costs(plan)
-    parts = costs.compute + costs.storage + costs.windows_licensing + costs.load_balancers
+    parts = costs.compute + costs.storage + costs.windows_licensing + costs.load_balancers + costs.nat
     assert costs.total == pytest.approx(parts, abs=0.05)
 
 
@@ -83,7 +83,7 @@ def test_no_committed_use_discount_is_assumed(realistic_vms):
 
 def test_the_estimate_states_its_own_boundaries(realistic_vms):
     costs = estimate_costs(_plan(realistic_vms, "aws"))
-    assert costs.excludes == EXCLUSIONS
+    assert [x for x in costs.excludes if not x.startswith("NAT")] == EXCLUSIONS
     assert any("egress" in x.lower() for x in costs.excludes)
     assert any("backup" in x.lower() for x in costs.excludes)
 

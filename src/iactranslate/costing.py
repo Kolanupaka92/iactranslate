@@ -11,6 +11,8 @@ third, because three things the plan already knows about are never priced:
     vCPU-hour on top of the Linux rate — on an estate that is a third Windows,
     thousands of dollars a month.
   * **Load balancers.** The plan *generates* them, then omits their cost.
+  * **NAT.** Private machines reach the internet through a NAT gateway the
+    plan also generates, at about $36.50 a month on AWS and Azure (ADR 0101).
 
 Understating is the dangerous direction. A high estimate loses an argument; a
 low one gets budgeted against and then overruns, and the consultant who
@@ -36,6 +38,7 @@ from typing import Dict, List, Tuple
 from pydantic import BaseModel, Field
 
 from . import pricing
+from .graph import public_instances
 from .models import MigrationPlan
 from .targets import get_target
 from .targets.base import CAP_PRICED
@@ -86,6 +89,41 @@ _LOAD_BALANCER_USD_PER_MONTH = {
     "oci": 18.25,
     "digitalocean": 12.00,
 }
+
+# NAT, USD per hour, read from each cloud's own price list on 27 Nov 2026
+# (ADR 0101). Always these catalog rates, live pricing or not.
+#   aws    NAT gateway $0.045/h (VPC pricing page, US East) + its Elastic IP,
+#          an in-use public IPv4 address, $0.005/h
+#   azure  NAT Gateway "Standard Gateway" $0.045/h (Azure Retail Prices API)
+#          + its Standard static public IP $0.005/h
+#   gcp    Cloud NAT $0.0014 per machine-hour for the machines using it,
+#          capped at $0.044/h from 32 machines, + one NAT address $0.005/h
+#   oci    not priced: Oracle publishes no NAT gateway rate we could read
+#   digitalocean  no NAT gateway is generated (ADR 0023)
+# Data processed through the gateway ($0.045/GB on all three) is traffic, so
+# it sits with the exclusions below.
+_NAT_GATEWAY_USD_PER_HOUR = {"aws": 0.045, "azure": 0.045}
+_NAT_ADDRESS_USD_PER_HOUR = 0.005
+_NO_NAT_GATEWAY = {"digitalocean"}  # its network has no managed NAT
+_GCP_NAT_PER_MACHINE_HOUR, _GCP_NAT_CAP_PER_HOUR, _GCP_NAT_CAP_MACHINES = 0.0014, 0.044, 32
+_NAT_UNPRICED = "NAT gateway — Oracle publishes no rate this estimate could use"
+_NAT_DATA = "NAT data processing — $0.045 per GB on AWS, Azure and Google Cloud"
+
+
+def _nat_monthly(plan: MigrationPlan, cloud: str) -> Tuple[float, int]:
+    """(monthly NAT cost, machines going out through it). Zero when no NAT."""
+    if not plan.network.nat_gateway or cloud in _NO_NAT_GATEWAY:
+        return 0.0, 0
+    users = len(plan.compute) - len(public_instances(plan))
+    if cloud == "gcp":
+        gateway = (_GCP_NAT_CAP_PER_HOUR if users > _GCP_NAT_CAP_MACHINES
+                   else users * _GCP_NAT_PER_MACHINE_HOUR)
+    elif cloud in _NAT_GATEWAY_USD_PER_HOUR:
+        gateway = _NAT_GATEWAY_USD_PER_HOUR[cloud]
+    else:
+        return 0.0, users
+    return (gateway + _NAT_ADDRESS_USD_PER_HOUR) * HOURS_PER_MONTH, users
+
 
 # Stated on the report so the number is never mistaken for a quote. These are
 # genuinely not derivable from an inventory export — nothing in an RVTools file
@@ -155,11 +193,13 @@ class CostBreakdown(BaseModel):
     storage: float = Field(description="Block storage for every attached disk")
     windows_licensing: float = Field(description="Windows Server license-included uplift")
     load_balancers: float = Field(description="Load balancers the plan provisions")
+    nat: float = Field(0.0, description="NAT gateway and its address, for private machines")
     total: float
 
     windows_workloads: int = 0
     total_storage_gib: float = 0.0
     load_balancer_count: int = 0
+    nat_machines: int = 0
     pricing_basis: str = _BASIS
     #: Where each non-compute line's rate came from: 'live' or 'static'.
     #: Compute's own source is per instance, on the plan (`pricing_source`).
@@ -222,16 +262,25 @@ def estimate_costs(plan: MigrationPlan) -> CostBreakdown:
     lb_count = len(plan.network.load_balancers)
     load_balancers = lb_count * lb_rate
 
-    total = compute + storage + licensing + load_balancers
+    nat, nat_machines = _nat_monthly(plan, cloud)
+    excludes = list(EXCLUSIONS)
+    if nat_machines:
+        excludes.insert(1, _NAT_DATA if nat else _NAT_UNPRICED)
+
+    total = compute + storage + licensing + load_balancers + nat
     return CostBreakdown(
         compute=round(compute, 2),
         storage=round(storage, 2),
         windows_licensing=round(licensing, 2),
         load_balancers=round(load_balancers, 2),
+        nat=round(nat, 2),
         total=round(total, 2),
         windows_workloads=len(windows),
         total_storage_gib=round(total_gib, 1),
         load_balancer_count=lb_count,
-        pricing_basis=_basis(plan, sources),
+        nat_machines=nat_machines,
+        excludes=excludes,
+        pricing_basis=_basis(plan, sources)
+        + ("; catalog rates (November 2026) for NAT" if nat and plan.live_pricing_requested else ""),
         rate_sources=sources,
     )
